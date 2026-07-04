@@ -29,7 +29,6 @@ export class BillingService {
   async getRequiredOrg(
     userOrId: string | { id: string; organizationId?: string | null },
   ): Promise<string> {
-    console.log('[getRequiredOrg] called with:', userOrId);
     if (
       typeof userOrId === 'object' &&
       userOrId !== null &&
@@ -258,7 +257,7 @@ export class BillingService {
       if (loc.telnyxAssistantId) {
         await this.telnyxService.updateAssistantDynamicVariable(
           loc.telnyxAssistantId,
-          { 'order_key': newKey },
+          { order_key: newKey },
         );
       }
     }
@@ -335,6 +334,23 @@ export class BillingService {
   async getMarginReport(userId: string, locationId: string) {
     const orgId = await this.getRequiredOrg(userId);
 
+    // Tenant isolation: the location must belong to the caller's organization.
+    // Without this, any authenticated user could read usage/margin for any location UUID.
+    const ownedLoc = await this.db
+      .select({ id: schema.locations.id })
+      .from(schema.locations)
+      .where(
+        and(
+          eq(schema.locations.id, locationId),
+          eq(schema.locations.organizationId, orgId),
+        ),
+      )
+      .limit(1);
+
+    if (ownedLoc.length === 0) {
+      throw new NotFoundException('Location not found.');
+    }
+
     const subscription = await this.db
       .select({
         planId: schema.subscriptions.planId,
@@ -374,7 +390,12 @@ export class BillingService {
         totalAmount: sql<number>`SUM(${schema.usageEvents.amount})::int`,
       })
       .from(schema.usageEvents)
-      .where(eq(schema.usageEvents.locationId, locationId))
+      .where(
+        and(
+          eq(schema.usageEvents.organizationId, orgId),
+          eq(schema.usageEvents.locationId, locationId),
+        ),
+      )
       .groupBy(schema.usageEvents.eventType);
 
     let costCents = 0;
