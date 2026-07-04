@@ -11,28 +11,28 @@ export class CrawlerService {
     if (apiKey) {
       this.firecrawl = new FirecrawlApp({ apiKey });
     } else {
-      this.logger.warn('FIRECRAWL_API_KEY is not set. CrawlerService will not work.');
+      this.logger.warn(
+        'FIRECRAWL_API_KEY is not set. CrawlerService will not work.',
+      );
     }
   }
 
   async crawl(url: string): Promise<string> {
     this.logger.log(`Starting crawl for URL: ${url}`);
-    
+
     if (!this.firecrawl) {
       throw new Error('Firecrawl API key is missing. Cannot crawl.');
     }
 
     try {
-      const response = await this.firecrawl.scrapeUrl(url, {
+      const response = (await this.firecrawl.scrapeUrl(url, {
         formats: ['markdown'],
-      }) as any;
-
-
+      })) as any;
 
       const markdown = response.markdown;
-      
+
       if (!markdown) {
-         throw new Error(`Firecrawl returned no markdown content.`);
+        throw new Error(`Firecrawl returned no markdown content.`);
       }
 
       // Limit response length to prevent token overflows (e.g. 40k chars)

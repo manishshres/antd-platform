@@ -80,7 +80,9 @@ export class TelnyxService {
       const res: any = await this.getAssistant(id);
       const assistant = res?.data || res;
       if (!assistant || !assistant.id) {
-        console.warn(`Assistant ${id} not found when trying to update dynamic variables.`);
+        console.warn(
+          `Assistant ${id} not found when trying to update dynamic variables.`,
+        );
         return;
       }
 
@@ -97,7 +99,10 @@ export class TelnyxService {
         body: JSON.stringify(updatePayload),
       });
     } catch (err) {
-      console.warn(`Failed to update dynamic variables for assistant ${id}`, err);
+      console.warn(
+        `Failed to update dynamic variables for assistant ${id}`,
+        err,
+      );
     }
   }
 
@@ -167,7 +172,7 @@ export class TelnyxService {
       'filter[limit]': limit.toString(),
     });
     params.append('filter[features]', 'hd_voice');
-    
+
     if (state) params.set('filter[administrative_area]', state);
     if (city) params.set('filter[locality]', city);
 
@@ -246,9 +251,12 @@ export class TelnyxService {
     });
   }
 
-  async uploadKnowledgeDocument(fileName: string, content: string): Promise<void> {
+  async uploadKnowledgeDocument(
+    fileName: string,
+    content: string,
+  ): Promise<void> {
     const bucketName = this.configService.get<string>('TELNYX_STORAGE_BUCKET');
-    
+
     if (!bucketName) {
       throw new Error('TELNYX_STORAGE_BUCKET is not configured.');
     }
@@ -257,17 +265,24 @@ export class TelnyxService {
     await fetch(`https://telnyxcloudstorage.com/${bucketName}`, {
       method: 'PUT',
       headers: { Authorization: `Bearer ${this.apiKey}` },
-    }).catch(e => console.warn(`Bucket creation check failed (might already exist): ${e.message}`));
+    }).catch((e) =>
+      console.warn(
+        `Bucket creation check failed (might already exist): ${e.message}`,
+      ),
+    );
 
     // Step 2: Upload file
-    const res = await fetch(`https://telnyxcloudstorage.com/${bucketName}/${fileName}`, {
-      method: 'PUT',
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-        'Content-Type': 'application/json',
+    const res = await fetch(
+      `https://telnyxcloudstorage.com/${bucketName}/${fileName}`,
+      {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: content,
       },
-      body: content,
-    });
+    );
 
     if (!res.ok) {
       const text = await res.text();
@@ -276,7 +291,8 @@ export class TelnyxService {
   }
 
   async embedKnowledgeDocuments(bucketName?: string): Promise<unknown> {
-    const bucket = bucketName || this.configService.get<string>('TELNYX_STORAGE_BUCKET');
+    const bucket =
+      bucketName || this.configService.get<string>('TELNYX_STORAGE_BUCKET');
     if (!bucket) {
       throw new Error('TELNYX_STORAGE_BUCKET is not configured.');
     }
@@ -294,7 +310,10 @@ export class TelnyxService {
     });
   }
 
-  async createOrUpdateMenuAssistant(bucketId: string, assistantId?: string): Promise<string> {
+  async createOrUpdateMenuAssistant(
+    bucketId: string,
+    assistantId?: string,
+  ): Promise<string> {
     const assistantName = this.configService.get<string>(
       'TELNYX_AI_ASSISTANT_NAME',
       'Restaurant Voice Agent',
@@ -319,24 +338,30 @@ export class TelnyxService {
 
     if (assistantId) {
       try {
-        const updateRes = await this.fetchJson(`/ai/assistants/${encodeURIComponent(assistantId)}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(assistantConfig),
-        }) as any;
+        const updateRes = (await this.fetchJson(
+          `/ai/assistants/${encodeURIComponent(assistantId)}`,
+          {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(assistantConfig),
+          },
+        )) as any;
         return updateRes?.data?.id || assistantId;
       } catch (e) {
         // If it fails (e.g. 404), fall through to create
-        console.warn(`Failed to update assistant ${assistantId}, creating new one.`, e);
+        console.warn(
+          `Failed to update assistant ${assistantId}, creating new one.`,
+          e,
+        );
       }
     }
 
     // Create new
-    const createRes = await this.fetchJson('/ai/assistants', {
+    const createRes = (await this.fetchJson('/ai/assistants', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(assistantConfig),
-    }) as any;
+    })) as any;
 
     return createRes?.data?.id;
   }

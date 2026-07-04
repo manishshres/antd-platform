@@ -140,7 +140,7 @@ export class PrintersRegistryService {
    */
   async testPrint(id: string, organizationId: string) {
     const printer = await this.verifyOwnership(id, organizationId);
-    
+
     // Create a real queue job so it appears in the UI and gets
     // processed by the print queue processor with full HSPOS formatting
     await this.printJobsService.createPrintJob({
@@ -173,7 +173,7 @@ export class PrintersRegistryService {
     const printer = await this.verifyOwnership(id, organizationId);
 
     const controlTopic = `restaurant/${organizationId}/printer/${id}/control`;
-    
+
     // HSPOS Cloud Printers often expect a JSON payload for reboot on their main or control topic
     const restartPayload = {
       command: 'reboot',
@@ -194,7 +194,9 @@ export class PrintersRegistryService {
     for (const topic of topicsToPublish) {
       const published = await this.mqttService.publish(topic, restartPayload);
       if (published) anyPublished = true;
-      this.logger.log(`Restart command sent to printer ${id} via topic ${topic} (published: ${published}).`);
+      this.logger.log(
+        `Restart command sent to printer ${id} via topic ${topic} (published: ${published}).`,
+      );
     }
 
     return { sent: anyPublished, topics: topicsToPublish };

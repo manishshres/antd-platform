@@ -164,7 +164,10 @@ Always be polite and assist customers with their inquiries and orders.${dynamicI
         instructions: systemPrompt,
       });
 
-      if (newAiSettings.dynamicVariables && Object.keys(newAiSettings.dynamicVariables).length > 0) {
+      if (
+        newAiSettings.dynamicVariables &&
+        Object.keys(newAiSettings.dynamicVariables).length > 0
+      ) {
         await this.telnyxService.updateAssistantDynamicVariable(
           location.telnyxAssistantId,
           newAiSettings.dynamicVariables,

@@ -102,13 +102,13 @@ Ensure your response is valid JSON.
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
+          Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
           model: 'deepseek-v4-pro',
           messages: [
             { role: 'system', content: systemPrompt },
-            { role: 'user', content: `Raw Text:\n${text}` }
+            { role: 'user', content: `Raw Text:\n${text}` },
           ],
           response_format: { type: 'json_object' },
         }),
@@ -118,8 +118,12 @@ Ensure your response is valid JSON.
 
       if (!response.ok) {
         const errorText = await response.text().catch(() => 'No text');
-        this.logger.error(`DeepSeek API Error: ${response.status} - ${errorText}`);
-        throw new Error(`DeepSeek API returned status: ${response.status}. Details: ${errorText}`);
+        this.logger.error(
+          `DeepSeek API Error: ${response.status} - ${errorText}`,
+        );
+        throw new Error(
+          `DeepSeek API returned status: ${response.status}. Details: ${errorText}`,
+        );
       }
 
       const data = await response.json();
@@ -178,9 +182,9 @@ Ensure your response is valid JSON.
                     options: [
                       { name: 'Medium 12"', priceAdjustment: 0 },
                       { name: 'Large 16"', priceAdjustment: 400 },
-                    ]
-                  }
-                ]
+                    ],
+                  },
+                ],
               },
               {
                 name: 'Pepperoni Supreme',
@@ -289,9 +293,9 @@ Ensure your response is valid JSON.
                     options: [
                       { name: 'Bacon', priceAdjustment: 200 },
                       { name: 'Extra Cheese', priceAdjustment: 100 },
-                    ]
-                  }
-                ]
+                    ],
+                  },
+                ],
               },
               {
                 name: 'Bacon BBQ Smokehouse',

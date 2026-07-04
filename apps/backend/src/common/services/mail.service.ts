@@ -12,7 +12,8 @@ export class MailService {
     const smtpHost = this.configService.get<string>('SMTP_HOST');
     if (smtpHost) {
       const portStr = this.configService.get<string | number>('SMTP_PORT', 587);
-      const port = typeof portStr === 'string' ? parseInt(portStr, 10) : portStr;
+      const port =
+        typeof portStr === 'string' ? parseInt(portStr, 10) : portStr;
 
       this.transporter = nodemailer.createTransport({
         host: smtpHost,
@@ -66,7 +67,13 @@ export class MailService {
     }
   }
 
-  private getBaseEmailTemplate(title: string, paragraphs: string[], ctaText?: string, ctaUrl?: string, footerText?: string): string {
+  private getBaseEmailTemplate(
+    title: string,
+    paragraphs: string[],
+    ctaText?: string,
+    ctaUrl?: string,
+    footerText?: string,
+  ): string {
     return `
       <!DOCTYPE html>
       <html>
@@ -91,18 +98,26 @@ export class MailService {
             <h1>${title}</h1>
           </div>
           <div class="content">
-            ${paragraphs.map(p => `<p>${p}</p>`).join('')}
-            ${ctaText && ctaUrl ? `
+            ${paragraphs.map((p) => `<p>${p}</p>`).join('')}
+            ${
+              ctaText && ctaUrl
+                ? `
             <div class="btn-container">
               <a href="${ctaUrl}" class="btn">${ctaText}</a>
             </div>
-            ` : ''}
+            `
+                : ''
+            }
           </div>
-          ${footerText ? `
+          ${
+            footerText
+              ? `
           <div class="footer">
             <p>${footerText}</p>
           </div>
-          ` : ''}
+          `
+              : ''
+          }
         </div>
       </body>
       </html>
@@ -132,11 +147,11 @@ export class MailService {
         'Password Reset',
         [
           'We received a request to reset your password.',
-          'Click the button below to choose a new password. This link will expire in 1 hour.'
+          'Click the button below to choose a new password. This link will expire in 1 hour.',
         ],
         'Reset Password',
         resetUrl,
-        'If you did not request a password reset, please ignore this email. Your password will remain unchanged.'
+        'If you did not request a password reset, please ignore this email. Your password will remain unchanged.',
       ),
     });
   }
@@ -163,11 +178,11 @@ export class MailService {
         'Verify Email',
         [
           'Welcome to the platform!',
-          'Please verify your email address to complete your registration. This link will expire in 24 hours.'
+          'Please verify your email address to complete your registration. This link will expire in 24 hours.',
         ],
         'Verify Email Address',
         verifyUrl,
-        'If you did not create an account, please safely ignore this email.'
+        'If you did not create an account, please safely ignore this email.',
       ),
     });
   }
@@ -200,11 +215,11 @@ export class MailService {
         [
           `Great news! You have been invited to join the <strong>${orgName}</strong> team on Coneeko.`,
           'Coneeko is your all-in-one AI Voice Portal and Operations platform.',
-          'Click the button below to accept your invitation, set up your profile, and get started. This invitation link is valid for 7 days.'
+          'Click the button below to accept your invitation, set up your profile, and get started. This invitation link is valid for 7 days.',
         ],
         'Accept Invitation',
         acceptUrl,
-        'If you do not want to join this team, please safely ignore this email.'
+        'If you do not want to join this team, please safely ignore this email.',
       ),
     });
   }

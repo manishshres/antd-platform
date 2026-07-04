@@ -41,12 +41,13 @@ export class ImportQueueProcessor extends WorkerHost {
 
     try {
       let text = '';
-      
+
       // Basic check if it's a direct PDF URL
       if (url.includes('.pdf') || url.includes('/pdf-')) {
         this.logger.log(`URL seems to be a PDF. Fetching and parsing...`);
         const res = await fetch(url);
-        if (!res.ok) throw new Error(`Failed to fetch PDF from URL: ${res.statusText}`);
+        if (!res.ok)
+          throw new Error(`Failed to fetch PDF from URL: ${res.statusText}`);
         const arrayBuffer = await res.arrayBuffer();
         const pdfData = await pdfParse(Buffer.from(arrayBuffer));
         text = pdfData.text;
@@ -54,7 +55,7 @@ export class ImportQueueProcessor extends WorkerHost {
         // 1. Crawl website
         text = await this.crawlerService.crawl(url);
       }
-      
+
       if (!text || text.trim().length === 0) {
         throw new Error('Content retrieval returned empty text.');
       }
@@ -71,57 +72,109 @@ export class ImportQueueProcessor extends WorkerHost {
 
       // 3. Database inserts in a transaction for atomicity
       await this.db.transaction(async (tx) => {
-        
         // Handle 'replace' mode — delete in FK dependency order (children first)
         if (importMode === 'replace') {
           if (locationId) {
             // Get IDs to delete child records first
-            const locItemIds = (await tx.select({ id: schema.menuItems.id })
-              .from(schema.menuItems).where(eq(schema.menuItems.locationId, locationId))).map(r => r.id);
-            const locModIds = (await tx.select({ id: schema.menuModifiers.id })
-              .from(schema.menuModifiers).where(eq(schema.menuModifiers.locationId, locationId))).map(r => r.id);
+            const locItemIds = (
+              await tx
+                .select({ id: schema.menuItems.id })
+                .from(schema.menuItems)
+                .where(eq(schema.menuItems.locationId, locationId))
+            ).map((r) => r.id);
+            const locModIds = (
+              await tx
+                .select({ id: schema.menuModifiers.id })
+                .from(schema.menuModifiers)
+                .where(eq(schema.menuModifiers.locationId, locationId))
+            ).map((r) => r.id);
 
             if (locItemIds.length > 0) {
-              await tx.delete(schema.menuItemToModifiers).where(inArray(schema.menuItemToModifiers.menuItemId, locItemIds));
+              await tx
+                .delete(schema.menuItemToModifiers)
+                .where(
+                  inArray(schema.menuItemToModifiers.menuItemId, locItemIds),
+                );
             }
             if (locModIds.length > 0) {
-              await tx.delete(schema.menuItemModifiers).where(inArray(schema.menuItemModifiers.modifierId, locModIds));
+              await tx
+                .delete(schema.menuItemModifiers)
+                .where(inArray(schema.menuItemModifiers.modifierId, locModIds));
             }
-            await tx.delete(schema.menuItems).where(eq(schema.menuItems.locationId, locationId));
-            await tx.delete(schema.menuModifiers).where(eq(schema.menuModifiers.locationId, locationId));
+            await tx
+              .delete(schema.menuItems)
+              .where(eq(schema.menuItems.locationId, locationId));
+            await tx
+              .delete(schema.menuModifiers)
+              .where(eq(schema.menuModifiers.locationId, locationId));
           } else {
             // Org-wide replace — get all item & modifier IDs for this org
-            const orgCatIds = (await tx.select({ id: schema.categories.id })
-              .from(schema.categories).where(eq(schema.categories.organizationId, orgId))).map(r => r.id);
-            const orgItemIds = orgCatIds.length > 0
-              ? (await tx.select({ id: schema.menuItems.id })
-                  .from(schema.menuItems).where(inArray(schema.menuItems.categoryId, orgCatIds))).map(r => r.id)
-              : [];
-            const orgModIds = (await tx.select({ id: schema.menuModifiers.id })
-              .from(schema.menuModifiers).where(eq(schema.menuModifiers.organizationId, orgId))).map(r => r.id);
+            const orgCatIds = (
+              await tx
+                .select({ id: schema.categories.id })
+                .from(schema.categories)
+                .where(eq(schema.categories.organizationId, orgId))
+            ).map((r) => r.id);
+            const orgItemIds =
+              orgCatIds.length > 0
+                ? (
+                    await tx
+                      .select({ id: schema.menuItems.id })
+                      .from(schema.menuItems)
+                      .where(inArray(schema.menuItems.categoryId, orgCatIds))
+                  ).map((r) => r.id)
+                : [];
+            const orgModIds = (
+              await tx
+                .select({ id: schema.menuModifiers.id })
+                .from(schema.menuModifiers)
+                .where(eq(schema.menuModifiers.organizationId, orgId))
+            ).map((r) => r.id);
 
             if (orgItemIds.length > 0) {
-              await tx.delete(schema.menuItemToModifiers).where(inArray(schema.menuItemToModifiers.menuItemId, orgItemIds));
+              await tx
+                .delete(schema.menuItemToModifiers)
+                .where(
+                  inArray(schema.menuItemToModifiers.menuItemId, orgItemIds),
+                );
             }
             if (orgModIds.length > 0) {
-              await tx.delete(schema.menuItemModifiers).where(inArray(schema.menuItemModifiers.modifierId, orgModIds));
+              await tx
+                .delete(schema.menuItemModifiers)
+                .where(inArray(schema.menuItemModifiers.modifierId, orgModIds));
             }
             if (orgItemIds.length > 0) {
-              await tx.delete(schema.menuItems).where(inArray(schema.menuItems.id, orgItemIds));
+              await tx
+                .delete(schema.menuItems)
+                .where(inArray(schema.menuItems.id, orgItemIds));
             }
-            await tx.delete(schema.menuModifiers).where(eq(schema.menuModifiers.organizationId, orgId));
-            await tx.delete(schema.categories).where(eq(schema.categories.organizationId, orgId));
+            await tx
+              .delete(schema.menuModifiers)
+              .where(eq(schema.menuModifiers.organizationId, orgId));
+            await tx
+              .delete(schema.categories)
+              .where(eq(schema.categories.organizationId, orgId));
           }
         }
 
         // Cache existing categories and items
-        const existingCats = await tx.select().from(schema.categories).where(eq(schema.categories.organizationId, orgId));
-        const catMap = new Map(existingCats.map(c => [c.name.toLowerCase(), c.id]));
-        
-        const existingItems = locationId 
-          ? await tx.select().from(schema.menuItems).where(eq(schema.menuItems.locationId, locationId))
+        const existingCats = await tx
+          .select()
+          .from(schema.categories)
+          .where(eq(schema.categories.organizationId, orgId));
+        const catMap = new Map(
+          existingCats.map((c) => [c.name.toLowerCase(), c.id]),
+        );
+
+        const existingItems = locationId
+          ? await tx
+              .select()
+              .from(schema.menuItems)
+              .where(eq(schema.menuItems.locationId, locationId))
           : await tx.select().from(schema.menuItems);
-        const itemMap = new Map(existingItems.map(i => [i.name.toLowerCase(), i]));
+        const itemMap = new Map(
+          existingItems.map((i) => [i.name.toLowerCase(), i]),
+        );
 
         for (const cat of menuData.categories) {
           if (cat.items.length === 0) continue;
@@ -146,39 +199,55 @@ export class ImportQueueProcessor extends WorkerHost {
             let itemId = null;
 
             if (existingItem) {
-              if (importMode === 'add_new') continue; 
-              
-              const [updated] = await tx.update(schema.menuItems).set({
-                price: item.price,
-                description: item.description || '',
-                categoryId: categoryId,
-              }).where(eq(schema.menuItems.id, existingItem.id)).returning();
+              if (importMode === 'add_new') continue;
+
+              const [updated] = await tx
+                .update(schema.menuItems)
+                .set({
+                  price: item.price,
+                  description: item.description || '',
+                  categoryId: categoryId,
+                })
+                .where(eq(schema.menuItems.id, existingItem.id))
+                .returning();
               itemId = updated.id;
             } else {
-              const [insertedItem] = await tx.insert(schema.menuItems).values({
-                categoryId: categoryId,
-                locationId: locationId || null,
-                name: item.name,
-                description: item.description || '',
-                price: item.price,
-                isAvailable: true,
-                sortOrder: i,
-              }).returning();
+              const [insertedItem] = await tx
+                .insert(schema.menuItems)
+                .values({
+                  categoryId: categoryId,
+                  locationId: locationId || null,
+                  name: item.name,
+                  description: item.description || '',
+                  price: item.price,
+                  isAvailable: true,
+                  sortOrder: i,
+                })
+                .returning();
               itemId = insertedItem.id;
             }
 
-            if (item.modifiers && item.modifiers.length > 0 && importMode !== 'add_new') {
+            if (
+              item.modifiers &&
+              item.modifiers.length > 0 &&
+              importMode !== 'add_new'
+            ) {
               if (existingItem) {
-                await tx.delete(schema.menuItemToModifiers).where(eq(schema.menuItemToModifiers.menuItemId, itemId));
+                await tx
+                  .delete(schema.menuItemToModifiers)
+                  .where(eq(schema.menuItemToModifiers.menuItemId, itemId));
               }
 
               for (const modGroup of item.modifiers) {
-                const [insertedGroup] = await tx.insert(schema.menuModifiers).values({
-                  organizationId: orgId,
-                  locationId: locationId || null,
-                  name: modGroup.name,
-                  isRequired: modGroup.isRequired,
-                }).returning();
+                const [insertedGroup] = await tx
+                  .insert(schema.menuModifiers)
+                  .values({
+                    organizationId: orgId,
+                    locationId: locationId || null,
+                    name: modGroup.name,
+                    isRequired: modGroup.isRequired,
+                  })
+                  .returning();
 
                 await tx.insert(schema.menuItemToModifiers).values({
                   menuItemId: itemId,
@@ -186,12 +255,14 @@ export class ImportQueueProcessor extends WorkerHost {
                 });
 
                 if (modGroup.options && modGroup.options.length > 0) {
-                  const optionsToInsert = modGroup.options.map(opt => ({
+                  const optionsToInsert = modGroup.options.map((opt) => ({
                     modifierId: insertedGroup.id,
                     name: opt.name,
                     priceAdjustment: opt.priceAdjustment,
                   }));
-                  await tx.insert(schema.menuItemModifiers).values(optionsToInsert);
+                  await tx
+                    .insert(schema.menuItemModifiers)
+                    .values(optionsToInsert);
                 }
               }
             }
@@ -202,12 +273,17 @@ export class ImportQueueProcessor extends WorkerHost {
       // Clear the cache so new items show up in the UI immediately
       await this.cacheManager.clear();
 
-      this.logger.log(`Successfully imported menu for organization ${orgId} from URL: ${url}`);
+      this.logger.log(
+        `Successfully imported menu for organization ${orgId} from URL: ${url}`,
+      );
       return { success: true, categoriesCount: menuData.categories.length };
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       const stack = err instanceof Error ? err.stack : undefined;
-      this.logger.error(`Failed to import menu from URL "${url}": ${message}`, stack);
+      this.logger.error(
+        `Failed to import menu from URL "${url}": ${message}`,
+        stack,
+      );
       throw err;
     }
   }

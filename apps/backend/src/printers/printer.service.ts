@@ -245,8 +245,16 @@ export class PrinterService {
     }
 
     // If the printerId is a UUID, look up its actual topic in the database
-    if (normalized.match(/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/)) {
-      const [printer] = await this.db.select().from(schema.printers).where(eq(schema.printers.id, normalized)).limit(1);
+    if (
+      normalized.match(
+        /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/,
+      )
+    ) {
+      const [printer] = await this.db
+        .select()
+        .from(schema.printers)
+        .where(eq(schema.printers.id, normalized))
+        .limit(1);
       if (printer?.topic) {
         return printer.topic;
       }

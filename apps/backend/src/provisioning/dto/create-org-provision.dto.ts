@@ -1,4 +1,10 @@
-import { IsString, IsNotEmpty, IsEmail, IsOptional, IsObject } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsEmail,
+  IsOptional,
+  IsObject,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateOrgProvisionDto {
@@ -37,7 +43,9 @@ export class CreateOrgProvisionDto {
   @IsOptional()
   phoneNumber?: string;
 
-  @ApiPropertyOptional({ description: 'The Telnyx Voice AI Agent ID to clone from' })
+  @ApiPropertyOptional({
+    description: 'The Telnyx Voice AI Agent ID to clone from',
+  })
   @IsString()
   @IsOptional()
   baseAgentId?: string;

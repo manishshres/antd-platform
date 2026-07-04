@@ -242,9 +242,8 @@ export class ProvisioningProcessor extends WorkerHost {
     }
 
     // Fetch the actual phone number ID from Telnyx
-    const purchasedPhoneRes: any = await this.telnyxService.getPhoneNumbersByNumber(
-      metadata.phoneNumber
-    );
+    const purchasedPhoneRes: any =
+      await this.telnyxService.getPhoneNumbersByNumber(metadata.phoneNumber);
     if (purchasedPhoneRes.data && purchasedPhoneRes.data.length > 0) {
       metadata.telnyxPhoneNumberId = purchasedPhoneRes.data[0].id;
     } else {
@@ -275,13 +274,17 @@ export class ProvisioningProcessor extends WorkerHost {
     }
 
     if (!masterAgentId)
-      throw new Error('No base agent selected and TELNYX_MASTER_AGENT_ID not configured.');
+      throw new Error(
+        'No base agent selected and TELNYX_MASTER_AGENT_ID not configured.',
+      );
 
     const res: any = await this.telnyxService.cloneAssistant(masterAgentId);
     const assistantId = res.id || res.data?.id;
     if (!assistantId) throw new Error('Failed to clone assistant.');
 
-    const texmlAppId = res.telephony_settings?.default_texml_app_id || res.data?.telephony_settings?.default_texml_app_id;
+    const texmlAppId =
+      res.telephony_settings?.default_texml_app_id ||
+      res.data?.telephony_settings?.default_texml_app_id;
 
     metadata.assistantId = assistantId;
     metadata.masterAgentId = masterAgentId;
@@ -305,14 +308,18 @@ export class ProvisioningProcessor extends WorkerHost {
   ) {
     const telnyxPhoneNumberId =
       previousMetadata.purchase_phone_number?.telnyxPhoneNumberId;
-    
+
     // Use the newly created AI Agent's TeXML App ID, or fallback to the config
     const texmlAppId = previousMetadata.clone_agent?.texmlAppId;
-    const connectionId = texmlAppId || this.configService.get<string>('TELNYX_CONNECTION_ID');
+    const connectionId =
+      texmlAppId || this.configService.get<string>('TELNYX_CONNECTION_ID');
 
     if (!telnyxPhoneNumberId)
       throw new Error('No telnyxPhoneNumberId from previous step.');
-    if (!connectionId) throw new Error('No TeXML App ID found on agent and TELNYX_CONNECTION_ID not configured.');
+    if (!connectionId)
+      throw new Error(
+        'No TeXML App ID found on agent and TELNYX_CONNECTION_ID not configured.',
+      );
 
     // We assign the connection to the phone number.
     // The connection (TexML app) will route calls to the Assistant via webhook.

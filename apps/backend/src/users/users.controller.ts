@@ -175,7 +175,8 @@ export class UsersController {
   @UseGuards(PlatformAdminGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Revoke all refresh tokens for any user globally (Platform Admin only)',
+    summary:
+      'Revoke all refresh tokens for any user globally (Platform Admin only)',
   })
   @ApiResponse({ status: 200, description: 'User forced logged out.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })

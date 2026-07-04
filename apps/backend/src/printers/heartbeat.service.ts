@@ -45,7 +45,7 @@ export class HeartbeatService implements OnModuleInit {
     this.mqttService.subscribe('heartbeat', (topic, payload) =>
       this.handleHeartbeat(topic, payload),
     );
-    
+
     // HSPOS Cloud Printer default status topic (Docs say PrintSucces)
     this.mqttService.subscribe('PrintSucces', (topic, payload) =>
       this.handlePrintStatus(payload),
@@ -142,7 +142,7 @@ export class HeartbeatService implements OnModuleInit {
           updatedAt: new Date(),
         })
         .where(
-          (lowerTopic === 'hearbeat' || lowerTopic === 'heartbeat')
+          lowerTopic === 'hearbeat' || lowerTopic === 'heartbeat'
             ? eq(schema.printers.topic, printerTopicOrId)
             : eq(schema.printers.id, printerTopicOrId),
         );

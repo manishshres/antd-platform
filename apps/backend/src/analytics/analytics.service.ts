@@ -130,8 +130,12 @@ export class AnalyticsService {
 
     // Build base conditions
     const orderConditions = [eq(schema.orders.organizationId, organizationId)];
-    const convConditions = [eq(schema.conversations.organizationId, organizationId)];
-    const printerConditions = [eq(schema.printers.organizationId, organizationId)];
+    const convConditions = [
+      eq(schema.conversations.organizationId, organizationId),
+    ];
+    const printerConditions = [
+      eq(schema.printers.organizationId, organizationId),
+    ];
 
     if (locationId) {
       orderConditions.push(eq(schema.orders.locationId, locationId));
@@ -143,7 +147,9 @@ export class AnalyticsService {
     const kpiOrdersRes = await this.db
       .select({
         totalOrders: sql<number>`count(*)`.mapWith(Number),
-        revenueCents: sql<number>`sum(${schema.orders.totalAmount})`.mapWith(Number),
+        revenueCents: sql<number>`sum(${schema.orders.totalAmount})`.mapWith(
+          Number,
+        ),
       })
       .from(schema.orders)
       .where(and(...orderConditions, gte(schema.orders.createdAt, today)));
@@ -154,33 +160,50 @@ export class AnalyticsService {
     const activeCallsRes = await this.db
       .select({ count: sql<number>`count(*)`.mapWith(Number) })
       .from(schema.conversations)
-      .where(and(...convConditions, gte(schema.conversations.createdAt, tenMinutesAgo)));
+      .where(
+        and(
+          ...convConditions,
+          gte(schema.conversations.createdAt, tenMinutesAgo),
+        ),
+      );
     const activeCalls = activeCallsRes[0]?.count || 0;
 
     const printersRes = await this.db
       .select({ isOnline: schema.printers.isOnline })
       .from(schema.printers)
       .where(and(...printerConditions));
-    
+
     let printerStatus = 'None';
     if (printersRes.length > 0) {
-      printerStatus = printersRes.some(p => p.isOnline) ? 'Online' : 'Offline';
+      printerStatus = printersRes.some((p) => p.isOnline)
+        ? 'Online'
+        : 'Offline';
     }
 
     // 2. Trend Queries
     const trendOrders = await this.db
       .select({ createdAt: schema.orders.createdAt })
       .from(schema.orders)
-      .where(and(...orderConditions, gte(schema.orders.createdAt, sevenDaysAgo)));
+      .where(
+        and(...orderConditions, gte(schema.orders.createdAt, sevenDaysAgo)),
+      );
 
     const trendConvs = await this.db
       .select({ createdAt: schema.conversations.createdAt })
       .from(schema.conversations)
-      .where(and(...convConditions, gte(schema.conversations.createdAt, sevenDaysAgo)));
+      .where(
+        and(
+          ...convConditions,
+          gte(schema.conversations.createdAt, sevenDaysAgo),
+        ),
+      );
 
     // Group by date
-    const trendMap = new Map<string, { date: string; orders: number; calls: number }>();
-    
+    const trendMap = new Map<
+      string,
+      { date: string; orders: number; calls: number }
+    >();
+
     for (let i = 0; i < 7; i++) {
       const d = new Date();
       d.setDate(d.getDate() - (6 - i));
@@ -189,7 +212,7 @@ export class AnalyticsService {
       trendMap.set(key, { date: dateLabel, orders: 0, calls: 0 });
     }
 
-    trendOrders.forEach(o => {
+    trendOrders.forEach((o) => {
       if (!o.createdAt) return;
       const key = o.createdAt.toDateString();
       if (trendMap.has(key)) {
@@ -197,7 +220,7 @@ export class AnalyticsService {
       }
     });
 
-    trendConvs.forEach(c => {
+    trendConvs.forEach((c) => {
       if (!c.createdAt) return;
       const key = c.createdAt.toDateString();
       if (trendMap.has(key)) {

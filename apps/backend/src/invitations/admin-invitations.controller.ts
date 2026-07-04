@@ -17,7 +17,10 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PlatformAdminGuard } from '../auth/guards/platform-admin.guard';
 import { InvitationsService } from './invitations.service';
 import { CreateInvitationDto } from './dto/create-invitation.dto';
-import { CurrentUser, CurrentUserPayload } from '../common/decorators/current-user.decorator';
+import {
+  CurrentUser,
+  CurrentUserPayload,
+} from '../common/decorators/current-user.decorator';
 
 @ApiTags('Invitations (Platform Admin)')
 @ApiBearerAuth()
@@ -28,7 +31,9 @@ export class AdminInvitationsController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Create an invitation for an organization (Platform Admin)' })
+  @ApiOperation({
+    summary: 'Create an invitation for an organization (Platform Admin)',
+  })
   @ApiResponse({ status: 201, description: 'Invitation sent.' })
   async createInvitation(
     @CurrentUser() user: CurrentUserPayload,

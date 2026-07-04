@@ -20,7 +20,8 @@ export class ImportMenuDto {
   importMode?: 'add_new' | 'sync' | 'replace';
 
   @ApiProperty({
-    description: 'Organization ID to import this menu for (Platform Admins only)',
+    description:
+      'Organization ID to import this menu for (Platform Admins only)',
     required: false,
   })
   @IsUUID()

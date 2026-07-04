@@ -88,7 +88,9 @@ export class MenusController {
     @Query('locationId') locationId?: string,
   ): Promise<{ success: boolean; message: string }> {
     if (!user.organizationId) {
-      throw new ForbiddenException('User is not associated with an organization.');
+      throw new ForbiddenException(
+        'User is not associated with an organization.',
+      );
     }
     return this.menusService.syncMenuToAI(user.organizationId, locationId);
   }
@@ -96,7 +98,9 @@ export class MenusController {
   @Post('cache/clear')
   @Roles('sysadmin', 'platform_admin', 'manager')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Clear the menu cache for the current organization' })
+  @ApiOperation({
+    summary: 'Clear the menu cache for the current organization',
+  })
   @ApiResponse({ status: 200, description: 'Cache cleared.' })
   async clearMenuCache(
     @CurrentUser() user: CurrentUserPayload,
@@ -223,7 +227,11 @@ export class MenusController {
     const key = `menus/pdf-${Date.now()}-${Math.random().toString(36).substring(7)}.${ext}`;
     const stream = Readable.from(file.buffer);
 
-    const s3Key = await this.storageService.uploadStream(key, stream, file.mimetype);
+    const s3Key = await this.storageService.uploadStream(
+      key,
+      stream,
+      file.mimetype,
+    );
     // Since we need to access this URL in the worker or just return the key for the worker to download:
     // Let's just return the key, and the frontend can save it as menuImportSource.
     return { url: s3Key };

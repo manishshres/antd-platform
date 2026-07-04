@@ -78,7 +78,11 @@ export class ProvisioningController {
     @Query('state') state?: string,
     @Query('city') city?: string,
   ) {
-    return this.provisioningService.searchAvailableNumbers(country, state, city);
+    return this.provisioningService.searchAvailableNumbers(
+      country,
+      state,
+      city,
+    );
   }
 
   @Get()

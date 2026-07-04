@@ -373,8 +373,9 @@ export const printJobs = pgTable(
     locationId: uuid('location_id').references(() => locations.id, {
       onDelete: 'cascade',
     }),
-    orderId: uuid('order_id')
-      .references(() => orders.id, { onDelete: 'cascade' }),
+    orderId: uuid('order_id').references(() => orders.id, {
+      onDelete: 'cascade',
+    }),
     jobType: varchar('job_type', { length: 50 }).notNull(),
     status: varchar('status', { length: 50 }).default('queued').notNull(),
     printerId: varchar('printer_id', { length: 255 }),
