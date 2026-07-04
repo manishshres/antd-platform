@@ -15,6 +15,11 @@ import { CheckoutDto } from './dto/checkout.dto';
 import Stripe from 'stripe';
 import { randomBytes, createHash } from 'crypto';
 import { TelnyxService } from '../telnyx/telnyx.service';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
+
+/** Short TTL for the userId→org resolution — org membership changes rarely (H8). */
+const ORG_RESOLUTION_TTL_MS = 60_000;
 
 @Injectable()
 export class BillingService {
@@ -24,11 +29,13 @@ export class BillingService {
     private readonly stripeService: StripeService,
     private readonly invoicePdfService: InvoicePdfService,
     private readonly telnyxService: TelnyxService,
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
   ) {}
 
   async getRequiredOrg(
     userOrId: string | { id: string; organizationId?: string | null },
   ): Promise<string> {
+    // Fast path: the JWT payload already carries the org — no lookup at all (H8).
     if (
       typeof userOrId === 'object' &&
       userOrId !== null &&
@@ -39,8 +46,16 @@ export class BillingService {
 
     const userId = typeof userOrId === 'string' ? userOrId : userOrId.id;
 
+    // Cache the userId→org resolution so repeated getRequiredOrg(userId) calls within a request
+    // (and across nearby requests) don't each re-query the users table (H8).
+    const cacheKey = `orgByUser:${userId}`;
+    const cached = await this.cacheManager.get<string>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     const users = await this.db
-      .select()
+      .select({ organizationId: schema.users.organizationId })
       .from(schema.users)
       .where(eq(schema.users.id, userId))
       .limit(1);
@@ -56,6 +71,11 @@ export class BillingService {
       );
     }
 
+    await this.cacheManager.set(
+      cacheKey,
+      user.organizationId,
+      ORG_RESOLUTION_TTL_MS,
+    );
     return user.organizationId;
   }
 

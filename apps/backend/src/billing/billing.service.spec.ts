@@ -4,6 +4,7 @@ import { StripeService } from '../stripe/stripe.service';
 import { InvoicePdfService } from './invoice-pdf.service';
 import { TelnyxService } from '../telnyx/telnyx.service';
 import { DRIZZLE } from '../database/database.module';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 
 describe('BillingService', () => {
@@ -46,6 +47,11 @@ describe('BillingService', () => {
     updateAssistantDynamicVariable: jest.fn().mockResolvedValue(undefined),
   };
 
+  const mockCacheManager = {
+    get: jest.fn().mockResolvedValue(undefined),
+    set: jest.fn().mockResolvedValue(undefined),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -54,6 +60,7 @@ describe('BillingService', () => {
         { provide: StripeService, useValue: mockStripeService },
         { provide: InvoicePdfService, useValue: mockInvoicePdfService },
         { provide: TelnyxService, useValue: mockTelnyxService },
+        { provide: CACHE_MANAGER, useValue: mockCacheManager },
       ],
     }).compile();
 
