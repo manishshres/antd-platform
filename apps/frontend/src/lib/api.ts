@@ -60,18 +60,6 @@ api.interceptors.response.use(
       !isAuthEndpoint &&
       typeof window !== "undefined"
     ) {
-      const refreshToken = localStorage.getItem("refresh_token");
-
-      if (!refreshToken) {
-        // No refresh token — force logout
-        localStorage.removeItem("access_token");
-        localStorage.removeItem("refresh_token");
-        if (!window.location.pathname.includes("/login") && !window.location.pathname.includes("/register")) {
-          window.location.href = "/login";
-        }
-        return Promise.reject(error);
-      }
-
       if (isRefreshing) {
         // Another refresh is already in flight — queue this request
         return new Promise<string>((resolve, reject) => {
@@ -88,13 +76,15 @@ api.interceptors.response.use(
       isRefreshing = true;
 
       try {
-        const { data } = await axios.post<{ access_token: string; refresh_token: string }>(
+        // The refresh token is delivered as an HttpOnly cookie (H2) — send no body and let the
+        // browser attach the cookie via withCredentials. Nothing sensitive lives in JS storage.
+        const { data } = await axios.post<{ access_token: string }>(
           `${baseURL}/auth/refresh`,
-          { refresh_token: refreshToken },
+          {},
+          { withCredentials: true },
         );
 
         localStorage.setItem("access_token", data.access_token);
-        localStorage.setItem("refresh_token", data.refresh_token);
 
         api.defaults.headers.common.Authorization = `Bearer ${data.access_token}`;
         originalRequest.headers.Authorization = `Bearer ${data.access_token}`;

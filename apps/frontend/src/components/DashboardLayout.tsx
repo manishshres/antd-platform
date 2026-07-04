@@ -288,13 +288,16 @@ function LayoutInner({
       danger: true,
       onClick: async () => {
         try {
-          const refreshToken = localStorage.getItem("refresh_token");
-          await api.post("/auth/logout", { refresh_token: refreshToken });
+          // Refresh token lives in the HttpOnly cookie (H2); the backend reads it and clears it.
+          await api.post("/auth/logout", {});
         } catch {
           // Ignore logout failure
         }
         localStorage.removeItem("access_token");
         localStorage.removeItem("refresh_token");
+        // Clear tenant context so the next login on a shared device doesn't inherit it (M14).
+        localStorage.removeItem("selectedOrgId");
+        localStorage.removeItem("selectedLocationId");
         router.push("/login");
       },
     },

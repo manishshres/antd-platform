@@ -46,10 +46,8 @@ export default function RegisterPage() {
       });
 
       if (data?.access_token) {
+        // Refresh token is set as an HttpOnly cookie by the backend (H2) — do not persist it.
         localStorage.setItem("access_token", data.access_token);
-        if (data.refresh_token) {
-          localStorage.setItem("refresh_token", data.refresh_token);
-        }
         router.push("/dashboard");
       } else {
         router.push("/login");
