@@ -18,26 +18,26 @@ and a frontend `npm run build` — results are documented per item.
 | Category    | Complete | Total | Progress |
 |-------------|----------|-------|----------|
 | Critical    | 7        | 7     | 100%     |
-| High        | 7.5      | 9     | 83%      |
-| Medium      | 2        | 17    | 12%      |
+| High        | 9        | 9     | 100%     |
+| Medium      | 3        | 17    | 18%      |
 | Low         | 0        | 10    | 0%       |
 | Enhancement | 0        | 8     | 0%       |
-| **Overall** | **16.5** | **51**| **32%**  |
+| **Overall** | **19**   | **51**| **37%**  |
 
-Backend items: 15/28 complete (54%) · Frontend items: 1.5/17 complete (9%) · Infra items: 1/6 complete (17%)
+Backend items: 17/28 complete (61%) · Frontend items: 2/17 complete (12%) · Infra items: 1/6 complete (17%)
 
-> **Critical: 7/7 done. High: 7.5/9 done** (H1, H3, H4, H5, H6, H7, H9 complete; H8 partial;
-> only H2 fully deferred). Both apps build green. Backend tests improved 72→97 passing
-> (22→8 failing; the 8 are pre-existing spec rot in heartbeat/stripe/telnyx — tracked under L8,
-> untouched by these fixes and unchanged in count = zero regressions). Backend lint 142→128
-> errors. Every fix is a small logical commit with lint/build/test verification. M1 folded into
-> C4; M8 (orders deletedAt + status filter) folded into H1.
+> **Critical: 7/7 done. High: 9/9 done.** All Critical and High audit findings are fixed,
+> verified, and committed as small logical commits. Both apps build green. Backend tests
+> improved 72→97 passing (22→8 failing; the 8 are pre-existing spec rot in heartbeat/stripe/
+> telnyx — tracked under L8, untouched by these fixes and **unchanged in count = zero
+> regressions across all work**). Backend lint 142→128 errors. M1 folded into C4; M8 into H1;
+> M14 into H2.
 >
-> **Remaining before "all High done":** H2 (secure-cookie auth migration) and the rest of H8
-> (sweep the object-overload of getRequiredOrg across all service call sites). Both are
-> multi-day and need a running app + DB to verify safely — see the notes on each and the
-> "New Architecture Concerns" section. Shipping H2 partially would break login, so it is left
-> intact with a concrete plan rather than half-migrated.
+> **H2 note:** implemented with a dependency-free HttpOnly-cookie refresh flow + token-reuse
+> revocation; unit-verified and both builds pass, but the end-to-end cookie handshake was not
+> exercised against a live browser+DB here — a login/refresh/logout smoke test is recommended
+> before release (also applies to H6's global guard). **H8 note:** completed via a cached
+> userId→org resolution rather than churning ~35 service signatures.
 
 ---
 
@@ -206,18 +206,19 @@ pagination (offset/limit). Backend orders spec green; both builds ✅; orders pa
   token, revoke all of the user's refresh tokens.
 
 **Effort:** 2–3 days
-**Status:** Not Started — **deferred** (largest remaining High; needs running app to verify safely)
-**Plan (for the next session):**
-1. Backend `login`/`refresh`: also set the refresh token as an `HttpOnly; Secure; SameSite=Lax`
-   cookie (`res.cookie`), keep returning the access token in the body. CORS `credentials` is
-   already enabled.
-2. `refresh`/`logout`: read the refresh token from the cookie (fallback to body during rollout).
-3. Add a `tokenFamilyId` to `refresh_tokens`; on presentation of a valid-signature but
-   unknown/rotated token, delete the whole family (reuse detection).
-4. Frontend `api.ts`: stop persisting `refresh_token` in localStorage; rely on the cookie for
-   refresh; keep the access token in memory (or short-lived storage).
-Left intact rather than half-migrated — a partial cookie switch would break login.
-**Verification:** —
+**Status:** Completed — commits `feat(auth): …HttpOnly cookie + reuse detection` + `feat(auth-ui): …`
+**Verification:** New dependency-free `refresh-cookie.ts` sets/reads/clears an `HttpOnly`,
+`SameSite=Lax`, path-scoped refresh cookie (Secure in prod). `login`/`refresh`/`logout` and
+`invitations/accept` use it; refresh reads cookie-first with a body fallback. Reuse detection:
+a valid-signature refresh token whose hash is absent revokes the user's whole token family and
+audit-logs it (unit-tested). Frontend `api.ts` refreshes with no body + `withCredentials`; the
+four login-type pages no longer persist `refresh_token`. auth+invitations specs green (18);
+both builds ✅.
+**Residual risk:** the browser↔server cookie handshake wasn't exercised end-to-end here (no live
+app). For a fully cross-site prod split (app.x / api.y as different registrable domains) the
+cookie needs `SameSite=None; Secure` — noted in `refresh-cookie.ts`. Smoke-test before release.
+**Note:** existing users with a localStorage-only session will be forced to re-login once (they
+have no cookie yet) — expected for a security migration.
 
 ### [x] H3 — AI-order webhook: per-IP throttle drops real orders; idempotency marks completed before enqueue
 
@@ -316,7 +317,7 @@ against a live server is recommended before release.
 (O(1)) instead of a blocking `KEYS` scan; cache key includes version + `showDeleted` scope.
 Removed the `any`-cast into ioredis (−1 eslint-disable). Menus spec updated + green; build ✅.
 
-### [~] H8 — Redundant per-request DB lookups for org resolution
+### [x] H8 — Redundant per-request DB lookups for org resolution
 
 **Where:** `apps/backend/src/billing/billing.service.ts` (`getRequiredOrg`) + callers
 
@@ -329,14 +330,16 @@ Removed the `any`-cast into ioredis (−1 eslint-disable). Menus spec updated + 
   controllers into services instead of re-querying by `userId`.
 
 **Effort:** 2 days
-**Status:** In Progress — commit `perf(billing): use JWT-resolved org in PlanLimitGuard`
-**Verification (partial):** `PlanLimitGuard` now passes the request user object to
-`getRequiredOrg`, which short-circuits on the JWT-carried `organizationId` (no users lookup).
-Guard spec green; build ✅.
-**Remaining:** sweep the same object-overload through the hot service methods (orders, menus,
-billing, analytics) that currently call `getRequiredOrg(userId)`; add a short-TTL cache to
-`usersService.findOneById` used by `JwtStrategy` for revocation-safe request auth. Deferred —
-touches many signatures + specs; best done as its own reviewed change.
+**Status:** Completed — commits `perf(billing): use JWT-resolved org in PlanLimitGuard` +
+`perf(billing): cache userId→org resolution`
+**Verification:** `getRequiredOrg` short-circuits on the JWT-carried org (object overload; used
+by PlanLimitGuard), and for the string-userId path used across ~35 service call sites it now
+caches the resolution for 60s and selects only `organizationId`. This removes the repeated
+per-request users-table queries universally, in one file, without churning every service
+signature. Billing specs green; build ✅.
+**Trade-off:** an org reassignment is visible after ≤60s (acceptable — the JWT itself pins org
+for 15 min). A future refactor could still pass the user object through service signatures to
+avoid even the cache read.
 
 ### [x] H9 — Platform-admin org impersonation is unvalidated and unaudited
 
@@ -398,8 +401,8 @@ path is removed. Build ✅.
 ### [ ] M13 — Sidebar never highlights top-level items (`/calls`, `/dashboard`)
 **Where:** `DashboardLayout.tsx:124` · **Fix:** match top-level keys too, pick longest prefix match. · **Effort:** 1 h · **Status:** Not Started
 
-### [ ] M14 — Logout doesn't clear tenant context (`selectedOrgId`/`selectedLocationId`)
-**Where:** `DashboardLayout.tsx` (logout handler) · **Impact:** next login on shared terminal inherits previous tenant; stale `orgId` sent by API interceptor. · **Effort:** 1 h · **Status:** Not Started
+### [x] M14 — Logout doesn't clear tenant context (`selectedOrgId`/`selectedLocationId`)
+**Where:** `DashboardLayout.tsx` (logout handler) · **Impact:** next login on shared terminal inherits previous tenant; stale `orgId` sent by API interceptor. · **Effort:** 1 h · **Status:** Completed (folded into H2 frontend commit) — logout now clears `selectedOrgId`/`selectedLocationId`.
 
 ### [ ] M15 — `LocationContext` parses JWT once at mount (stale role after login)
 **Where:** `LocationContext.tsx:54` · **Fix:** derive role reactively (context refresh on auth change). · **Effort:** 0.5 day · **Status:** Not Started
@@ -465,6 +468,7 @@ and both builds must stay green.
 | 2026-07-04 | Baseline | BE 142e / FE 45e | BE ✅ FE ✅ | 72 pass / 22 fail | Pre-existing failures documented above |
 | 2026-07-04 | C1–C6 + M1 (Critical done) | clean on touched files | BE ✅ | 94 pass / 8 fail | 8 remaining = pre-existing heartbeat/stripe/telnyx spec rot (L8); +11 new tests added; no regressions |
 | 2026-07-04 | H1,H3,H4,H5,H6,H7,H8(partial),H9,M8 | clean on touched files; BE 142→128e; FE 45e (unchanged) | BE ✅ FE ✅ | 97 pass / 8 fail | Same 3 pre-existing suites fail — zero regressions from High work; +6 new tests (telnyx-sig, plan-limit, global-guard) |
+| 2026-07-04 | H2, H8 (complete), M14 — **all High done** | clean on touched files | BE ✅ FE ✅ | 97 pass / 8 fail | HttpOnly-cookie refresh + reuse detection; org-resolution cache; same 3 pre-existing suites — zero regressions |
 
 ## New Architecture Concerns (discovered during implementation)
 
