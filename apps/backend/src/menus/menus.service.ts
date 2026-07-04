@@ -18,7 +18,6 @@ import { Queue } from 'bullmq';
 import { AuditService } from '../common/services/audit.service';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
-import { Redis } from 'ioredis';
 import { notDeleted } from '../database/db.utils';
 import { TelnyxService } from '../telnyx/telnyx.service';
 import { AnalyticsService } from '../analytics/analytics.service';
@@ -47,7 +46,9 @@ export class MenusService {
   }
 
   async clearMenuCache(userId: string): Promise<{ cleared: boolean }> {
-    await this.cacheManager.clear();
+    // Scope the clear to the caller's org — never flush every tenant's cache (H7).
+    const orgId = await this.billingService.getRequiredOrg(userId);
+    await this.invalidateMenuCache(orgId);
     return { cleared: true };
   }
 
@@ -58,7 +59,12 @@ export class MenusService {
   ): Promise<PaginatedResponseDto<unknown>> {
     const { offset = 0, limit = 20 } = pagination;
 
-    const cacheKey = `menu:${orgId}:${locationId || 'all'}:${offset}:${limit}`;
+    // Version-stamped, fully-qualified cache key: org-scoped, includes showDeleted so admin
+    // "show deleted" views and customer views never poison each other, and carries a version
+    // that invalidation bumps — so we never need a blocking Redis KEYS scan (H7).
+    const version = await this.getMenuCacheVersion(orgId);
+    const scope = pagination.showDeleted ? 'withDeleted' : 'active';
+    const cacheKey = `menu:${orgId}:v${version}:${scope}:${locationId || 'all'}:${offset}:${limit}`;
     const cached =
       await this.cacheManager.get<PaginatedResponseDto<unknown>>(cacheKey);
     if (cached) {
@@ -204,16 +210,24 @@ export class MenusService {
     return result;
   }
 
+  /** Current cache-version stamp for an org's menu (0 when never invalidated). */
+  private async getMenuCacheVersion(orgId: string): Promise<number> {
+    const v = await this.cacheManager.get<number>(`menu:${orgId}:ver`);
+    return typeof v === 'number' ? v : 0;
+  }
+
+  /**
+   * Invalidate an org's menu cache by bumping its version stamp — a single O(1) write. Old
+   * entries fall out of reach immediately and expire via their TTL. No cross-tenant flush and
+   * no blocking KEYS scan on the shared Redis (H7).
+   */
   private async invalidateMenuCache(orgId: string) {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-    const store = (this.cacheManager as any).store as { client?: Redis };
-    const client = store.client;
-    if (client && typeof client.keys === 'function') {
-      const keys = await client.keys(`menu:${orgId}:*`);
-      if (keys.length > 0) {
-        await client.del(...keys);
-      }
-    }
+    // Version TTL must outlive the data TTL (1h) so entries can't be revived by a reset stamp.
+    await this.cacheManager.set(
+      `menu:${orgId}:ver`,
+      Date.now(),
+      7 * 24 * 3600000,
+    );
   }
 
   async createCategory(userId: string, name: string, locationId?: string) {

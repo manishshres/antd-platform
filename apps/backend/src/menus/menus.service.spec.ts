@@ -112,7 +112,10 @@ describe('MenusService', () => {
         total: 1,
         hasMore: false,
       };
-      cacheManagerMock.get.mockResolvedValueOnce(cachedData);
+      // First get resolves the version stamp (null → 0); second is the data key.
+      cacheManagerMock.get
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(cachedData);
 
       const result = await service.getMenuByOrg('org-123', {
         offset: 0,
@@ -120,7 +123,7 @@ describe('MenusService', () => {
       });
 
       expect(cacheManagerMock.get).toHaveBeenCalledWith(
-        'menu:org-123:all:0:10',
+        'menu:org-123:v0:active:all:0:10',
       );
       expect(dbMock.select).not.toHaveBeenCalled();
       expect(result).toEqual(cachedData);
@@ -146,11 +149,11 @@ describe('MenusService', () => {
       });
 
       expect(cacheManagerMock.get).toHaveBeenCalledWith(
-        'menu:org-123:all:0:10',
+        'menu:org-123:v0:active:all:0:10',
       );
       expect(dbMock.select).toHaveBeenCalledTimes(2);
       expect(cacheManagerMock.set).toHaveBeenCalledWith(
-        'menu:org-123:all:0:10',
+        'menu:org-123:v0:active:all:0:10',
         { data: [], total: 0, hasMore: false },
         3600000,
       );
@@ -170,19 +173,16 @@ describe('MenusService', () => {
         returning: jest.fn().mockResolvedValue([newCategory]),
       };
       dbMock.insert.mockReturnValueOnce(qb);
-      cacheManagerMock.store.client.keys.mockResolvedValueOnce([
-        'menu:org-123:all:0:10',
-      ]);
 
       const result = await service.createCategory('user-1', 'Desserts');
 
       expect(billingServiceMock.getRequiredOrg).toHaveBeenCalledWith('user-1');
       expect(dbMock.insert).toHaveBeenCalled();
-      expect(cacheManagerMock.store.client.keys).toHaveBeenCalledWith(
-        'menu:org-123:*',
-      );
-      expect(cacheManagerMock.store.client.del).toHaveBeenCalledWith(
-        'menu:org-123:all:0:10',
+      // Invalidation bumps the per-org version stamp (no cross-tenant flush / KEYS scan).
+      expect(cacheManagerMock.set).toHaveBeenCalledWith(
+        'menu:org-123:ver',
+        expect.any(Number),
+        expect.any(Number),
       );
       expect(auditServiceMock.log).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -204,18 +204,13 @@ describe('MenusService', () => {
       };
       dbMock.select.mockReturnValueOnce(selectQb);
 
-      cacheManagerMock.store.client.keys.mockResolvedValueOnce([
-        'menu:org-123:some:0:20',
-      ]);
-
       await service.deleteCategory('user-1', 'cat-1');
 
       expect(dbMock.transaction).toHaveBeenCalled();
-      expect(cacheManagerMock.store.client.keys).toHaveBeenCalledWith(
-        'menu:org-123:*',
-      );
-      expect(cacheManagerMock.store.client.del).toHaveBeenCalledWith(
-        'menu:org-123:some:0:20',
+      expect(cacheManagerMock.set).toHaveBeenCalledWith(
+        'menu:org-123:ver',
+        expect.any(Number),
+        expect.any(Number),
       );
       expect(auditServiceMock.log).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -241,9 +236,6 @@ describe('MenusService', () => {
 
       dbMock.select.mockReturnValueOnce(qbSelect);
       dbMock.insert.mockReturnValueOnce(qbInsert);
-      cacheManagerMock.store.client.keys.mockResolvedValueOnce([
-        'menu:org-123:some:0:20',
-      ]);
 
       const result = await service.createMenuItem(
         'user-1',
@@ -255,7 +247,11 @@ describe('MenusService', () => {
       expect(auditServiceMock.log).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'menu.item.create' }),
       );
-      expect(cacheManagerMock.store.client.del).toHaveBeenCalled();
+      expect(cacheManagerMock.set).toHaveBeenCalledWith(
+        'menu:org-123:ver',
+        expect.any(Number),
+        expect.any(Number),
+      );
       expect(result.id).toBe('item-1');
     });
 
@@ -265,15 +261,16 @@ describe('MenusService', () => {
         returning: jest.fn().mockResolvedValue([{ id: 'mod-1', name: 'Size' }]),
       };
       dbMock.insert.mockReturnValueOnce(qbInsert);
-      cacheManagerMock.store.client.keys.mockResolvedValueOnce([
-        'menu:org-123:some:0:20',
-      ]);
 
       const result = await service.createModifierGroup('user-1', 'Size');
       expect(auditServiceMock.log).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'menu.modifier_group.create' }),
       );
-      expect(cacheManagerMock.store.client.del).toHaveBeenCalled();
+      expect(cacheManagerMock.set).toHaveBeenCalledWith(
+        'menu:org-123:ver',
+        expect.any(Number),
+        expect.any(Number),
+      );
       expect(result.id).toBe('mod-1');
     });
   });
