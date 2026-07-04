@@ -8,13 +8,16 @@ import { AnalyticsService } from '../analytics/analytics.service';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { DRIZZLE } from '../database/database.module';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
+import { eq } from 'drizzle-orm';
 import * as schema from '../database/schema';
 
 export interface ImportRecordingPayload {
   callSessionId: string;
   recordingId: string;
-  organizationId: string;
-  locationId: string;
+  /** The dialed (destination) number — used to resolve the owning tenant. */
+  toNumber?: string;
+  organizationId?: string;
+  locationId?: string;
 }
 
 @Processor('recordings-queue')
@@ -42,21 +45,23 @@ export class RecordingsProcessor extends WorkerHost {
   }
 
   async process(job: Job<ImportRecordingPayload>): Promise<void> {
-    const { callSessionId, recordingId } = job.data;
+    const { callSessionId, recordingId, toNumber } = job.data;
     let { organizationId, locationId } = job.data;
     this.logger.log(`Processing recording import for session ${callSessionId}`);
 
+    // Tenant isolation (C2): resolve the owning location from the dialed number instead of
+    // defaulting to an arbitrary "first location", which would leak recordings across tenants.
     if (!organizationId || !locationId) {
-      const [loc] = await this.db.select().from(schema.locations).limit(1);
-      if (loc) {
-        organizationId = loc.organizationId;
-        locationId = loc.id;
-      } else {
+      const resolved = await this.resolveTenantByNumber(toNumber);
+      if (!resolved) {
         this.logger.warn(
-          'No locations found to assign recording to. Skipping.',
+          `Could not resolve owning tenant for recording ${recordingId} ` +
+            `(session ${callSessionId}, to=${toNumber ?? 'unknown'}). Skipping to avoid cross-tenant assignment.`,
         );
         return;
       }
+      organizationId = resolved.organizationId;
+      locationId = resolved.locationId;
     }
 
     try {
@@ -232,5 +237,48 @@ export class RecordingsProcessor extends WorkerHost {
 
       throw err;
     }
+  }
+
+  /**
+   * Resolve the tenant that owns a dialed number. Checks the provisioned
+   * `org_phone_numbers` mapping first, then falls back to `locations.phoneNumber`.
+   * Returns null when the number cannot be matched — the caller then skips the job
+   * rather than assigning the recording to an arbitrary tenant.
+   */
+  private async resolveTenantByNumber(
+    toNumber: string | undefined,
+  ): Promise<{ organizationId: string; locationId: string } | null> {
+    if (!toNumber) return null;
+
+    const [mapped] = await this.db
+      .select({
+        organizationId: schema.orgPhoneNumbers.organizationId,
+        locationId: schema.orgPhoneNumbers.locationId,
+      })
+      .from(schema.orgPhoneNumbers)
+      .where(eq(schema.orgPhoneNumbers.phoneNumber, toNumber))
+      .limit(1);
+
+    if (mapped?.locationId) {
+      return {
+        organizationId: mapped.organizationId,
+        locationId: mapped.locationId,
+      };
+    }
+
+    const [loc] = await this.db
+      .select({
+        organizationId: schema.locations.organizationId,
+        locationId: schema.locations.id,
+      })
+      .from(schema.locations)
+      .where(eq(schema.locations.phoneNumber, toNumber))
+      .limit(1);
+
+    if (loc) {
+      return { organizationId: loc.organizationId, locationId: loc.locationId };
+    }
+
+    return null;
   }
 }
