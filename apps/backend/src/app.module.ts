@@ -43,6 +43,9 @@ import { CacheModule } from '@nestjs/cache-manager';
 import { AuditLogsModule } from './audit-logs/audit-logs.module';
 import * as redisStore from 'cache-manager-ioredis';
 import { validateEnv } from './config/env.validation';
+import { APP_GUARD } from '@nestjs/core';
+import { GlobalJwtAuthGuard } from './auth/guards/global-jwt-auth.guard';
+import { RolesGuard } from './auth/guards/roles.guard';
 
 @Module({
   imports: [
@@ -125,6 +128,13 @@ import { validateEnv } from './config/env.validation';
     AuditLogsModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    // Global authn/authz (H6): every route requires a valid JWT unless marked @Public();
+    // RolesGuard runs after and enforces @Roles() metadata where present. Registration order
+    // matters — JWT must populate req.user before RolesGuard reads it.
+    { provide: APP_GUARD, useClass: GlobalJwtAuthGuard },
+    { provide: APP_GUARD, useClass: RolesGuard },
+  ],
 })
 export class AppModule {}

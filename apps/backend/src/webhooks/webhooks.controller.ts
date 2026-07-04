@@ -26,12 +26,14 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { createHash } from 'crypto';
 import { verifyTelnyxSignature } from './telnyx-signature';
+import { Public } from '../common/decorators/public.decorator';
 
 interface RequestWithRawBody extends Request {
   rawBody?: Buffer;
 }
 
 @ApiTags('Webhooks')
+@Public() // Authenticated by API key / provider signature, not JWT (H6).
 @Controller('webhooks')
 export class WebhooksController {
   private readonly logger = new Logger(WebhooksController.name);

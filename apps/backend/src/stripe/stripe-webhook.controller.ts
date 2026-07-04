@@ -12,12 +12,14 @@ import { ConfigService } from '@nestjs/config';
 import { Request } from 'express';
 import { StripeService } from './stripe.service';
 import { StripeWebhookService } from './stripe-webhook.service';
+import { Public } from '../common/decorators/public.decorator';
 
 interface RequestWithRawBody extends Request {
   rawBody?: Buffer;
 }
 
 @ApiTags('Stripe Webhook')
+@Public() // Verified by Stripe signature, not JWT (H6).
 @Controller('stripe')
 export class StripeWebhookController {
   constructor(

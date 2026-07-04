@@ -17,9 +17,11 @@ import { ApiKeyAuthGuard } from './guards/api-key-auth.guard';
 import { OrdersService } from '../orders/orders.service';
 import { CreateOrderDto } from '../orders/dto/create-order.dto';
 import { ThrottlerGuard, Throttle } from '@nestjs/throttler';
+import { Public } from '../common/decorators/public.decorator';
 
 @ApiTags('Public API - Orders')
 @ApiSecurity('x-api-key')
+@Public() // Authenticated by API key, not JWT (H6).
 @UseGuards(ApiKeyAuthGuard, ThrottlerGuard)
 @Throttle({ default: { limit: 60, ttl: 60000 } })
 @Controller({ version: '2', path: 'orders' })
