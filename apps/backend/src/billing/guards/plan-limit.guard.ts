@@ -44,8 +44,9 @@ export class PlanLimitGuard implements CanActivate {
       return false;
     }
 
-    // Get or create organization
-    const organizationId = await this.billingService.getRequiredOrg(user.id);
+    // Prefer the org already resolved on the JWT payload; only fall back to a DB lookup when
+    // it is absent (H8) — the object overload of getRequiredOrg short-circuits when present.
+    const organizationId = await this.billingService.getRequiredOrg(user);
 
     // Fetch subscription
     const subscriptions = await this.db
