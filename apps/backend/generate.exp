@@ -1,0 +1,9 @@
+#!/usr/bin/expect
+spawn npx drizzle-kit generate
+expect {
+    "from another column?" {
+        send "\r"
+        exp_continue
+    }
+    eof
+}

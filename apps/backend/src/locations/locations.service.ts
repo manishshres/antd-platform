@@ -1,0 +1,277 @@
+import {
+  Injectable,
+  Inject,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
+import { NodePgDatabase } from 'drizzle-orm/node-postgres';
+import { eq, and } from 'drizzle-orm';
+import { DRIZZLE } from '../database/database.module';
+import * as schema from '../database/schema';
+import { TelnyxService } from '../telnyx/telnyx.service';
+import { AuditService } from '../common/services/audit.service';
+import { InvitationsService } from '../invitations/invitations.service';
+import { UpdateAiConfigDto } from './dto/update-ai-config.dto';
+import { AssignManagerDto } from './dto/assign-manager.dto';
+import { CreateLocationDto } from './dto/create-location.dto';
+import { UpdateLocationDto } from './dto/update-location.dto';
+import { notDeleted } from '../database/db.utils';
+import { generateUniqueSlug } from '../common/utils/slug.util';
+
+@Injectable()
+export class LocationsService {
+  constructor(
+    @Inject(DRIZZLE)
+    private readonly db: NodePgDatabase<typeof schema>,
+    private readonly telnyxService: TelnyxService,
+    private readonly auditService: AuditService,
+    private readonly invitationsService: InvitationsService,
+  ) {}
+
+  async listLocations(organizationId: string) {
+    return this.db
+      .select()
+      .from(schema.locations)
+      .where(
+        notDeleted(
+          schema.locations,
+          eq(schema.locations.organizationId, organizationId),
+        ),
+      )
+      .orderBy(schema.locations.createdAt);
+  }
+
+  async createLocation(organizationId: string, dto: CreateLocationDto) {
+    const slug = generateUniqueSlug(dto.name);
+    const [location] = await this.db
+      .insert(schema.locations)
+      .values({
+        organizationId,
+        slug,
+        ...dto,
+      })
+      .returning();
+
+    void this.auditService.log({
+      action: 'location.created',
+      organizationId,
+      entityId: location.id,
+      entityType: 'locations',
+      newValue: { ...location },
+    });
+
+    return location;
+  }
+
+  async updateLocation(
+    organizationId: string,
+    locationId: string,
+    dto: UpdateLocationDto,
+  ) {
+    const [location] = await this.db
+      .select()
+      .from(schema.locations)
+      .where(
+        notDeleted(
+          schema.locations,
+          and(
+            eq(schema.locations.id, locationId),
+            eq(schema.locations.organizationId, organizationId),
+          ),
+        ),
+      )
+      .limit(1);
+
+    if (!location) {
+      throw new NotFoundException('Location not found in your organization.');
+    }
+
+    const [updated] = await this.db
+      .update(schema.locations)
+      .set({
+        ...dto,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.locations.id, locationId))
+      .returning();
+
+    void this.auditService.log({
+      action: 'location.updated',
+      organizationId,
+      entityId: locationId,
+      entityType: 'locations',
+      previousValue: { ...location },
+      newValue: { ...updated },
+    });
+
+    return updated;
+  }
+
+  async updateAiConfig(
+    organizationId: string,
+    locationId: string,
+    dto: UpdateAiConfigDto,
+  ) {
+    const [location] = await this.db
+      .select()
+      .from(schema.locations)
+      .where(
+        and(
+          eq(schema.locations.id, locationId),
+          eq(schema.locations.organizationId, organizationId),
+        ),
+      )
+      .limit(1);
+
+    if (!location) {
+      throw new NotFoundException('Location not found in your organization.');
+    }
+
+    const newAiSettings = {
+      ...((location.aiSettings as Record<string, any>) || {}),
+      ...(dto.aiSettings || {}),
+    };
+
+    await this.db
+      .update(schema.locations)
+      .set({ aiSettings: newAiSettings, updatedAt: new Date() })
+      .where(eq(schema.locations.id, locationId));
+
+    if (location.telnyxAssistantId) {
+      // Sync to Telnyx immediately (synchronous non-blocking or just await)
+      // Since they didn't specify BullMQ strict requirement, await is fine.
+
+      const [org] = await this.db
+        .select()
+        .from(schema.organizations)
+        .where(eq(schema.organizations.id, organizationId))
+        .limit(1);
+
+      // Build a dynamic prompt
+      let dynamicInstructions = '';
+      if (newAiSettings.greeting) {
+        dynamicInstructions += `\nGreeting: ${newAiSettings.greeting}`;
+      }
+      if (newAiSettings.menuUrl) {
+        dynamicInstructions += `\nMenu URL: ${newAiSettings.menuUrl}`;
+      }
+
+      const systemPrompt = `You are a helpful AI assistant for ${org.name}, located in ${location.city || ''}, ${location.state || ''}.
+The business name is ${org.name}.
+Always be polite and assist customers with their inquiries and orders.${dynamicInstructions}`;
+
+      await this.telnyxService.updateAssistant(location.telnyxAssistantId, {
+        instructions: systemPrompt,
+      });
+
+      if (newAiSettings.dynamicVariables && Object.keys(newAiSettings.dynamicVariables).length > 0) {
+        await this.telnyxService.updateAssistantDynamicVariable(
+          location.telnyxAssistantId,
+          newAiSettings.dynamicVariables,
+        );
+      }
+    }
+
+    void this.auditService.log({
+      action: 'location.ai_config.updated',
+      organizationId,
+      entityId: locationId,
+      entityType: 'locations',
+      previousValue: location.aiSettings as Record<string, any>,
+      newValue: newAiSettings,
+    });
+
+    return { message: 'AI Config updated and synced.' };
+  }
+
+  async assignManager(
+    organizationId: string,
+    locationId: string,
+    inviterId: string,
+    dto: AssignManagerDto,
+  ) {
+    const [location] = await this.db
+      .select()
+      .from(schema.locations)
+      .where(
+        and(
+          eq(schema.locations.id, locationId),
+          eq(schema.locations.organizationId, organizationId),
+        ),
+      )
+      .limit(1);
+
+    if (!location) {
+      throw new NotFoundException('Location not found in your organization.');
+    }
+
+    const [existingUser] = await this.db
+      .select()
+      .from(schema.users)
+      .where(eq(schema.users.email, dto.email))
+      .limit(1);
+
+    if (existingUser) {
+      if (existingUser.organizationId !== organizationId) {
+        throw new BadRequestException('User belongs to another organization.');
+      }
+
+      // Update existing user to manager and assign to this location
+      await this.db
+        .update(schema.users)
+        .set({
+          role: 'manager',
+          locationId: locationId,
+        })
+        .where(eq(schema.users.id, existingUser.id));
+
+      void this.auditService.log({
+        action: 'location.manager.assigned',
+        organizationId,
+        entityId: locationId,
+        userId: inviterId,
+        newValue: { email: dto.email, role: 'manager' },
+      });
+
+      return { message: 'Existing user assigned as manager.' };
+    }
+
+    // User doesn't exist, create an invitation scoped to this location
+    return this.invitationsService.createInvitation(organizationId, inviterId, {
+      email: dto.email,
+      role: 'manager',
+      locationId,
+    });
+  }
+
+  async deleteLocation(organizationId: string, locationId: string) {
+    const [location] = await this.db
+      .select()
+      .from(schema.locations)
+      .where(
+        and(
+          eq(schema.locations.id, locationId),
+          eq(schema.locations.organizationId, organizationId),
+        ),
+      )
+      .limit(1);
+
+    if (!location) {
+      throw new NotFoundException('Location not found.');
+    }
+
+    await this.db
+      .delete(schema.locations)
+      .where(eq(schema.locations.id, locationId));
+
+    void this.auditService.log({
+      action: 'location.deleted',
+      organizationId,
+      entityId: locationId,
+      entityType: 'locations',
+      previousValue: { name: location.name },
+    });
+
+    return { message: 'Location deleted successfully.' };
+  }
+}

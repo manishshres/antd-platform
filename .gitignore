@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Builds
+dist/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+playwright-report/
+test-results/
+
+# Local data & secrets — never commit
+.env
+.env.*
+!.env.example
+apps/backend/postgres_data/
+apps/backend/mosquitto.passwd
+
+# Logs / OS
+*.log
+.DS_Store
+.git.backup-pre-monorepo/

@@ -1,0 +1,205 @@
+"use client";
+
+import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import { api } from "@/lib/api";
+
+export interface Location {
+  id: string;
+  name: string;
+  slug: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  postalCode?: string;
+  timezone?: string;
+  phoneNumber?: string;
+  status: string;
+  aiSettings?: any;
+}
+
+export interface Organization {
+  id: string;
+  name: string;
+  slug: string;
+  status: string;
+}
+
+interface LocationContextType {
+  locations: Location[];
+  selectedLocation: Location | null;
+  selectedLocationId: string | null;
+  setSelectedLocationId: (id: string) => void;
+  organizations: Organization[];
+  selectedOrgId: string | null;
+  setSelectedOrgId: (id: string) => void;
+  loading: boolean;
+  refreshLocations: () => Promise<void>;
+  userRole: string;
+}
+
+const LocationContext = createContext<LocationContextType | undefined>(undefined);
+
+export function LocationProvider({ children }: { children: React.ReactNode }) {
+  const [locations, setLocations] = useState<Location[]>([]);
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [selectedLocationId, setSelectedLocationIdState] = useState<string | null>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("selectedLocationId");
+    }
+    return null;
+  });
+  const [selectedOrgId, setSelectedOrgIdState] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [isPlatformAdmin] = useState(() => {
+    if (typeof window !== "undefined") {
+      const token = localStorage.getItem("access_token");
+      if (token) {
+        try {
+          const payload = token.split(".")[1];
+          const decoded = JSON.parse(window.atob(payload.replace(/-/g, "+").replace(/_/g, "/")));
+          const r = decoded.role || "user";
+          return r === "platform_admin";
+        } catch {}
+      }
+    }
+    return false;
+  });
+
+  const [userRole] = useState(() => {
+    if (typeof window !== "undefined") {
+      const token = localStorage.getItem("access_token");
+      if (token) {
+        try {
+          const payload = token.split(".")[1];
+          const decoded = JSON.parse(window.atob(payload.replace(/-/g, "+").replace(/_/g, "/")));
+          return decoded.role || "user";
+        } catch {}
+      }
+    }
+    return "user";
+  });
+
+  const fetchLocations = useCallback(async (orgId?: string | null) => {
+    try {
+      let url = "/locations";
+      if (orgId) {
+        url += `?orgId=${orgId}`;
+      }
+      const { data } = await api.get<Location[]>(url);
+      setLocations(data);
+      
+      if (data.length > 0) {
+        const savedId = localStorage.getItem("selectedLocationId");
+        if (userRole === "manager") {
+          // Manager is locked to their single location (assuming they only get 1 from API)
+          setSelectedLocationIdState(data[0].id);
+          localStorage.setItem("selectedLocationId", data[0].id);
+        } else if (savedId && data.find((loc) => loc.id === savedId)) {
+          setSelectedLocationIdState(savedId);
+        } else {
+          setSelectedLocationIdState(data[0].id);
+          localStorage.setItem("selectedLocationId", data[0].id);
+        }
+      } else {
+        setSelectedLocationIdState(null);
+      }
+    } catch (err) {
+      console.error("Failed to fetch locations", err);
+    }
+  }, [userRole]);
+
+  const fetchOrganizations = useCallback(async (): Promise<string | undefined> => {
+    try {
+      const { data } = await api.get<Organization[]>("/admin/organizations");
+      setOrganizations(data);
+      if (data.length > 0) {
+        const savedOrgId = localStorage.getItem("selectedOrgId");
+        if (savedOrgId === "undefined" || savedOrgId === "null") {
+          localStorage.removeItem("selectedOrgId");
+        }
+        if (savedOrgId && savedOrgId !== "undefined" && savedOrgId !== "null" && data.find((org) => org.id === savedOrgId)) {
+          setSelectedOrgIdState(savedOrgId);
+          return savedOrgId;
+        } else {
+          setSelectedOrgIdState(data[0].id);
+          localStorage.setItem("selectedOrgId", data[0].id);
+          return data[0].id;
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch organizations", err);
+    }
+    return undefined;
+  }, []);
+
+  useEffect(() => {
+    const token = localStorage.getItem("access_token");
+    if (token) {
+      setLoading(true);
+      const load = async () => {
+        let currentOrgId: string | undefined;
+        if (isPlatformAdmin) {
+          currentOrgId = await fetchOrganizations();
+          if (!currentOrgId) {
+            setLocations([]);
+            setLoading(false);
+            return;
+          }
+        }
+        await fetchLocations(currentOrgId);
+        setLoading(false);
+      };
+      load();
+    } else {
+      setLoading(false);
+    }
+  }, [fetchLocations, fetchOrganizations, isPlatformAdmin]);
+
+  const setSelectedLocationId = (id: string) => {
+    if (userRole === "manager") return; // locked
+    if (locations.find((loc) => loc.id === id)) {
+      setSelectedLocationIdState(id);
+      localStorage.setItem("selectedLocationId", id);
+    }
+  };
+
+  const setSelectedOrgId = (id: string) => {
+    if (organizations.find((org) => org.id === id)) {
+      setSelectedOrgIdState(id);
+      localStorage.setItem("selectedOrgId", id);
+      fetchLocations(id);
+    }
+  };
+
+  const selectedLocation = locations.find((loc) => loc.id === selectedLocationId) || null;
+
+  return (
+    <LocationContext.Provider
+      value={{
+        locations,
+        selectedLocation,
+        selectedLocationId,
+        setSelectedLocationId,
+        organizations,
+        selectedOrgId,
+        setSelectedOrgId,
+        loading,
+        refreshLocations: async () => {
+          await fetchLocations(selectedOrgId);
+        },
+        userRole,
+      }}
+    >
+      {children}
+    </LocationContext.Provider>
+  );
+}
+
+export function useLocation() {
+  const context = useContext(LocationContext);
+  if (context === undefined) {
+    throw new Error("useLocation must be used within a LocationProvider");
+  }
+  return context;
+}
