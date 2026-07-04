@@ -9,7 +9,7 @@ import { OnEvent } from '@nestjs/event-emitter';
 import { DRIZZLE } from '../database/database.module';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../database/schema';
-import { eq, and, inArray, count, isNull } from 'drizzle-orm';
+import { eq, and, inArray, count, isNull, desc } from 'drizzle-orm';
 import { BillingService } from '../billing/billing.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { GetOrdersDto } from './dto/get-orders.dto';
@@ -52,19 +52,21 @@ export class OrdersService {
       orgId = await this.billingService.getRequiredOrg(userId);
     }
 
-    const { offset = 0, limit = 20, locationId } = query;
+    const { offset = 0, limit = 20, locationId, status } = query;
 
-    const conditions = [];
+    const conditions = [isNull(schema.orders.deletedAt)];
     if (orgId) conditions.push(eq(schema.orders.organizationId, orgId));
     if (locationId) conditions.push(eq(schema.orders.locationId, locationId));
+    if (status) conditions.push(eq(schema.orders.status, status));
 
-    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+    const whereClause = and(...conditions);
 
     const data = await this.db
       .select()
       .from(schema.orders)
       .where(whereClause)
-      .orderBy(schema.orders.createdAt)
+      // Newest first — operators need the most recent orders at the top (H1).
+      .orderBy(desc(schema.orders.createdAt))
       .limit(limit)
       .offset(offset);
 
