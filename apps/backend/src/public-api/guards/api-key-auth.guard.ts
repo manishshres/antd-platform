@@ -37,6 +37,7 @@ export class ApiKeyAuthGuard implements CanActivate {
       .select({
         id: schema.apiKeys.id,
         organizationId: schema.apiKeys.organizationId,
+        expiresAt: schema.apiKeys.expiresAt,
       })
       .from(schema.apiKeys)
       .where(eq(schema.apiKeys.keyHash, keyHash))
@@ -44,6 +45,24 @@ export class ApiKeyAuthGuard implements CanActivate {
 
     if (key.length === 0) {
       throw new UnauthorizedException('Invalid API key');
+    }
+
+    // Reject expired keys (H4) — expiresAt was previously never checked.
+    if (key[0].expiresAt && new Date() > key[0].expiresAt) {
+      throw new UnauthorizedException('API key has expired');
+    }
+
+    // Reject keys belonging to suspended/archived organizations (H4).
+    const [org] = await this.db
+      .select({ status: schema.organizations.status })
+      .from(schema.organizations)
+      .where(eq(schema.organizations.id, key[0].organizationId))
+      .limit(1);
+
+    if (!org || org.status === 'suspended' || org.status === 'archived') {
+      throw new UnauthorizedException(
+        'Organization is inactive; API access is disabled.',
+      );
     }
 
     // Attach organizationId to request for use in controllers
