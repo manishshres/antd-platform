@@ -1,4 +1,10 @@
-import { Injectable, Inject, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  Inject,
+  NotFoundException,
+  ForbiddenException,
+  BadRequestException,
+} from '@nestjs/common';
 import { CurrentUserPayload } from '../common/decorators/current-user.decorator';
 import { DRIZZLE } from '../database/database.module';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
@@ -435,13 +441,17 @@ export class MenusService {
 
     if (user.role === 'platform_admin' || user.isPlatformAdmin) {
       if (!dtoOrgId) {
-        throw new BadRequestException('Platform admins must specify an orgId to import a menu.');
+        throw new BadRequestException(
+          'Platform admins must specify an orgId to import a menu.',
+        );
       }
       orgId = dtoOrgId;
       targetLocationId = dtoLocationId || undefined;
     } else if (user.role === 'manager') {
       if (!user.locationId) {
-        throw new ForbiddenException('Manager is not assigned to any location.');
+        throw new ForbiddenException(
+          'Manager is not assigned to any location.',
+        );
       }
       targetLocationId = user.locationId; // Force manager to their location
     }
@@ -453,13 +463,17 @@ export class MenusService {
     let finalUrl = url;
     if (!finalUrl) {
       if (!targetLocationId) {
-        throw new BadRequestException('URL is required if no location is specified.');
+        throw new BadRequestException(
+          'URL is required if no location is specified.',
+        );
       }
       const loc = await this.db.query.locations.findFirst({
-        where: eq(schema.locations.id, targetLocationId)
+        where: eq(schema.locations.id, targetLocationId),
       });
       if (!loc || !loc.menuImportSource) {
-        throw new BadRequestException('No menu sync URL or PDF configured for this location. Please set it in Settings.');
+        throw new BadRequestException(
+          'No menu sync URL or PDF configured for this location. Please set it in Settings.',
+        );
       }
       finalUrl = loc.menuImportSource;
     }
@@ -755,7 +769,33 @@ import { notDeleted } from '../database/db.utils';
     orders: { id: string; sortOrder: number }[],
   ) {
     const orgId = await this.billingService.getRequiredOrg(userId);
-    // Basic verification is skipped per item for perf, we just update. The user must be authenticated.
+
+    if (orders.length === 0) return { success: true };
+
+    // Tenant isolation: only reorder items belonging to the caller's org (resolved via their
+    // category). Verifying up-front rejects cross-tenant IDs instead of silently writing to
+    // another restaurant's menu.
+    const ids = orders.map((o) => o.id);
+    const ownedItems = await this.db
+      .select({ id: schema.menuItems.id })
+      .from(schema.menuItems)
+      .innerJoin(
+        schema.categories,
+        eq(schema.menuItems.categoryId, schema.categories.id),
+      )
+      .where(
+        and(
+          inArray(schema.menuItems.id, ids),
+          eq(schema.categories.organizationId, orgId),
+        ),
+      );
+
+    if (ownedItems.length !== ids.length) {
+      throw new NotFoundException(
+        'One or more menu items were not found in your organization.',
+      );
+    }
+
     await this.db.transaction(async (tx) => {
       for (const order of orders) {
         await tx
@@ -849,16 +889,19 @@ import { notDeleted } from '../database/db.utils';
     await this.invalidateMenuCache(orgId);
     return { success: true };
   }
-  async syncMenuToAI(orgId: string, locationId?: string): Promise<{ success: boolean; message: string }> {
+  async syncMenuToAI(
+    orgId: string,
+    locationId?: string,
+  ): Promise<{ success: boolean; message: string }> {
     const pagination: PaginationDto = { offset: 0, limit: 1000 };
     const menuData = await this.getMenuByOrg(orgId, pagination, locationId);
-    
+
     // Create a simplified representation of the menu for the AI to understand
     const cleanMenu = {
       organizationId: orgId,
       locationId: locationId || 'default',
       lastUpdated: new Date().toISOString(),
-      categories: (menuData.data as any[]).map(cat => ({
+      categories: (menuData.data as any[]).map((cat) => ({
         id: cat.id,
         name: cat.name,
         description: cat.description,
@@ -873,11 +916,11 @@ import { notDeleted } from '../database/db.utils';
             options: mod.options.map((opt: any) => ({
               id: opt.id,
               name: opt.name,
-              priceAdjustment: opt.priceAdjustment
-            }))
-          }))
-        }))
-      }))
+              priceAdjustment: opt.priceAdjustment,
+            })),
+          })),
+        })),
+      })),
     };
 
     const jsonString = JSON.stringify(cleanMenu, null, 2);
@@ -888,19 +931,26 @@ import { notDeleted } from '../database/db.utils';
 
     // Trigger the Telnyx embedding process
     const embedRes: any = await this.telnyxService.embedKnowledgeDocuments();
-    
+
     // Extract the bucket_id. Telnyx API might return it under data.id, data.bucket_id, or just the bucketName
     const bucketName = process.env.TELNYX_STORAGE_BUCKET || 'restaurant-menu';
-    const bucketId = embedRes?.data?.id || embedRes?.data?.bucket_id || embedRes?.bucket_id || bucketName;
+    const bucketId =
+      embedRes?.data?.id ||
+      embedRes?.data?.bucket_id ||
+      embedRes?.bucket_id ||
+      bucketName;
 
     // Find the target location to get its assistant ID
     const targetLocs = await this.db
-      .select({ id: schema.locations.id, telnyxAssistantId: schema.locations.telnyxAssistantId })
+      .select({
+        id: schema.locations.id,
+        telnyxAssistantId: schema.locations.telnyxAssistantId,
+      })
       .from(schema.locations)
       .where(
         locationId
           ? eq(schema.locations.id, locationId)
-          : eq(schema.locations.organizationId, orgId)
+          : eq(schema.locations.organizationId, orgId),
       )
       .limit(1);
 
@@ -911,7 +961,10 @@ import { notDeleted } from '../database/db.utils';
     const loc = targetLocs[0];
 
     // Link it to the AI Assistant
-    const newAssistantId = await this.telnyxService.createOrUpdateMenuAssistant(bucketId, loc.telnyxAssistantId || undefined);
+    const newAssistantId = await this.telnyxService.createOrUpdateMenuAssistant(
+      bucketId,
+      loc.telnyxAssistantId || undefined,
+    );
 
     // Save the new assistant ID if it changed
     if (newAssistantId && newAssistantId !== loc.telnyxAssistantId) {
@@ -921,6 +974,10 @@ import { notDeleted } from '../database/db.utils';
         .where(eq(schema.locations.id, loc.id));
     }
 
-    return { success: true, message: 'Menu synchronized to Telnyx AI Knowledge Base and linked to Assistant successfully.' };
+    return {
+      success: true,
+      message:
+        'Menu synchronized to Telnyx AI Knowledge Base and linked to Assistant successfully.',
+    };
   }
 }
