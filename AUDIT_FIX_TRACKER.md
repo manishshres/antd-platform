@@ -18,18 +18,26 @@ and a frontend `npm run build` — results are documented per item.
 | Category    | Complete | Total | Progress |
 |-------------|----------|-------|----------|
 | Critical    | 7        | 7     | 100%     |
-| High        | 0        | 9     | 0%       |
-| Medium      | 1        | 17    | 6%       |
+| High        | 7.5      | 9     | 83%      |
+| Medium      | 2        | 17    | 12%      |
 | Low         | 0        | 10    | 0%       |
 | Enhancement | 0        | 8     | 0%       |
-| **Overall** | **8**    | **51**| **16%**  |
+| **Overall** | **16.5** | **51**| **32%**  |
 
-Backend items: 8/28 complete (29%) · Frontend items: 0/17 complete (0%) · Infra items: 1/6 complete (17%)
+Backend items: 15/28 complete (54%) · Frontend items: 1.5/17 complete (9%) · Infra items: 1/6 complete (17%)
 
-> **Category 1 (Critical security) complete.** All 7 Critical findings fixed, verified, and
-> committed as small logical commits. Backend build green; backend test suite improved from
-> 72→94 passing (22→8 failing — the remaining 8 are pre-existing spec rot in heartbeat/stripe/
-> telnyx suites, tracked under L8, untouched by these fixes). M1 (console.log) folded into C4.
+> **Critical: 7/7 done. High: 7.5/9 done** (H1, H3, H4, H5, H6, H7, H9 complete; H8 partial;
+> only H2 fully deferred). Both apps build green. Backend tests improved 72→97 passing
+> (22→8 failing; the 8 are pre-existing spec rot in heartbeat/stripe/telnyx — tracked under L8,
+> untouched by these fixes and unchanged in count = zero regressions). Backend lint 142→128
+> errors. Every fix is a small logical commit with lint/build/test verification. M1 folded into
+> C4; M8 (orders deletedAt + status filter) folded into H1.
+>
+> **Remaining before "all High done":** H2 (secure-cookie auth migration) and the rest of H8
+> (sweep the object-overload of getRequiredOrg across all service call sites). Both are
+> multi-day and need a running app + DB to verify safely — see the notes on each and the
+> "New Architecture Concerns" section. Shipping H2 partially would break login, so it is left
+> intact with a concrete plan rather than half-migrated.
 
 ---
 
@@ -167,7 +175,7 @@ provisioning endpoints remains a follow-up (see New Concerns).
 
 ## High
 
-### [ ] H1 — Orders page broken: API contract mismatch + wrong sort order
+### [x] H1 — Orders page broken: API contract mismatch + wrong sort order
 
 **Where:** `apps/frontend/src/app/orders/page.tsx:109`, `apps/backend/src/orders/orders.service.ts`
 
@@ -179,8 +187,10 @@ provisioning endpoints remains a follow-up (see New Concerns).
 - Consume the paginated envelope; wire AntD Table to server-side pagination; `desc(createdAt)`.
 
 **Effort:** 0.5 day
-**Status:** Not Started
-**Verification:** —
+**Status:** Completed — commits `fix(orders): …` + `fix(orders-ui): …`
+**Verification:** Backend sorts `desc(createdAt)`, filters `isNull(deletedAt)`, adds a validated
+status filter (M8). Frontend reads `{ data, total }` and drives the AntD Table from server
+pagination (offset/limit). Backend orders spec green; both builds ✅; orders page lint clean.
 
 ### [ ] H2 — Refresh/access tokens in localStorage; no reuse detection
 
@@ -196,10 +206,20 @@ provisioning endpoints remains a follow-up (see New Concerns).
   token, revoke all of the user's refresh tokens.
 
 **Effort:** 2–3 days
-**Status:** Not Started
+**Status:** Not Started — **deferred** (largest remaining High; needs running app to verify safely)
+**Plan (for the next session):**
+1. Backend `login`/`refresh`: also set the refresh token as an `HttpOnly; Secure; SameSite=Lax`
+   cookie (`res.cookie`), keep returning the access token in the body. CORS `credentials` is
+   already enabled.
+2. `refresh`/`logout`: read the refresh token from the cookie (fallback to body during rollout).
+3. Add a `tokenFamilyId` to `refresh_tokens`; on presentation of a valid-signature but
+   unknown/rotated token, delete the whole family (reuse detection).
+4. Frontend `api.ts`: stop persisting `refresh_token` in localStorage; rely on the cookie for
+   refresh; keep the access token in memory (or short-lived storage).
+Left intact rather than half-migrated — a partial cookie switch would break login.
 **Verification:** —
 
-### [ ] H3 — AI-order webhook: per-IP throttle drops real orders; idempotency marks completed before enqueue
+### [x] H3 — AI-order webhook: per-IP throttle drops real orders; idempotency marks completed before enqueue
 
 **Where:** `apps/backend/src/webhooks/webhooks.controller.ts`
 
@@ -213,10 +233,12 @@ provisioning endpoints remains a follow-up (see New Concerns).
   `completed` in the processor, delete the row if enqueue fails.
 
 **Effort:** 1 day
-**Status:** Not Started
-**Verification:** —
+**Status:** Completed — commit `fix(webhooks): per-API-key throttling…`
+**Verification:** New `ApiKeyThrottlerGuard` keys the limit on `x-api-key` (60/min per org);
+idempotency row inserted `pending` and enqueue wrapped in try/catch that deletes the row on
+failure. Telnyx endpoint keeps IP throttle (120/min). webhooks.controller spec green; build ✅.
 
-### [ ] H4 — API keys never expire; suspended orgs keep API access
+### [x] H4 — API keys never expire; suspended orgs keep API access
 
 **Where:** `apps/backend/src/public-api/guards/api-key-auth.guard.ts`
 
@@ -227,10 +249,11 @@ provisioning endpoints remains a follow-up (see New Concerns).
 - Reject expired keys; reject keys of suspended/archived orgs.
 
 **Effort:** 2 hours
-**Status:** Not Started
-**Verification:** —
+**Status:** Completed — commit `fix(public-api): reject expired keys…`
+**Verification:** `ApiKeyAuthGuard` now checks `apiKeys.expiresAt` and the owning org's status;
+expired keys and suspended/archived orgs are rejected with 401. Build ✅.
 
-### [ ] H5 — Order creation: unscoped menu-item lookup; `locationId` never persisted
+### [x] H5 — Order creation: unscoped menu-item lookup; `locationId` never persisted
 
 **Where:** `apps/backend/src/orders/orders.service.ts` (`createOrderForOrg`)
 
@@ -244,10 +267,13 @@ provisioning endpoints remains a follow-up (see New Concerns).
   (single-location org fallback; webhook location hint when available).
 
 **Effort:** 1 day
-**Status:** Not Started
-**Verification:** —
+**Status:** Completed — commit `fix(orders): org-scope menu items…`
+**Verification:** Item lookup joins category→org and filters `deletedAt`/`isAvailable`;
+`resolveOrderLocation` sets `orders.locationId` (hint → item location → org's single location);
+usage recorded only when a location resolves (no more FK-violating `locationId || orgId`).
+Orders spec green; build ✅.
 
-### [ ] H6 — No global guards: security is opt-in per controller
+### [x] H6 — No global guards: security is opt-in per controller
 
 **Where:** `apps/backend/src/app.module.ts`
 
@@ -260,10 +286,18 @@ provisioning endpoints remains a follow-up (see New Concerns).
   apply throttling deliberately (auth/webhooks strict, sane default elsewhere).
 
 **Effort:** 1 day
-**Status:** Not Started
-**Verification:** —
+**Status:** Completed — commit `feat(auth): global JWT + roles guards…`
+**Verification:** `GlobalJwtAuthGuard` + `RolesGuard` registered as `APP_GUARD` (JWT first).
+Guard honors `@Public()` and allow-lists Prometheus `/metrics` (verified library mounts it).
+Public controllers marked `@Public`: app root, Stripe/Telnyx/AI webhooks, API-key public API v2;
+confirmed all auth flows (login/refresh/logout/reset/verify) are `@Public`. New guard spec (3)
+covers metrics allowlist, `@Public` bypass, passport delegation. Full suite: no new failures
+(same 3 pre-existing suites). Build ✅.
+**Residual risk:** not runtime-verified against a booted app (no DB/Redis here); the DI graph
+compiles and guard logic is unit-tested, but a smoke test of one protected + one public route
+against a live server is recommended before release.
 
-### [ ] H7 — Cache correctness: global clears, blocking KEYS scans, incomplete cache keys
+### [x] H7 — Cache correctness: global clears, blocking KEYS scans, incomplete cache keys
 
 **Where:** `apps/backend/src/menus/menus.service.ts`
 
@@ -277,10 +311,12 @@ provisioning endpoints remains a follow-up (see New Concerns).
   the key; org-scoped clear.
 
 **Effort:** 1 day
-**Status:** Not Started
-**Verification:** —
+**Status:** Completed — commit `fix(menus): version-stamped menu cache keys…`
+**Verification:** `clearMenuCache` is org-scoped; invalidation bumps a per-org version stamp
+(O(1)) instead of a blocking `KEYS` scan; cache key includes version + `showDeleted` scope.
+Removed the `any`-cast into ioredis (−1 eslint-disable). Menus spec updated + green; build ✅.
 
-### [ ] H8 — Redundant per-request DB lookups for org resolution
+### [~] H8 — Redundant per-request DB lookups for org resolution
 
 **Where:** `apps/backend/src/billing/billing.service.ts` (`getRequiredOrg`) + callers
 
@@ -293,10 +329,16 @@ provisioning endpoints remains a follow-up (see New Concerns).
   controllers into services instead of re-querying by `userId`.
 
 **Effort:** 2 days
-**Status:** Not Started
-**Verification:** —
+**Status:** In Progress — commit `perf(billing): use JWT-resolved org in PlanLimitGuard`
+**Verification (partial):** `PlanLimitGuard` now passes the request user object to
+`getRequiredOrg`, which short-circuits on the JWT-carried `organizationId` (no users lookup).
+Guard spec green; build ✅.
+**Remaining:** sweep the same object-overload through the hot service methods (orders, menus,
+billing, analytics) that currently call `getRequiredOrg(userId)`; add a short-TTL cache to
+`usersService.findOneById` used by `JwtStrategy` for revocation-safe request auth. Deferred —
+touches many signatures + specs; best done as its own reviewed change.
 
-### [ ] H9 — Platform-admin org impersonation is unvalidated and unaudited
+### [x] H9 — Platform-admin org impersonation is unvalidated and unaudited
 
 **Where:** `apps/backend/src/auth/strategies/jwt.strategy.ts:36`
 
@@ -308,8 +350,10 @@ provisioning endpoints remains a follow-up (see New Concerns).
 - Accept override from query only; validate UUID format; log the tenant switch.
 
 **Effort:** 1 day
-**Status:** Not Started
-**Verification:** —
+**Status:** Completed — commit `fix(auth): validate and audit platform-admin tenant override`
+**Verification:** `JwtStrategy` accepts the orgId override from the query string only, requires a
+well-formed UUID, and logs when an admin operates outside their home tenant. The body-smuggling
+path is removed. Build ✅.
 
 ---
 
@@ -336,8 +380,8 @@ provisioning endpoints remains a follow-up (see New Concerns).
 ### [ ] M7 — `deleteCategory` leaves child items live
 **Where:** `menus.service.ts` · **Impact:** orphaned active items under soft-deleted category. · **Fix:** cascade soft-delete/restore of items in the same transaction. · **Effort:** 2 h · **Status:** Not Started
 
-### [ ] M8 — Orders list: no `deletedAt` filter, no server-side status filter/search
-**Where:** `orders.service.ts` (`getOrders`) · **Fix:** add `isNull(deletedAt)`, status/search params to DTO. · **Effort:** 1 day · **Status:** Not Started
+### [x] M8 — Orders list: no `deletedAt` filter, no server-side status filter/search
+**Where:** `orders.service.ts` (`getOrders`) · **Fix:** added `isNull(deletedAt)` + validated `status` filter to GetOrdersDto (folded into H1). Full-text search still TODO. · **Effort:** 1 day · **Status:** Completed (search deferred)
 
 ### [ ] M9 — WS gateway CORS `origin: '*'`; three overlapping realtime channels
 **Where:** `events.gateway.ts` · **Fix:** restrict origin to FRONTEND_URL; consolidate on one realtime mechanism. · **Effort:** 0.5 day · **Status:** Not Started
@@ -420,6 +464,7 @@ and both builds must stay green.
 |------|------|------|-------|-------|-------|
 | 2026-07-04 | Baseline | BE 142e / FE 45e | BE ✅ FE ✅ | 72 pass / 22 fail | Pre-existing failures documented above |
 | 2026-07-04 | C1–C6 + M1 (Critical done) | clean on touched files | BE ✅ | 94 pass / 8 fail | 8 remaining = pre-existing heartbeat/stripe/telnyx spec rot (L8); +11 new tests added; no regressions |
+| 2026-07-04 | H1,H3,H4,H5,H6,H7,H8(partial),H9,M8 | clean on touched files; BE 142→128e; FE 45e (unchanged) | BE ✅ FE ✅ | 97 pass / 8 fail | Same 3 pre-existing suites fail — zero regressions from High work; +6 new tests (telnyx-sig, plan-limit, global-guard) |
 
 ## New Architecture Concerns (discovered during implementation)
 
