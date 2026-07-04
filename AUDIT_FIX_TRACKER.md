@@ -17,20 +17,25 @@ and a frontend `npm run build` — results are documented per item.
 
 | Category    | Complete | Total | Progress |
 |-------------|----------|-------|----------|
-| Critical    | 0        | 7     | 0%       |
+| Critical    | 7        | 7     | 100%     |
 | High        | 0        | 9     | 0%       |
-| Medium      | 0        | 17    | 0%       |
+| Medium      | 1        | 17    | 6%       |
 | Low         | 0        | 10    | 0%       |
 | Enhancement | 0        | 8     | 0%       |
-| **Overall** | **0**    | **51**| **0%**   |
+| **Overall** | **8**    | **51**| **16%**  |
 
-Backend items: 0/28 complete (0%) · Frontend items: 0/17 complete (0%) · Infra items: 0/6 complete (0%)
+Backend items: 8/28 complete (29%) · Frontend items: 0/17 complete (0%) · Infra items: 1/6 complete (17%)
+
+> **Category 1 (Critical security) complete.** All 7 Critical findings fixed, verified, and
+> committed as small logical commits. Backend build green; backend test suite improved from
+> 72→94 passing (22→8 failing — the remaining 8 are pre-existing spec rot in heartbeat/stripe/
+> telnyx suites, tracked under L8, untouched by these fixes). M1 (console.log) folded into C4.
 
 ---
 
 ## Critical
 
-### [ ] C1 — Telnyx webhook accepts unauthenticated, unverified events
+### [x] C1 — Telnyx webhook accepts unauthenticated, unverified events
 
 **Where:** `apps/backend/src/webhooks/webhooks.controller.ts` (`POST /webhooks/telnyx`)
 
@@ -44,10 +49,13 @@ Backend items: 0/28 complete (0%) · Frontend items: 0/17 complete (0%) · Infra
 - Reject events without an event ID.
 
 **Effort:** 0.5 day
-**Status:** Not Started
-**Verification:** —
+**Status:** Completed — commit `fix(webhooks): verify Telnyx Ed25519 signature…`
+**Verification:** New `telnyx-signature.ts` (Ed25519 SPKI-wrap + 5-min replay window); controller
+verifies raw body, fails closed in production when `TELNYX_PUBLIC_KEY` unset, rejects missing
+event id. Unit tests (5) cover valid/tampered/replay/missing/wrong-key. Build ✅, lint clean on
+touched files.
 
-### [ ] C2 — Recordings assigned to an arbitrary tenant (cross-tenant data leak)
+### [x] C2 — Recordings assigned to an arbitrary tenant (cross-tenant data leak)
 
 **Where:** `apps/backend/src/recordings/recordings.processor.ts:49`
 
@@ -62,10 +70,12 @@ Backend items: 0/28 complete (0%) · Frontend items: 0/17 complete (0%) · Infra
   "first location".
 
 **Effort:** 1 day
-**Status:** Not Started
-**Verification:** —
+**Status:** Completed — same commit as C1
+**Verification:** `resolveTenantByNumber` resolves owner from `org_phone_numbers` then
+`locations.phoneNumber`; job is skipped (logged) when unresolvable — the arbitrary
+"first location" fallback is gone. Controller now forwards `toNumber`. Build ✅.
 
-### [ ] C3 — Cross-tenant write: menu item reorder not org-scoped
+### [x] C3 — Cross-tenant write: menu item reorder not org-scoped
 
 **Where:** `apps/backend/src/menus/menus.service.ts` (`reorderMenuItems`)
 
@@ -76,10 +86,11 @@ Backend items: 0/28 complete (0%) · Frontend items: 0/17 complete (0%) · Infra
 - Scope updates through `categories.organizationId` (same pattern as `reorderCategories`).
 
 **Effort:** 1 hour
-**Status:** Not Started
-**Verification:** —
+**Status:** Completed — commit `fix(menus): scope reorderMenuItems…`
+**Verification:** Pre-flight join verifies every ID belongs to the caller's org (via category);
+cross-tenant IDs now raise `NotFoundException`. Menus spec suite green. Build ✅.
 
-### [ ] C4 — IDOR: margin/usage report readable across tenants
+### [x] C4 — IDOR: margin/usage report readable across tenants
 
 **Where:** `apps/backend/src/billing/billing.service.ts` (`getMarginReport`)
 
@@ -92,10 +103,11 @@ Backend items: 0/28 complete (0%) · Frontend items: 0/17 complete (0%) · Infra
   by `organizationId` as well.
 
 **Effort:** 1 hour
-**Status:** Not Started
-**Verification:** —
+**Status:** Completed — commit `fix(billing): enforce tenant isolation on margin report…`
+**Verification:** Location ownership checked before any aggregation (else `NotFoundException`);
+usage query scoped by `organizationId AND locationId`. Billing spec suite green. Build ✅.
 
-### [ ] C5 — Hardcoded JWT fallback secret / no env validation
+### [x] C5 — Hardcoded JWT fallback secret / no env validation
 
 **Where:** `apps/backend/src/auth/strategies/jwt.strategy.ts:16`
 
@@ -107,10 +119,13 @@ Backend items: 0/28 complete (0%) · Frontend items: 0/17 complete (0%) · Infra
   missing (ConfigModule validation).
 
 **Effort:** 2 hours
-**Status:** Not Started
-**Verification:** —
+**Status:** Completed — commit `fix(auth): fail fast on missing JWT secrets…`
+**Verification:** New `config/env.validation.ts` wired via `ConfigModule.forRoot({ validate })`
+requires JWT secrets (>=16 chars, no placeholder text) + prod secrets; both hardcoded fallbacks
+removed from `auth.module.ts` and `jwt.strategy.ts`. Dev `.env` passes (32/27-char secrets).
+Build ✅.
 
-### [ ] C6 — Plan limits never enforced (all counts mocked to 0)
+### [x] C6 — Plan limits never enforced (all counts mocked to 0)
 
 **Where:** `apps/backend/src/billing/guards/plan-limit.guard.ts`
 
@@ -122,8 +137,12 @@ Backend items: 0/28 complete (0%) · Frontend items: 0/17 complete (0%) · Infra
   `org_phone_numbers`, imports from `usage_events` for the current month).
 
 **Effort:** 2–3 days
-**Status:** Not Started
-**Verification:** —
+**Status:** Completed — commit `fix(billing): enforce real plan limits…`
+**Verification:** Guard computes real counts for all three resources (mocked `currentCount = 0`
+removed); `@CheckLimit('websiteImports')` + `PlanLimitGuard` applied to `POST /menus/import`;
+`website_import` usage event recorded on enqueue. Guard unit tests: below-limit passes, at-limit
+→ 402. Build ✅. Note: guard is now wired on the import route; wiring it onto agent/phone-number
+provisioning endpoints remains a follow-up (see New Concerns).
 
 ### [x] C7 — No version control / CI / secrets hygiene
 
@@ -296,8 +315,8 @@ Backend items: 0/28 complete (0%) · Frontend items: 0/17 complete (0%) · Infra
 
 ## Medium
 
-### [ ] M1 — `console.log` with user object on nearly every request
-**Where:** `billing.service.ts:32` · **Impact:** PII in stdout, log spam. · **Fix:** remove (use Logger if needed). · **Effort:** 5 min · **Status:** Not Started
+### [x] M1 — `console.log` with user object on nearly every request
+**Where:** `billing.service.ts:32` · **Impact:** PII in stdout, log spam. · **Fix:** removed. · **Effort:** 5 min · **Status:** Completed (folded into C4 commit)
 
 ### [ ] M2 — Refresh rotation ignores `rememberMe` TTL
 **Where:** `auth.service.ts` (`refresh`) · **Impact:** 30-day sessions shrink to 7 days after first refresh. · **Fix:** persist chosen TTL with the token family and reuse on rotation. · **Effort:** 1 h · **Status:** Not Started
@@ -400,3 +419,23 @@ and both builds must stay green.
 | Date | Item | Lint | Build | Tests | Notes |
 |------|------|------|-------|-------|-------|
 | 2026-07-04 | Baseline | BE 142e / FE 45e | BE ✅ FE ✅ | 72 pass / 22 fail | Pre-existing failures documented above |
+| 2026-07-04 | C1–C6 + M1 (Critical done) | clean on touched files | BE ✅ | 94 pass / 8 fail | 8 remaining = pre-existing heartbeat/stripe/telnyx spec rot (L8); +11 new tests added; no regressions |
+
+## New Architecture Concerns (discovered during implementation)
+
+1. **Test/build duplication.** Jest matches specs in both `src/` and a stale compiled tree, so
+   every suite is reported twice (e.g. `src/printers/…` and `printers/…`). A leftover build
+   output dir is being picked up — jest `roots`/`testPathIgnorePatterns` should exclude it, and
+   `dist/` should be cleaned. Inflates counts and slows CI.
+2. **Pre-existing spec rot (L8).** `heartbeat`, `stripe-webhook`, `telnyx` specs fail on drift
+   (unmocked `onConflictDoNothing`, an outdated asserted URL, missing DI). Not caused by these
+   fixes; they must be repaired before tests can gate CI meaningfully.
+3. **`getRequiredOrg` still re-queries per call (H8).** The PlanLimitGuard resolves org via
+   `getRequiredOrg(user.id)` even though the JWT payload already carries `organizationId` — the
+   same redundant-lookup pattern flagged in H8, now in one more place.
+4. **Plan-limit wiring is partial.** C6 makes the guard *correct*, but it's only applied to the
+   website-import route. Agent and phone-number provisioning endpoints still need the guard for
+   full enforcement (the counts are ready; only the decorators are missing).
+5. **Backend lint debt (142 errors).** Concentrated in `no-unsafe-*` on `any` around Telnyx/
+   Gemini response handling (`syncMenuToAI`, webhook processor, ai-extractor). A typed-response
+   pass (M5 area) would clear most of it and is a prerequisite for a zero-warning CI gate.
