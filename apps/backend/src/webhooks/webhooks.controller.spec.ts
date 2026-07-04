@@ -5,6 +5,7 @@ import { getQueueToken } from '@nestjs/bullmq';
 import { UnauthorizedException, BadRequestException } from '@nestjs/common';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { ConfigService } from '@nestjs/config';
+import { ApiKeyThrottlerGuard } from './api-key-throttler.guard';
 
 describe('WebhooksController', () => {
   let controller: WebhooksController;
@@ -40,6 +41,8 @@ describe('WebhooksController', () => {
       ],
     })
       .overrideGuard(ThrottlerGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(ApiKeyThrottlerGuard)
       .useValue({ canActivate: () => true })
       .compile();
 

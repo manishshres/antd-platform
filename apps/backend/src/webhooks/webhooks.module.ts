@@ -6,6 +6,7 @@ import { WebhooksManagementController } from './webhooks-management.controller';
 import { WebhooksManagementService } from './webhooks-management.service';
 import { OutboundWebhookProcessor } from './processors/outbound-webhook.processor';
 import { OutboundWebhooksDispatcherService } from './outbound-webhooks-dispatcher.service';
+import { ApiKeyThrottlerGuard } from './api-key-throttler.guard';
 
 @Module({
   imports: [],
@@ -15,6 +16,7 @@ import { OutboundWebhooksDispatcherService } from './outbound-webhooks-dispatche
     WebhooksManagementService,
     OutboundWebhookProcessor,
     OutboundWebhooksDispatcherService,
+    ApiKeyThrottlerGuard,
   ],
   exports: [
     WebhookQueueProcessor,

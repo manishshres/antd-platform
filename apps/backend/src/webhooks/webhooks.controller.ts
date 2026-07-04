@@ -16,6 +16,7 @@ import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { ConfigService } from '@nestjs/config';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { Request } from 'express';
+import { ApiKeyThrottlerGuard } from './api-key-throttler.guard';
 import { DRIZZLE } from '../database/database.module';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../database/schema';
@@ -31,8 +32,6 @@ interface RequestWithRawBody extends Request {
 }
 
 @ApiTags('Webhooks')
-@UseGuards(ThrottlerGuard)
-@Throttle({ default: { limit: 10, ttl: 60000 } })
 @Controller('webhooks')
 export class WebhooksController {
   private readonly logger = new Logger(WebhooksController.name);
@@ -48,11 +47,13 @@ export class WebhooksController {
   ) {}
 
   @Post('ai/order')
+  @UseGuards(ApiKeyThrottlerGuard)
+  @Throttle({ default: { limit: 60, ttl: 60000 } })
   @HttpCode(HttpStatus.ACCEPTED)
   @ApiOperation({
     summary: 'Ingest an order from the Voice AI agent',
     description:
-      'Secured via X-API-Key header. Processes order asynchronously.',
+      'Secured via X-API-Key header. Rate limited per API key. Processes order asynchronously.',
   })
   @ApiResponse({ status: 202, description: 'Order accepted for processing.' })
   @ApiResponse({ status: 400, description: 'Validation failed.' })
@@ -85,14 +86,15 @@ export class WebhooksController {
     }
 
     if (idempotencyKey) {
+      // Reserve the key as 'pending' — not 'completed'. If enqueue fails below we remove the
+      // reservation so a client retry can succeed instead of being swallowed as a duplicate (H3).
       const inserted = await this.db
         .insert(schema.webhookEvents)
         .values({
           eventId: idempotencyKey,
           provider: 'ai_order',
-          status: 'completed',
+          status: 'pending',
           receivedAt: new Date(),
-          processedAt: new Date(),
         })
         .onConflictDoNothing()
         .returning();
@@ -102,14 +104,30 @@ export class WebhooksController {
       }
     }
 
-    // Add to BullMQ webhook queue to process asynchronously
-    const job = await this.webhookQueue.add('process-ai-order', {
-      orgId: org.id,
-      customerName: dto.customerName,
-      customerPhone: dto.customerPhone,
-      items: dto.items,
-      idempotencyKey,
-    });
+    let job: { id?: string };
+    try {
+      // Add to BullMQ webhook queue to process asynchronously
+      job = await this.webhookQueue.add('process-ai-order', {
+        orgId: org.id,
+        customerName: dto.customerName,
+        customerPhone: dto.customerPhone,
+        items: dto.items,
+        idempotencyKey,
+      });
+    } catch (err) {
+      // Enqueue failed — release the idempotency reservation so the order isn't lost on retry.
+      if (idempotencyKey) {
+        await this.db
+          .delete(schema.webhookEvents)
+          .where(eq(schema.webhookEvents.eventId, idempotencyKey));
+      }
+      this.logger.error(
+        `Failed to enqueue AI order for org ${org.id}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      throw err;
+    }
 
     return {
       message: 'Order received and accepted for processing.',
@@ -118,6 +136,8 @@ export class WebhooksController {
   }
 
   @Post('telnyx')
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 120, ttl: 60000 } })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Receive webhook events from Telnyx',
