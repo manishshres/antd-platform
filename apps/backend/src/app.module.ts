@@ -42,6 +42,7 @@ import { ConversationsModule } from './conversations/conversations.module';
 import { CacheModule } from '@nestjs/cache-manager';
 import { AuditLogsModule } from './audit-logs/audit-logs.module';
 import * as redisStore from 'cache-manager-ioredis';
+import { validateEnv } from './config/env.validation';
 
 @Module({
   imports: [
@@ -57,7 +58,7 @@ import * as redisStore from 'cache-manager-ioredis';
     }),
     SentryModule.forRoot(),
     EventEmitterModule.forRoot(),
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({ isGlobal: true, validate: validateEnv }),
     ScheduleModule.forRoot(),
     PrometheusModule.register(),
     LoggerModule.forRoot({

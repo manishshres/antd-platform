@@ -16,9 +16,8 @@ import { MailService } from '../common/services/mail.service';
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
-        secret:
-          configService.get<string>('JWT_SECRET') ||
-          'super-secret-key-change-in-production',
+        // JWT_SECRET presence is guaranteed by validateEnv at bootstrap — no insecure fallback.
+        secret: configService.get<string>('JWT_SECRET'),
         signOptions: {
           expiresIn: `${configService.get<number>('JWT_EXPIRATION') || 3600}s`,
         },
