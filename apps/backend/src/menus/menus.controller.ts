@@ -39,6 +39,8 @@ import { PaginatedResponseDto } from '../common/dto/paginated-response.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
+import { PlanLimitGuard } from '../billing/guards/plan-limit.guard';
+import { CheckLimit } from '../billing/decorators/check-limit.decorator';
 import {
   CurrentUser,
   CurrentUserPayload,
@@ -188,9 +190,15 @@ export class MenusController {
 
   @Post('import')
   @Roles('platform_admin', 'sysadmin', 'manager')
+  @UseGuards(PlanLimitGuard)
+  @CheckLimit('websiteImports')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Import a restaurant menu from a website URL using AI extraction',
+  })
+  @ApiResponse({
+    status: 402,
+    description: 'Monthly website-import plan limit reached.',
   })
   @ApiResponse({
     status: 200,

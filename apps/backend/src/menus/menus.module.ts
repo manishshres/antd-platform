@@ -7,6 +7,7 @@ import { AiExtractorService } from './ai-extractor.service';
 import { ImportQueueProcessor } from './processors/import-queue.processor';
 import { TelnyxModule } from '../telnyx/telnyx.module';
 import { StorageModule } from '../storage/storage.module';
+import { PlanLimitGuard } from '../billing/guards/plan-limit.guard';
 
 @Module({
   imports: [BillingModule, TelnyxModule, StorageModule],
@@ -16,6 +17,7 @@ import { StorageModule } from '../storage/storage.module';
     CrawlerService,
     AiExtractorService,
     ImportQueueProcessor,
+    PlanLimitGuard,
   ],
   exports: [MenusService, ImportQueueProcessor],
 })

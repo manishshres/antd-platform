@@ -21,6 +21,7 @@ import type { Cache } from 'cache-manager';
 import { Redis } from 'ioredis';
 import { notDeleted } from '../database/db.utils';
 import { TelnyxService } from '../telnyx/telnyx.service';
+import { AnalyticsService } from '../analytics/analytics.service';
 
 @Injectable()
 export class MenusService {
@@ -33,6 +34,7 @@ export class MenusService {
     private readonly auditService: AuditService,
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
     private readonly telnyxService: TelnyxService,
+    private readonly analyticsService: AnalyticsService,
   ) {}
 
   async getMenu(
@@ -485,6 +487,18 @@ export class MenusService {
       locationId: targetLocationId || null,
       importMode,
     });
+
+    // Record the import against the org's monthly website-import allowance so PlanLimitGuard
+    // can enforce the limit (usage_events.locationId is NOT NULL, so only record when known).
+    if (targetLocationId) {
+      void this.analyticsService.recordUsage(
+        orgId,
+        targetLocationId,
+        'website_import',
+        1,
+        { jobId: job.id },
+      );
+    }
 
     return {
       success: true,
