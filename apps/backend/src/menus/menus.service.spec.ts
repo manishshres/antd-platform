@@ -6,6 +6,7 @@ import { BillingService } from '../billing/billing.service';
 import { AuditService } from '../common/services/audit.service';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { getQueueToken } from '@nestjs/bullmq';
+import { TelnyxService } from '../telnyx/telnyx.service';
 
 describe('MenusService', () => {
   let service: MenusService;
@@ -66,6 +67,14 @@ describe('MenusService', () => {
       getJob: jest.fn(),
     };
 
+    const telnyxServiceMock = {
+      uploadKnowledgeDocument: jest.fn().mockResolvedValue(undefined),
+      embedKnowledgeDocuments: jest
+        .fn()
+        .mockResolvedValue({ data: { id: 'b1' } }),
+      createOrUpdateMenuAssistant: jest.fn().mockResolvedValue('assistant-1'),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         MenusService,
@@ -74,6 +83,7 @@ describe('MenusService', () => {
         { provide: AuditService, useValue: auditServiceMock },
         { provide: CACHE_MANAGER, useValue: cacheManagerMock },
         { provide: getQueueToken('import-queue'), useValue: importQueueMock },
+        { provide: TelnyxService, useValue: telnyxServiceMock },
       ],
     }).compile();
 
@@ -265,16 +275,24 @@ describe('MenusService', () => {
 
   describe('AI Imports', () => {
     it('importFromWebsite should enqueue a job', async () => {
+      const user = {
+        id: 'user-1',
+        email: 'admin@example.com',
+        role: 'sysadmin',
+        organizationId: 'org-123',
+        locationId: null,
+        isPlatformAdmin: false,
+      };
       const result = await service.importFromWebsite(
-        'user-1',
+        user,
         'https://example.com/menu',
       );
 
-      expect(billingServiceMock.getRequiredOrg).toHaveBeenCalledWith('user-1');
       expect(importQueueMock.add).toHaveBeenCalledWith('import-menu', {
         orgId: 'org-123',
         url: 'https://example.com/menu',
         locationId: null,
+        importMode: 'sync',
       });
       expect(result.jobId).toBe('job-123');
       expect(result.success).toBe(true);

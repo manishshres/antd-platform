@@ -4,6 +4,7 @@ import { DRIZZLE } from '../database/database.module';
 import { getQueueToken } from '@nestjs/bullmq';
 import { UnauthorizedException, BadRequestException } from '@nestjs/common';
 import { ThrottlerGuard } from '@nestjs/throttler';
+import { ConfigService } from '@nestjs/config';
 
 describe('WebhooksController', () => {
   let controller: WebhooksController;
@@ -19,6 +20,12 @@ describe('WebhooksController', () => {
     add: jest.fn().mockResolvedValue({ id: 'job-123' }),
   };
 
+  // Default: no TELNYX_PUBLIC_KEY and non-production → signature check is skipped,
+  // matching the AI-order tests which don't exercise the Telnyx path.
+  const mockConfigService = {
+    get: jest.fn().mockReturnValue(undefined),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [WebhooksController],
@@ -29,6 +36,7 @@ describe('WebhooksController', () => {
           provide: getQueueToken('recordings-queue'),
           useValue: mockWebhookQueue,
         },
+        { provide: ConfigService, useValue: mockConfigService },
       ],
     })
       .overrideGuard(ThrottlerGuard)

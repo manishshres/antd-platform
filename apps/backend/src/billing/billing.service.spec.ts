@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { BillingService } from './billing.service';
 import { StripeService } from '../stripe/stripe.service';
 import { InvoicePdfService } from './invoice-pdf.service';
+import { TelnyxService } from '../telnyx/telnyx.service';
 import { DRIZZLE } from '../database/database.module';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 
@@ -41,6 +42,10 @@ describe('BillingService', () => {
     generateInvoicePdf: jest.fn().mockResolvedValue(Buffer.from('test pdf')),
   };
 
+  const mockTelnyxService = {
+    updateAssistantDynamicVariable: jest.fn().mockResolvedValue(undefined),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -48,6 +53,7 @@ describe('BillingService', () => {
         { provide: DRIZZLE, useValue: mockDb },
         { provide: StripeService, useValue: mockStripeService },
         { provide: InvoicePdfService, useValue: mockInvoicePdfService },
+        { provide: TelnyxService, useValue: mockTelnyxService },
       ],
     }).compile();
 
