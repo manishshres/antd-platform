@@ -2,20 +2,32 @@ import {
   Controller,
   Post,
   Body,
+  Req,
+  Res,
   UnauthorizedException,
   HttpCode,
   HttpStatus,
   UseGuards,
   Get,
 } from '@nestjs/common';
-import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
+import { ThrottlerGuard } from '@nestjs/throttler';
+import type { Request, Response } from 'express';
 import {
   ApiTags,
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
 } from '@nestjs/swagger';
-import { AuthService } from './auth.service';
+import {
+  AuthService,
+  REFRESH_TTL_DEFAULT,
+  REFRESH_TTL_REMEMBER_ME,
+} from './auth.service';
+import {
+  setRefreshCookie,
+  clearRefreshCookie,
+  readRefreshCookie,
+} from './refresh-cookie';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
@@ -73,7 +85,10 @@ export class AuthController {
     status: 429,
     description: 'Account locked after too many failed attempts.',
   })
-  async login(@Body() loginDto: LoginDto) {
+  async login(
+    @Body() loginDto: LoginDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
     const user = await this.authService.validateUser(
       loginDto.email,
       loginDto.password,
@@ -81,7 +96,16 @@ export class AuthController {
     if (!user) {
       throw new UnauthorizedException('Invalid email or password.');
     }
-    return this.authService.login(user, loginDto.rememberMe ?? false);
+    const rememberMe = loginDto.rememberMe ?? false;
+    const result = await this.authService.login(user, rememberMe);
+
+    // Deliver the refresh token as an HttpOnly cookie so the frontend never has to persist it
+    // in localStorage (H2). The token is still in the body for non-browser API clients.
+    const maxAgeMs =
+      (rememberMe ? REFRESH_TTL_REMEMBER_ME : REFRESH_TTL_DEFAULT) * 1000;
+    setRefreshCookie(res, result.refresh_token, maxAgeMs);
+
+    return result;
   }
 
   @Public()
@@ -98,11 +122,22 @@ export class AuthController {
     status: 401,
     description: 'Invalid or expired refresh token.',
   })
-  async refresh(@Body('refresh_token') refreshToken: string) {
+  async refresh(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+    @Body('refresh_token') bodyToken?: string,
+  ) {
+    // Prefer the HttpOnly cookie; fall back to the body for non-browser / legacy clients (H2).
+    const refreshToken = readRefreshCookie(req) ?? bodyToken;
     if (!refreshToken) {
       throw new UnauthorizedException('Refresh token is required.');
     }
-    return this.authService.refresh(refreshToken);
+    const result = await this.authService.refresh(refreshToken);
+
+    // Rotate the cookie to the new refresh token (default TTL; rememberMe isn't known here).
+    setRefreshCookie(res, result.refresh_token, REFRESH_TTL_DEFAULT * 1000);
+
+    return result;
   }
 
   @Public()
@@ -110,7 +145,13 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Logout and invalidate the refresh token' })
   @ApiResponse({ status: 200, description: 'Logout successful.' })
-  async logout(@Body('refresh_token') refreshToken: string) {
+  async logout(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+    @Body('refresh_token') bodyToken?: string,
+  ) {
+    const refreshToken = readRefreshCookie(req) ?? bodyToken;
+    clearRefreshCookie(res);
     if (!refreshToken) {
       return { success: true };
     }

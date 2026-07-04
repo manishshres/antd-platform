@@ -188,13 +188,16 @@ describe('AuthService', () => {
       );
     });
 
-    it('should throw UnauthorizedException if token not found in db', async () => {
+    it('should detect reuse and revoke all sessions when token not found in db', async () => {
+      // Valid signature but the hash is absent → the token was already rotated away (reuse).
       mockJwtService.verify.mockReturnValue({ sub: 'user-1' });
       mockDb.limit.mockResolvedValue([]); // No token found
 
       await expect(service.refresh('valid-token')).rejects.toThrow(
         UnauthorizedException,
       );
+      // Family revocation: all of the user's refresh tokens are deleted.
+      expect(mockDb.delete).toHaveBeenCalled();
     });
 
     it('should refresh tokens successfully', async () => {

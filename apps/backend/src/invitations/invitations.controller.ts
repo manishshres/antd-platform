@@ -5,11 +5,13 @@ import {
   Delete,
   Body,
   Param,
+  Res,
   UseGuards,
   HttpCode,
   HttpStatus,
   BadRequestException,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import {
   ApiTags,
   ApiOperation,
@@ -27,6 +29,8 @@ import { Public } from '../common/decorators/public.decorator';
 import { InvitationsService } from './invitations.service';
 import { CreateInvitationDto } from './dto/create-invitation.dto';
 import { AcceptInvitationDto } from './dto/accept-invitation.dto';
+import { REFRESH_TTL_DEFAULT } from '../auth/auth.service';
+import { setRefreshCookie } from '../auth/refresh-cookie';
 
 @ApiTags('Invitations')
 @Controller('invitations')
@@ -110,8 +114,16 @@ export class InvitationsController {
   @Post('accept')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Accept an invitation and set password' })
-  async acceptInvitation(@Body() dto: AcceptInvitationDto) {
-    return this.invitationsService.acceptInvitation(dto);
+  async acceptInvitation(
+    @Body() dto: AcceptInvitationDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.invitationsService.acceptInvitation(dto);
+    // Set the refresh cookie so the new user's session matches the login flow (H2).
+    if (result.refresh_token) {
+      setRefreshCookie(res, result.refresh_token, REFRESH_TTL_DEFAULT * 1000);
+    }
+    return result;
   }
 
   @Public()

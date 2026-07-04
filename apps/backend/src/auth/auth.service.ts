@@ -23,8 +23,8 @@ import { AuditService } from '../common/services/audit.service';
 const BCRYPT_ROUNDS = 12;
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
 const VERIFY_TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
-const REFRESH_TTL_DEFAULT = 604800; // 7 days in seconds
-const REFRESH_TTL_REMEMBER_ME = 30 * 24 * 60 * 60; // 30 days in seconds
+export const REFRESH_TTL_DEFAULT = 604800; // 7 days in seconds
+export const REFRESH_TTL_REMEMBER_ME = 30 * 24 * 60 * 60; // 30 days in seconds
 
 function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
@@ -228,7 +228,29 @@ export class AuthService {
         .limit(1);
 
       const storedToken = results[0];
-      if (!storedToken || new Date() > new Date(storedToken.expiresAt)) {
+
+      // Reuse detection (H2): the signature is valid but this hash is not in the DB. That means
+      // the token was already rotated away (used) — a replay of a stolen, superseded token. Treat
+      // the whole family as compromised and revoke every refresh token for this user.
+      if (!storedToken) {
+        await this.db
+          .delete(schema.refreshTokens)
+          .where(eq(schema.refreshTokens.userId, payload.sub));
+        this.logger.warn(
+          `Refresh token reuse detected for user ${payload.sub}; all sessions revoked.`,
+        );
+        void this.auditService.log({
+          action: 'auth.refresh_token_reuse',
+          userId: payload.sub,
+        });
+        throw new UnauthorizedException('Refresh token is invalid or expired.');
+      }
+
+      if (new Date() > new Date(storedToken.expiresAt)) {
+        // Expired but legitimately stored — remove it and require re-login.
+        await this.db
+          .delete(schema.refreshTokens)
+          .where(eq(schema.refreshTokens.token, tokenHash));
         throw new UnauthorizedException('Refresh token is invalid or expired.');
       }
 
