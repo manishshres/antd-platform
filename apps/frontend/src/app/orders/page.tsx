@@ -78,11 +78,22 @@ function formatPhone(raw: string) {
 
 const TEST_PRINTER_ID = "Prn0F2C2A092605032000000D8FA588C83D";
 
+interface PaginatedOrders {
+  data: Order[];
+  total: number;
+  hasMore: boolean;
+}
+
 export default function OrdersPage() {
   const { message, notification } = App.useApp();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Server-side pagination state
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [total, setTotal] = useState(0);
 
   // Detail Drawer
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
@@ -98,19 +109,26 @@ export default function OrdersPage() {
   const load = useCallback(() => {
     if (!selectedLocationId) {
       setOrders([]);
+      setTotal(0);
       setLoading(false);
       return;
     }
     setLoading(true);
     setError(null);
+    const offset = (page - 1) * pageSize;
+    // The backend returns a paginated envelope { data, total, hasMore }; consume it directly
+    // and drive the AntD Table from the server total (H1).
     api
-      .get<Order[]>(`/orders?locationId=${selectedLocationId}`)
+      .get<PaginatedOrders>(
+        `/orders?locationId=${selectedLocationId}&offset=${offset}&limit=${pageSize}`,
+      )
       .then(({ data }) => {
-        setOrders(Array.isArray(data) ? data : []);
+        setOrders(Array.isArray(data?.data) ? data.data : []);
+        setTotal(typeof data?.total === "number" ? data.total : 0);
       })
       .catch(() => setError("Failed to load orders."))
       .finally(() => setLoading(false));
-  }, [selectedLocationId]);
+  }, [selectedLocationId, page, pageSize]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -375,7 +393,17 @@ export default function OrdersPage() {
           dataSource={orders}
           rowKey='id'
           loading={loading}
-          pagination={{ defaultPageSize: 10, showSizeChanger: true }}
+          pagination={{
+            current: page,
+            pageSize,
+            total,
+            showSizeChanger: true,
+            showTotal: (t) => `${t} orders`,
+            onChange: (nextPage, nextSize) => {
+              setPage(nextPage);
+              setPageSize(nextSize);
+            },
+          }}
           locale={{
             emptyText:
               "No orders found. Click 'Create Mock Order' to generate one.",
