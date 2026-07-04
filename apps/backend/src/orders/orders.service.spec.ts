@@ -123,7 +123,9 @@ describe('OrdersService', () => {
     });
 
     it('should create an order successfully, dispatch print jobs, and emit events', async () => {
-      const mockMenuItems = [{ id: 'menu-item-1', price: 1000 }];
+      const mockMenuItems = [
+        { id: 'menu-item-1', price: 1000, locationId: 'loc-1' },
+      ];
       mockDb.where.mockResolvedValueOnce(mockMenuItems); // Returns menu item
 
       const mockOrder = {
@@ -131,6 +133,7 @@ describe('OrdersService', () => {
         customerName: 'John',
         customerPhone: '1234567890',
         totalAmount: 1000,
+        locationId: 'loc-1',
         createdAt: new Date(),
         items: [
           {

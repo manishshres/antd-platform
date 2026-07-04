@@ -9,7 +9,7 @@ import { OnEvent } from '@nestjs/event-emitter';
 import { DRIZZLE } from '../database/database.module';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../database/schema';
-import { eq, and, inArray, count } from 'drizzle-orm';
+import { eq, and, inArray, count, isNull } from 'drizzle-orm';
 import { BillingService } from '../billing/billing.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { GetOrdersDto } from './dto/get-orders.dto';
@@ -161,17 +161,35 @@ export class OrdersService {
     customerPhone: string,
     items: { menuItemId: string; quantity: number }[],
     userId?: string,
+    locationId?: string,
   ) {
     if (items.length === 0) {
       throw new BadRequestException('Order must contain at least one item.');
     }
 
-    // Resolve menu items prices (batch query avoiding N+1)
+    // Resolve menu items (batch query avoiding N+1), scoped to the org via their category and
+    // restricted to available, non-deleted items (H5). Items from other tenants — or deleted/
+    // unavailable ones — must never price into an order.
     const itemIds = items.map((i) => i.menuItemId);
     const dbItems = await this.db
-      .select()
+      .select({
+        id: schema.menuItems.id,
+        price: schema.menuItems.price,
+        locationId: schema.menuItems.locationId,
+      })
       .from(schema.menuItems)
-      .where(inArray(schema.menuItems.id, itemIds));
+      .innerJoin(
+        schema.categories,
+        eq(schema.menuItems.categoryId, schema.categories.id),
+      )
+      .where(
+        and(
+          inArray(schema.menuItems.id, itemIds),
+          eq(schema.categories.organizationId, orgId),
+          isNull(schema.menuItems.deletedAt),
+          eq(schema.menuItems.isAvailable, true),
+        ),
+      );
 
     const dbItemsMap = new Map(dbItems.map((dbItem) => [dbItem.id, dbItem]));
 
@@ -185,7 +203,9 @@ export class OrdersService {
     for (const item of items) {
       const menuItem = dbItemsMap.get(item.menuItemId);
       if (!menuItem) {
-        throw new NotFoundException(`Menu item ${item.menuItemId} not found.`);
+        throw new NotFoundException(
+          `Menu item ${item.menuItemId} not found, unavailable, or not in this organization.`,
+        );
       }
 
       totalAmount += menuItem.price * item.quantity;
@@ -196,12 +216,22 @@ export class OrdersService {
       });
     }
 
+    // Resolve the owning location (H5): prefer an explicit hint, else the location carried by
+    // the ordered items, else the org's single location. Persisted so location-scoped lists,
+    // dashboards and usage billing include AI-generated orders.
+    const resolvedLocationId = await this.resolveOrderLocation(
+      orgId,
+      locationId,
+      dbItems.map((i) => i.locationId),
+    );
+
     // Insert order and items within a transaction
     const orderId = await this.db.transaction(async (tx) => {
       const newOrders = await tx
         .insert(schema.orders)
         .values({
           organizationId: orgId,
+          locationId: resolvedLocationId,
           customerName,
           customerPhone,
           status: 'pending',
@@ -287,18 +317,64 @@ export class OrdersService {
       newValue: { totalAmount, items: resolvedItems, status: 'pending' },
     });
 
-    void this.analyticsService.recordUsage(
-      orgId,
-      fullOrder.locationId || orgId, // fallback to orgId if locationId is missing
-      'order_volume',
-      1,
-      { orderId: fullOrder.id },
-    );
+    // Only record usage when we resolved a real location — usage_events.locationId is a
+    // NOT NULL FK to locations, so the previous `locationId || orgId` fallback silently failed
+    // and under-counted order volume for billing (H5).
+    if (fullOrder.locationId) {
+      void this.analyticsService.recordUsage(
+        orgId,
+        fullOrder.locationId,
+        'order_volume',
+        1,
+        { orderId: fullOrder.id },
+      );
+    } else {
+      this.logger.warn(
+        `Order ${fullOrder.id} has no resolvable location; skipping usage recording.`,
+      );
+    }
 
     this.eventsGateway.emitToOrganization(orgId, 'order.created', fullOrder);
     this.eventEmitter.emit('order.created', { orgId, fullOrder });
 
     return fullOrder;
+  }
+
+  /**
+   * Determine the location an order belongs to: an explicit hint wins, then a non-null location
+   * shared by the ordered items, then the org's single location. Returns null when the org has
+   * multiple locations and nothing else disambiguates (caller records no usage in that case).
+   */
+  private async resolveOrderLocation(
+    orgId: string,
+    hintedLocationId: string | undefined,
+    itemLocationIds: (string | null)[],
+  ): Promise<string | null> {
+    if (hintedLocationId) return hintedLocationId;
+
+    const distinctItemLocations = [
+      ...new Set(itemLocationIds.filter((id): id is string => !!id)),
+    ];
+    if (distinctItemLocations.length === 1) {
+      return distinctItemLocations[0];
+    }
+
+    const orgLocations = await this.db
+      .select({ id: schema.locations.id })
+      .from(schema.locations)
+      .where(
+        and(
+          eq(schema.locations.organizationId, orgId),
+          isNull(schema.locations.deletedAt),
+        ),
+      )
+      .limit(2);
+
+    if (orgLocations.length === 1) {
+      return orgLocations[0].id;
+    }
+
+    return null;
   }
 
   async updateOrderStatus(userId: string, orderId: string, status: string) {
