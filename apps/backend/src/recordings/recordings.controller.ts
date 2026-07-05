@@ -47,7 +47,7 @@ export class RecordingsController {
     @Query('search') search?: string,
   ) {
     return this.recordingsService.listRecordings(
-      user.id,
+      user,
       pagination,
       locationId,
       search,
@@ -62,7 +62,7 @@ export class RecordingsController {
     @CurrentUser() user: CurrentUserPayload,
     @Param('id') id: string,
   ) {
-    return this.recordingsService.getRecording(user.id, id);
+    return this.recordingsService.getRecording(user, id);
   }
 
   @Delete(':id')
@@ -73,7 +73,7 @@ export class RecordingsController {
     @CurrentUser() user: CurrentUserPayload,
     @Param('id') id: string,
   ) {
-    return this.recordingsService.deleteRecording(user.id, id);
+    return this.recordingsService.deleteRecording(user, id);
   }
 
   @Post(':id/sync')
@@ -84,7 +84,7 @@ export class RecordingsController {
     @CurrentUser() user: CurrentUserPayload,
     @Param('id') id: string,
   ) {
-    return this.recordingsService.syncRecording(user.id, id);
+    return this.recordingsService.syncRecording(user, id);
   }
 
   @Get(':id/export')
@@ -103,7 +103,7 @@ export class RecordingsController {
     @Res() res: import('express').Response,
   ) {
     const exported = await this.recordingsService.exportRecording(
-      user.id,
+      user,
       id,
       format,
     );

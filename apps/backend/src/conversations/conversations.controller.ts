@@ -41,7 +41,7 @@ export class ConversationsController {
     @Query('locationId') locationId?: string,
   ) {
     return this.conversationsService.listConversations(
-      user.id,
+      user,
       pagination,
       locationId,
     );
@@ -55,6 +55,6 @@ export class ConversationsController {
     @CurrentUser() user: CurrentUserPayload,
     @Param('id') id: string,
   ) {
-    return this.conversationsService.getConversation(user.id, id);
+    return this.conversationsService.getConversation(user, id);
   }
 }

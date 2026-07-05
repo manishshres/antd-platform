@@ -1,4 +1,5 @@
 import { Injectable, Inject, NotFoundException } from '@nestjs/common';
+import { CurrentUserPayload } from '../common/decorators/current-user.decorator';
 import { DRIZZLE } from '../database/database.module';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../database/schema';
@@ -22,8 +23,8 @@ export class RecordingsService {
     @InjectQueue('recordings-queue') private readonly recordingsQueue: Queue,
   ) {}
 
-  async syncRecording(userId: string, telnyxRecordingId: string) {
-    const orgId = await this.billingService.getRequiredOrg(userId);
+  async syncRecording(user: CurrentUserPayload, telnyxRecordingId: string) {
+    const orgId = await this.billingService.getRequiredOrg(user);
     const [loc] = await this.db
       .select()
       .from(schema.locations)
@@ -47,12 +48,12 @@ export class RecordingsService {
   }
 
   async listRecordings(
-    userId: string,
+    user: CurrentUserPayload,
     pagination: PaginationDto,
     locationId?: string,
     search?: string,
   ): Promise<PaginatedResponseDto<unknown>> {
-    const orgId = await this.billingService.getRequiredOrg(userId);
+    const orgId = await this.billingService.getRequiredOrg(user);
     const { offset = 0, limit = 20 } = pagination;
 
     const conditions = [
@@ -100,8 +101,8 @@ export class RecordingsService {
     };
   }
 
-  async getRecording(userId: string, id: string) {
-    const orgId = await this.billingService.getRequiredOrg(userId);
+  async getRecording(user: CurrentUserPayload, id: string) {
+    const orgId = await this.billingService.getRequiredOrg(user);
     const res = await this.db
       .select()
       .from(schema.recordings)
@@ -129,8 +130,8 @@ export class RecordingsService {
     return { ...res[0], downloadUrl };
   }
 
-  async deleteRecording(userId: string, id: string) {
-    const orgId = await this.billingService.getRequiredOrg(userId);
+  async deleteRecording(user: CurrentUserPayload, id: string) {
+    const orgId = await this.billingService.getRequiredOrg(user);
     const res = await this.db
       .update(schema.recordings)
       .set({ deletedAt: new Date() })
@@ -149,7 +150,7 @@ export class RecordingsService {
 
     void this.auditService.log({
       action: 'recording.delete',
-      userId,
+      userId: user.id,
       organizationId: orgId,
       entityType: 'recording',
       entityId: id,
@@ -159,8 +160,8 @@ export class RecordingsService {
     return { success: true };
   }
 
-  async exportRecording(userId: string, id: string, format: string) {
-    const orgId = await this.billingService.getRequiredOrg(userId);
+  async exportRecording(user: CurrentUserPayload, id: string, format: string) {
+    const orgId = await this.billingService.getRequiredOrg(user);
     const res = await this.db
       .select()
       .from(schema.recordings)

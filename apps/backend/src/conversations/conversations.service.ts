@@ -1,4 +1,5 @@
 import { Injectable, Inject, NotFoundException } from '@nestjs/common';
+import { CurrentUserPayload } from '../common/decorators/current-user.decorator';
 import { DRIZZLE } from '../database/database.module';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../database/schema';
@@ -21,19 +22,13 @@ export class ConversationsService {
   ) {}
 
   async listConversations(
-    userId: string,
+    user: CurrentUserPayload,
     pagination: PaginationDto,
     locationId?: string,
   ): Promise<PaginatedResponseDto<unknown>> {
-    const user = await this.db.query.users.findFirst({
-      where: eq(schema.users.id, userId),
-    });
-    const isPlatformAdmin = user?.role === 'platform_admin';
-
-    let orgId: string | undefined;
-    if (!isPlatformAdmin) {
-      orgId = await this.billingService.getRequiredOrg(userId);
-    }
+    // Resolve the org from the JWT context (a platform admin's selected org via ?orgId=), which
+    // both scopes the query correctly and avoids returning every tenant's conversations.
+    const orgId = await this.billingService.getRequiredOrg(user);
     const { offset = 0, limit = 20 } = pagination;
 
     const conditions = [];
@@ -65,8 +60,8 @@ export class ConversationsService {
     };
   }
 
-  async getConversation(userId: string, id: string) {
-    const orgId = await this.billingService.getRequiredOrg(userId);
+  async getConversation(user: CurrentUserPayload, id: string) {
+    const orgId = await this.billingService.getRequiredOrg(user);
     const res = await this.db
       .select()
       .from(schema.conversations)
