@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Row, Col, Card, Statistic, Skeleton, Alert, Typography, theme, Empty, Button, Progress, Avatar, Tag, Space, Tooltip, Switch, message } from "antd";
+import { Row, Col, Card, Statistic, Skeleton, Typography, theme, Button, Progress, Avatar, Tag, Space, Tooltip, Switch, message } from "antd";
 import {
   ShoppingOutlined,
   DollarOutlined,
@@ -30,6 +30,8 @@ import {
 import { api } from "@/lib/api";
 import { useLocation } from "@/contexts/LocationContext";
 import CallForwardingGuide from "@/components/CallForwardingGuide";
+import PageHeader from "@/components/PageHeader";
+import { ErrorState, EmptyState } from "@/components/PageStates";
 import Link from "next/link";
 
 const { Title, Text, Paragraph } = Typography;
@@ -142,19 +144,13 @@ export default function DashboardPage() {
   }
 
   if (error) {
-    return (
-      <Alert 
-        type='error' 
-        title={error} 
-        showIcon 
-        action={
-          <Button size="small" onClick={() => window.location.reload()}>Retry</Button>
-        }
-      />
-    );
+    return <ErrorState message={error} onRetry={() => window.location.reload()} />;
   }
 
-  if (!data) return <Empty description="Select a location to view dashboard" style={{ marginTop: 64 }} />;
+  if (!data)
+    return (
+      <EmptyState description="Select a location above to view its dashboard." />
+    );
 
   // Calculate some derived metrics
   const totalWeekOrders = data.trend.reduce((sum, d) => sum + d.orders, 0);
@@ -165,15 +161,10 @@ export default function DashboardPage() {
 
   return (
     <div>
-      {/* Welcome Header */}
-      <div style={{ marginBottom: token.margin }}>
-        <Title level={4} style={{ margin: 0 }}>
-          {selectedLocation?.name || "Dashboard"}
-        </Title>
-        <Text type="secondary">
-          {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
-        </Text>
-      </div>
+      <PageHeader
+        title={selectedLocation?.name || "Dashboard"}
+        subtitle={new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
+      />
 
       {/* KPI Row — 3 cards */}
       <Row gutter={[token.marginSM, token.marginSM]} style={{ marginBottom: token.marginSM }}>
