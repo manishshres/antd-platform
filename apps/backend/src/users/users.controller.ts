@@ -66,6 +66,15 @@ export class UsersController {
     return this.usersService.updateMe(user.id, dto);
   }
 
+  @Post('me/onboarding')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Mark the first-run onboarding tour as completed' })
+  @ApiResponse({ status: 200, description: 'Onboarding marked complete.' })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  async completeOnboarding(@CurrentUser() user: CurrentUserPayload) {
+    return this.usersService.completeOnboarding(user.id);
+  }
+
   @Patch('me/password')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Change current user password' })

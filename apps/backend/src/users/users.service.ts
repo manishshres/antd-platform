@@ -446,6 +446,25 @@ export class UsersService {
     return this.sanitizeUser(updated);
   }
 
+  /**
+   * Mark the first-run onboarding tour as completed for this user. Persisted in the DB (rather
+   * than only browser localStorage) so the tour doesn't re-appear on a different device/browser.
+   * Idempotent — safe to call more than once; the first completion timestamp is preserved.
+   */
+  async completeOnboarding(userId: string) {
+    const user = await this.findOneById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found.');
+    }
+    if (!user.onboardingCompletedAt) {
+      await this.db
+        .update(schema.users)
+        .set({ onboardingCompletedAt: new Date(), updatedAt: new Date() })
+        .where(eq(schema.users.id, userId));
+    }
+    return { message: 'Onboarding completed.' };
+  }
+
   async changeMyPassword(userId: string, dto: ChangePasswordDto) {
     const user = await this.db.query.users.findFirst({
       where: notDeleted(schema.users, eq(schema.users.id, userId)),
@@ -505,6 +524,7 @@ export class UsersService {
       phoneNumber: user.phoneNumber,
       companyName: user.companyName,
       emailVerifiedAt: user.emailVerifiedAt,
+      onboardingCompletedAt: user.onboardingCompletedAt,
       lastLoginAt: user.lastLoginAt,
       organizationId: user.organizationId,
       createdAt: user.createdAt,

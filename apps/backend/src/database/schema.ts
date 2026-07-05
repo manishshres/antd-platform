@@ -141,6 +141,7 @@ export const users = pgTable(
     phoneNumber: varchar('phone_number', { length: 50 }),
     companyName: varchar('company_name', { length: 255 }),
     emailVerifiedAt: timestamp('email_verified_at'),
+    onboardingCompletedAt: timestamp('onboarding_completed_at'),
     failedLoginAttempts: integer('failed_login_attempts').default(0).notNull(),
     lockedUntil: timestamp('locked_until'),
     lastLoginAt: timestamp('last_login_at'),
