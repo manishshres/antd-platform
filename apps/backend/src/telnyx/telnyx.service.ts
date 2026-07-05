@@ -1,5 +1,20 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+
+/**
+ * Raised when Telnyx Cloud Storage rejects an operation with `UserSuspended` — per Telnyx billing
+ * docs this means the account's *available credit* is negative (storage is blocked, and the free
+ * tier is disabled, until credit is restored via payment). A distinct type so callers can show a
+ * clear message to users and skip pointless retries. Extends ServiceUnavailableException so the
+ * HTTP layer answers 503 with this message instead of a generic 500.
+ */
+export class TelnyxStorageSuspendedError extends ServiceUnavailableException {
+  constructor() {
+    super(
+      'AI menu sync is temporarily unavailable — Telnyx Cloud Storage access is restricted. Contact support.',
+    );
+  }
+}
 
 /**
  * TelnyxService provides a centralized wrapper around all Telnyx v2 API calls.
@@ -294,6 +309,11 @@ export class TelnyxService {
 
     if (!res.ok) {
       const text = await res.text();
+      // 403 UserSuspended = negative available credit on the Telnyx account; surface a clear,
+      // actionable error rather than a raw storage dump.
+      if (res.status === 403 && text.includes('UserSuspended')) {
+        throw new TelnyxStorageSuspendedError();
+      }
       throw new Error(`Failed to upload to Telnyx Storage: ${text}`);
     }
   }

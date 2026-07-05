@@ -1,7 +1,8 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
-import { Job } from 'bullmq';
+import { Job, UnrecoverableError } from 'bullmq';
 import { MenusService } from '../menus.service';
+import { TelnyxStorageSuspendedError } from '../../telnyx/telnyx.service';
 
 interface MenuAiSyncJobData {
   orgId: string;
@@ -25,10 +26,23 @@ export class MenuAiSyncProcessor extends WorkerHost {
     job: Job<MenuAiSyncJobData, unknown, string>,
   ): Promise<unknown> {
     const { orgId } = job.data;
-    const synced = await this.menusService.syncOrgPublishedLocationsToAI(orgId);
-    this.logger.log(
-      `Auto-synced menu to AI agent for org ${orgId} — ${synced} location(s) refreshed.`,
-    );
-    return { orgId, synced };
+    try {
+      const synced =
+        await this.menusService.syncOrgPublishedLocationsToAI(orgId);
+      this.logger.log(
+        `Auto-synced menu to AI agent for org ${orgId} — ${synced} location(s) refreshed.`,
+      );
+      return { orgId, synced };
+    } catch (err) {
+      // Telnyx storage suspension (negative account credit) won't clear on retry — fail fast and
+      // don't burn the 3 attempts. A later menu edit re-schedules a fresh job once credit is back.
+      if (err instanceof TelnyxStorageSuspendedError) {
+        this.logger.warn(
+          `Skipping AI menu auto-sync for org ${orgId}: Telnyx Cloud Storage is suspended (negative account credit).`,
+        );
+        throw new UnrecoverableError('Telnyx Cloud Storage suspended');
+      }
+      throw err;
+    }
   }
 }
