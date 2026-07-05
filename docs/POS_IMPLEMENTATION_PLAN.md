@@ -136,6 +136,73 @@ drawer_events       id, sessionId, type('sale'|'refund'|'payin'|'payout'|'drop')
 
 Each step lands independently; cash-only POS is sellable after step 5.
 
+## Gap analysis vs Toast/Square/Clover cashier checklist (2026-07-05)
+
+Audit of the "fast cashier MVP" checklist against what is built and what the plan covered.
+Guiding metric: **an order in under 30 seconds.**
+
+### Built ✅
+
+| Feature | Where |
+|---|---|
+| Category tabs (scrollable pills) | `/pos` |
+| Add/remove items, big +/- quantity | `/pos` cart |
+| Item notes + order notes | `/pos` picker + cart |
+| Required/optional modifiers, price adjustments | picker + server validation |
+| Automatic server-side price calculation | `POST /orders/pos` |
+| Tax calculation (per-location rate) | orders service, settings page |
+| Cash / card recording | `paymentMethod` on orders |
+| Auto print (kitchen + receipt), reprint endpoint | print pipeline |
+| Modifier/tax/printer settings for owners | menu mgmt + settings |
+
+### Was missing from BOTH the build and the original plan — now added below
+
+| Feature | Disposition |
+|---|---|
+| **Edit an open order in the POS (incl. AI voice orders)** | NEW Phase 1.5 — flagship flow, see below |
+| Menu search-as-you-type | Phase 1.5 (client-side filter; menu is already fully loaded) |
+| Favorites / pinned items (⭐ virtual category first) | Phase 1.5 (`menu_items.isFavorite`) |
+| Cart line quick actions (edit, duplicate, void line) | Phase 1.5 |
+| Customer records: phone search, minimal create, notes, lifetime stats | Phase 2.5 (`customers` table) |
+| One-tap reorder ("duplicate last order") | Phase 2.5 (needs customers) |
+| Coupons / promo codes | Phase 2.5 (extends planned `discounts` table with `code`) |
+| Multi-select modifier groups, quantity limits, free-topping counts | Phase 2 (schema: `menuModifiers.maxSelections`, `selectionType`) |
+| Suggested upsells | Phase 4 (optional) |
+| SKU / barcode on menu items | Phase 4 (add `sku` column when hardware lands) |
+
+### Was already in the plan, still to build (unchanged phasing)
+
+- Per-location daily ticket numbers ("#1024") — Phase 1 schema, not yet built
+- Tips, discounts UI, refunds, manager PIN — Phase 1 tail
+- Hold/resume orders (tabs by name/phone/table), split payments — Phase 2
+- Receipt email/SMS/no-receipt choice — Phase 4 (print-only until then)
+- Order history search (order #, customer, phone, date) + refund/duplicate actions — Phase 3 reporting
+
+### Phase 1.5 — Cashier speed pack (insert before Phase 2)
+
+The under-30-seconds features, all buildable on current schema:
+
+1. **Open & edit existing orders in the POS — the AI voice handoff.**
+   - `/pos?orderId=<id>` loads an existing order into the cart (items, modifiers, notes).
+   - Orders page and the live `order.created` toast get an "Open in POS" action, so a
+     phone order placed by the AI lands in front of the cashier ready to adjust.
+   - Backend: `PUT /orders/:id/items` — replace items/notes on an order that is not yet
+     paid/completed (`paidAt IS NULL`), re-price server-side, reprint a corrected kitchen
+     ticket (marked "UPDATED"), audit the change. AI orders are unpaid (`source='ai_phone'`),
+     so they remain editable until the cashier takes payment; POS cash/card orders are paid
+     at creation and require the (future) manager-PIN void/refund path instead.
+   - Paying an edited AI order: `POST /orders/:id/pay { paymentMethod }` sets
+     paymentMethod/paidAt and advances status — same simplified cash/card recording.
+2. **Search box** above the category pills — instant client-side filter across all
+   categories by item name (SKU later), shows a flat result grid.
+3. **Favorites**: `is_favorite` boolean on menu items, star toggle in Menu Management, and
+   a ⭐ Favorites pseudo-category pinned first in the POS (defaults to the whole menu's
+   20–30 best sellers being hand-picked by the owner).
+4. **Cart line actions**: tap a line to reopen the modifier picker pre-filled (edit),
+   plus duplicate-line and void-line buttons.
+5. **Ticket numbers**: per-location daily sequence stored on orders, shown as "Order #47"
+   in the POS header, cart, tickets, and order board.
+
 ## Risks / open questions
 
 - **Tax complexity** (inclusive vs exclusive, per-item overrides, delivery-channel rules) — start with a single default rate per location, model `tax_rates` so per-item mapping can be added without migration pain.
