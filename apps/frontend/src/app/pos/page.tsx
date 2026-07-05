@@ -283,9 +283,9 @@ export default function PosPage() {
           display: "flex",
           gap: token.marginSM,
           alignItems: "stretch",
-          // Lock the register to 75% of the viewport: the page never scrolls,
+          // Lock the register to 70% of the viewport: the page never scrolls,
           // the item grid and cart scroll independently.
-          height: "75vh",
+          height: "70vh",
           minHeight: 420,
           overflow: "hidden",
         }}
