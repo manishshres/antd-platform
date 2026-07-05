@@ -262,12 +262,18 @@ function LayoutInner({
   };
 
   const profileMenu: MenuProps['items'] = [
-    {
-      key: 'context-selectors',
-      label: renderContextSelectors(),
-      disabled: true,
-      style: { cursor: 'default', padding: 0 }
-    },
+    // On desktop the tenant switcher lives in the header (E1); keep the compact version in the
+    // profile dropdown only on mobile where header space is tight.
+    ...(isMobile
+      ? [
+          {
+            key: 'context-selectors',
+            label: renderContextSelectors(),
+            disabled: true,
+            style: { cursor: 'default', padding: 0 },
+          },
+        ]
+      : []),
     {
       key: 'profile',
       label: 'My Profile',
@@ -372,7 +378,45 @@ function LayoutInner({
               </Tooltip>
             ) : null}
 
-
+            {/* E1: Tenant context switcher, surfaced in the header instead of buried in the
+                profile dropdown — the primary control in a multi-tenant, multi-location app. */}
+            {!isMobile && (
+              <Space size={8}>
+                {isPlatformAdmin && organizations.length > 0 && (
+                  <Select
+                    size="middle"
+                    value={selectedOrgId}
+                    onChange={(val) => setSelectedOrgId(val)}
+                    style={{ minWidth: 180 }}
+                    variant="filled"
+                    prefix={<BankOutlined style={{ color: token.colorTextTertiary }} />}
+                    options={organizations.map((org) => ({ label: org.name, value: org.id }))}
+                    placeholder="Organization"
+                  />
+                )}
+                {isManager ? (
+                  <Space size={6} style={{ paddingInline: 8 }}>
+                    <EnvironmentOutlined style={{ color: token.colorPrimary }} />
+                    <Text strong>
+                      {locations.find((l) => l.id === selectedLocationId)?.name || "—"}
+                    </Text>
+                  </Space>
+                ) : (
+                  <Select
+                    size="middle"
+                    value={selectedLocationId}
+                    onChange={(val) => setSelectedLocationId(val)}
+                    style={{ minWidth: 200 }}
+                    variant="filled"
+                    loading={locLoading}
+                    prefix={<EnvironmentOutlined style={{ color: token.colorTextTertiary }} />}
+                    options={locations.map((loc) => ({ label: loc.name, value: loc.id }))}
+                    placeholder="Select location"
+                    disabled={locations.length === 0}
+                  />
+                )}
+              </Space>
+            )}
           </div>
 
           <Space size={12}>
