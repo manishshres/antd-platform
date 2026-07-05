@@ -81,7 +81,19 @@ export default function SettingsHubPage() {
   // Profile forms
   const [profileForm] = Form.useForm();
   const [profileSaving, setProfileSaving] = useState(false);
+  const [profileDirty, setProfileDirty] = useState(false);
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
+
+  // Warn before leaving/reloading with unsaved organization changes (E3).
+  useEffect(() => {
+    if (!profileDirty) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [profileDirty]);
 
 
   // Modal states (Locations)
@@ -181,6 +193,7 @@ export default function SettingsHubPage() {
       setProfileSaving(true);
       await api.patch(`/organizations`, values);
       message.success("Organization profile updated");
+      setProfileDirty(false);
       fetchOrg();
     } catch (err) {
       message.error("Failed to update organization");
@@ -414,7 +427,13 @@ export default function SettingsHubPage() {
         <div style={{ maxWidth: 600 }}>
           <Title level={4}>Organization Profile</Title>
           <Text type="secondary" style={{ display: 'block', marginBottom: 24 }}>Manage your organization's core details.</Text>
-          <Form form={profileForm} layout="vertical" onFinish={handleSaveProfile} disabled={orgLoading}>
+          <Form
+            form={profileForm}
+            layout="vertical"
+            onFinish={handleSaveProfile}
+            onValuesChange={() => setProfileDirty(true)}
+            disabled={orgLoading}
+          >
             <Form.Item label="Organization Name" name="name" rules={[{ required: true }]}>
               <Input />
             </Form.Item>
@@ -422,9 +441,12 @@ export default function SettingsHubPage() {
               <Input />
             </Form.Item>
             <Form.Item>
-              <Button type="primary" htmlType="submit" loading={profileSaving}>
-                Save Changes
-              </Button>
+              <Space>
+                <Button type="primary" htmlType="submit" loading={profileSaving} disabled={!profileDirty}>
+                  Save Changes
+                </Button>
+                {profileDirty && <Text type="warning">Unsaved changes</Text>}
+              </Space>
             </Form.Item>
           </Form>
         </div>
