@@ -30,6 +30,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { LocationProvider, useLocation } from "@/contexts/LocationContext";
 import { SocketProvider, useSocket } from "@/hooks/useSocket";
+import { NotificationsProvider } from "@/contexts/NotificationsContext";
+import NotificationsBell from "./NotificationsBell";
 import { themeConfig } from "@/lib/theme";
 import { ConeekoLogo } from "./Logo";
 
@@ -438,6 +440,8 @@ function LayoutInner({
               </Space>
             )}
 
+            <NotificationsBell />
+
             {/* Profile dropdown — avatar only (email removed from the navbar). */}
             <Dropdown menu={{ items: profileMenu }} trigger={['click']} placement="bottomRight">
               <a
@@ -529,9 +533,11 @@ export default function DashboardLayout({
         ) : (
           <LocationProvider>
             <SocketProvider>
-              <LayoutInner isDarkMode={isDarkMode} toggleTheme={toggleTheme}>
-                {children}
-              </LayoutInner>
+              <NotificationsProvider>
+                <LayoutInner isDarkMode={isDarkMode} toggleTheme={toggleTheme}>
+                  {children}
+                </LayoutInner>
+              </NotificationsProvider>
             </SocketProvider>
           </LocationProvider>
         )}
