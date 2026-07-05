@@ -28,6 +28,7 @@ import { api } from "@/lib/api";
 import PageHeader from "@/components/PageHeader";
 import { useLocation } from "@/contexts/LocationContext";
 import { useSocket } from "@/hooks/useSocket";
+import { formatPrice, formatPhone } from "@/lib/format";
 
 const { Title, Text } = Typography;
 
@@ -65,18 +66,6 @@ const STATUS_LABEL: Record<string, string> = {
   cancelled: "Cancelled",
 };
 
-function formatPrice(cents: number) {
-  return `$${(cents / 100).toFixed(2)}`;
-}
-
-function formatPhone(raw: string) {
-  if (!raw) return "—";
-  const d = raw.replace(/\D/g, "");
-  if (d.length === 11 && d[0] === "1") {
-    return `+1 (${d.slice(1, 4)}) ${d.slice(4, 7)}-${d.slice(7)}`;
-  }
-  return raw;
-}
 
 
 interface PaginatedOrders {

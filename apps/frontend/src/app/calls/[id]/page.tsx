@@ -37,6 +37,7 @@ import {
   UserOutlined,
 } from "@ant-design/icons";
 import { api } from "@/lib/api";
+import { formatPhone, formatDuration } from "@/lib/format";
 import { ErrorState } from "@/components/PageStates";
 import type { CallRecord, ConversationMessage } from "@platform/shared-types";
 import { useLocation } from "@/contexts/LocationContext";
@@ -44,14 +45,6 @@ import { useLocation } from "@/contexts/LocationContext";
 const { Title, Text } = Typography;
 
 // ── Formatters ─────────────────────────────────────────────────────────────────
-function formatDuration(ms: number) {
-  if (!ms) return "—";
-  const s = Math.round(ms / 1000);
-  const m = Math.floor(s / 60);
-  const sec = s % 60;
-  return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
-}
-
 function formatDate(iso: string) {
   if (!iso) return "—";
   return new Date(iso).toLocaleString("en-US", {
@@ -61,15 +54,6 @@ function formatDate(iso: string) {
     hour: "numeric",
     minute: "2-digit",
   });
-}
-
-function formatPhone(raw: string) {
-  if (!raw) return "—";
-  const d = raw.replace(/\D/g, "");
-  if (d.length === 11 && d[0] === "1") {
-    return `+1 (${d.slice(1, 4)}) ${d.slice(4, 7)}-${d.slice(7)}`;
-  }
-  return raw;
 }
 
 function truncateId(id: string) {
