@@ -19,6 +19,7 @@ export interface Location {
     dynamicVariables?: Record<string, string>;
     menuBucket?: string;
   };
+  taxRateBps?: number;
   telnyxAssistantId?: string | null;
   menuLastSyncedAt?: string | null;
 }

@@ -1,4 +1,12 @@
-import { IsString, IsNotEmpty, IsOptional, MaxLength } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  MaxLength,
+  IsInt,
+  Min,
+  Max,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateLocationDto {
@@ -49,4 +57,14 @@ export class CreateLocationDto {
   @IsString()
   @MaxLength(1024)
   menuImportSource?: string;
+
+  @ApiPropertyOptional({
+    example: 825,
+    description: 'Sales tax rate in basis points (825 = 8.25%)',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(10000)
+  taxRateBps?: number;
 }

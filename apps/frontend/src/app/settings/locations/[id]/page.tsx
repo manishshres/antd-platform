@@ -6,6 +6,7 @@ import {
   Card,
   Form,
   Input,
+  InputNumber,
   Button,
   Space,
   Divider,
@@ -52,6 +53,7 @@ export default function EditLocationPage() {
         state: location.state,
         country: location.country,
         timezone: location.timezone,
+        taxRatePercent: (location.taxRateBps ?? 0) / 100,
         menuBucket: location.aiSettings?.menuBucket ?? "",
         dynamicVariables: Object.entries(dynVars).map(([key, value]) => ({
           key,
@@ -74,10 +76,15 @@ export default function EditLocationPage() {
       const {
         dynamicVariables: _omitVars,
         menuBucket: _omitBucket,
+        taxRatePercent,
         ...locationFields
       } = values;
       void _omitVars;
       void _omitBucket;
+      // Stored in basis points server-side (8.25% → 825).
+      (locationFields as Record<string, unknown>).taxRateBps = Math.round(
+        Number(taxRatePercent ?? 0) * 100,
+      );
 
       await api.patch(`/locations/${id}`, locationFields);
 
@@ -163,6 +170,20 @@ export default function EditLocationPage() {
               <Input placeholder="e.g. America/New_York" />
             </Form.Item>
           </Space>
+          <Form.Item
+            name="taxRatePercent"
+            label="Sales Tax Rate (%)"
+            extra="Applied to POS and AI phone orders at this location."
+          >
+            <InputNumber
+              min={0}
+              max={100}
+              step={0.05}
+              precision={2}
+              style={{ width: 160 }}
+              aria-label="Sales tax rate percent"
+            />
+          </Form.Item>
 
           <Divider>AI Agent Config</Divider>
           <Form.Item

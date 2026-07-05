@@ -55,6 +55,9 @@ export const locations = pgTable(
     timezone: varchar('timezone', { length: 100 }).default('America/New_York'),
     businessHours: jsonb('business_hours'),
     aiSettings: jsonb('ai_settings'),
+    // Sales tax rate in basis points (825 = 8.25%). Single flat rate per location for now;
+    // a tax_rates table replaces this when per-item/channel rules are needed (see POS plan).
+    taxRateBps: integer('tax_rate_bps').default(0).notNull(),
     // Telnyx provisioning (per-location)
     phoneNumber: varchar('phone_number', { length: 50 }),
     telnyxPhoneNumberId: varchar('telnyx_phone_number_id', { length: 255 }),
@@ -371,7 +374,11 @@ export const orders = pgTable(
     customerName: varchar('customer_name', { length: 255 }).notNull(),
     customerPhone: varchar('customer_phone', { length: 50 }).notNull(),
     status: varchar('status', { length: 50 }).default('pending').notNull(), // 'pending', 'preparing', 'ready', 'completed', 'cancelled'
-    totalAmount: integer('total_amount').notNull(), // in cents
+    totalAmount: integer('total_amount').notNull(), // in cents, subtotal + tax
+    // Tax breakdown (cents). Nullable so pre-tax rows stay valid; totalAmount remains the
+    // single source of truth for what was charged.
+    subtotal: integer('subtotal'),
+    taxAmount: integer('tax_amount'),
     // Fulfilment type (e.g. 'pickup', 'delivery', 'dine_in') and free-form kitchen notes captured
     // from the AI order webhook. Kept nullable/permissive so a novel value never drops an order.
     orderType: varchar('order_type', { length: 50 }),

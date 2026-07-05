@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   App,
   Badge,
@@ -21,7 +21,9 @@ import {
   CreditCardOutlined,
   DeleteOutlined,
   DollarOutlined,
+  LeftOutlined,
   MinusOutlined,
+  RightOutlined,
   PlusOutlined,
   ShoppingCartOutlined,
 } from "@ant-design/icons";
@@ -86,7 +88,7 @@ const fmtMoney = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 export default function PosPage() {
   const { token } = theme.useToken();
   const { message } = App.useApp();
-  const { selectedLocationId } = useLocation();
+  const { selectedLocationId, selectedLocation } = useLocation();
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
@@ -138,6 +140,17 @@ export default function PosPage() {
     () => cart.reduce((sum, l) => sum + l.unitPrice * l.quantity, 0),
     [cart],
   );
+  // Mirror of the server-side calculation — the backend recomputes and is authoritative.
+  const taxRateBps = selectedLocation?.taxRateBps ?? 0;
+  const taxAmount = Math.round((subtotal * taxRateBps) / 10000);
+  const total = subtotal + taxAmount;
+
+  // Category pill strip: hidden scrollbar, arrow buttons + drag/touch scrolling.
+  const pillsRef = useRef<HTMLDivElement>(null);
+  const drag = useRef({ active: false, startX: 0, startScroll: 0 });
+  const scrollPills = (dir: -1 | 1) => {
+    pillsRef.current?.scrollBy({ left: dir * 280, behavior: "smooth" });
+  };
 
   const addLine = (item: MenuItem, options: CartOption[], notes?: string) => {
     const optionsKey = options
@@ -287,40 +300,82 @@ export default function PosPage() {
             gap: token.marginSM,
           }}
         >
-          {/* Category pills — horizontal scroll */}
+          {/* Category pills — hidden scrollbar; arrows + drag/touch to scroll */}
           <div
-            role="tablist"
-            aria-label="Menu categories"
             style={{
               display: "flex",
+              alignItems: "center",
               gap: 8,
-              overflowX: "auto",
               flexShrink: 0,
-              paddingBottom: 4,
             }}
           >
-            {categories.map((cat) => {
-              const active = cat.id === selectedCatId;
-              return (
-                <Button
-                  key={cat.id}
-                  role="tab"
-                  aria-selected={active}
-                  type={active ? "primary" : "default"}
-                  shape="round"
-                  size="large"
-                  onClick={() => setSelectedCatId(cat.id)}
-                  style={{
-                    flexShrink: 0,
-                    fontWeight: active ? 600 : 500,
-                    height: 44,
-                    paddingInline: 20,
-                  }}
-                >
-                  {cat.name}
-                </Button>
-              );
-            })}
+            <Button
+              shape="circle"
+              icon={<LeftOutlined />}
+              aria-label="Scroll categories left"
+              onClick={() => scrollPills(-1)}
+            />
+            <div
+              ref={pillsRef}
+              className="pos-pill-strip"
+              role="tablist"
+              aria-label="Menu categories"
+              onPointerDown={(e) => {
+                drag.current = {
+                  active: true,
+                  startX: e.clientX,
+                  startScroll: pillsRef.current?.scrollLeft ?? 0,
+                };
+              }}
+              onPointerMove={(e) => {
+                if (!drag.current.active || !pillsRef.current) return;
+                pillsRef.current.scrollLeft =
+                  drag.current.startScroll - (e.clientX - drag.current.startX);
+              }}
+              onPointerUp={() => {
+                drag.current.active = false;
+              }}
+              onPointerLeave={() => {
+                drag.current.active = false;
+              }}
+              style={{
+                display: "flex",
+                gap: 8,
+                overflowX: "auto",
+                flex: 1,
+                minWidth: 0,
+                cursor: "grab",
+              }}
+            >
+              {categories.map((cat) => {
+                const active = cat.id === selectedCatId;
+                return (
+                  <Button
+                    key={cat.id}
+                    role="tab"
+                    aria-selected={active}
+                    type={active ? "primary" : "default"}
+                    shape="round"
+                    size="large"
+                    onClick={() => setSelectedCatId(cat.id)}
+                    style={{
+                      flexShrink: 0,
+                      fontWeight: active ? 600 : 500,
+                      height: 44,
+                      paddingInline: 20,
+                    }}
+                  >
+                    {cat.name}
+                  </Button>
+                );
+              })}
+            </div>
+            <Button
+              shape="circle"
+              icon={<RightOutlined />}
+              aria-label="Scroll categories right"
+              onClick={() => scrollPills(1)}
+            />
           </div>
 
           {/* Item grid */}
@@ -552,6 +607,28 @@ export default function PosPage() {
             style={{
               display: "flex",
               justifyContent: "space-between",
+              marginBottom: 2,
+            }}
+          >
+            <Text type="secondary">Subtotal</Text>
+            <Text type="secondary">{fmtMoney(subtotal)}</Text>
+          </div>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              marginBottom: 4,
+            }}
+          >
+            <Text type="secondary">
+              Tax{taxRateBps > 0 ? ` (${(taxRateBps / 100).toFixed(2)}%)` : ""}
+            </Text>
+            <Text type="secondary">{fmtMoney(taxAmount)}</Text>
+          </div>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
               marginBottom: token.marginXS,
             }}
           >
@@ -559,7 +636,7 @@ export default function PosPage() {
               Total
             </Title>
             <Title level={5} style={{ margin: 0 }}>
-              {fmtMoney(subtotal)}
+              {fmtMoney(total)}
             </Title>
           </div>
           <Space.Compact block>

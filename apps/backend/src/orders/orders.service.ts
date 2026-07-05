@@ -232,6 +232,21 @@ export class OrdersService {
       dbItems.map((i) => i.locationId),
     );
 
+    // Apply the location's flat sales tax (basis points). Orders without a resolvable
+    // location are charged tax-free rather than guessing a rate.
+    let taxRateBps = 0;
+    if (resolvedLocationId) {
+      const [loc] = await this.db
+        .select({ taxRateBps: schema.locations.taxRateBps })
+        .from(schema.locations)
+        .where(eq(schema.locations.id, resolvedLocationId))
+        .limit(1);
+      taxRateBps = loc?.taxRateBps ?? 0;
+    }
+    const subtotal = totalAmount;
+    const taxAmount = Math.round((subtotal * taxRateBps) / 10000);
+    totalAmount = subtotal + taxAmount;
+
     // Insert order and items within a transaction
     const orderId = await this.db.transaction(async (tx) => {
       const newOrders = await tx
@@ -242,6 +257,8 @@ export class OrdersService {
           customerName,
           customerPhone,
           status: 'pending',
+          subtotal,
+          taxAmount,
           totalAmount,
           orderType: orderType ?? null,
           specialInstructions: specialInstructions ?? null,
@@ -290,6 +307,8 @@ export class OrdersService {
       orderId: fullOrder.id,
       customerName: fullOrder.customerName,
       customerPhone: fullOrder.customerPhone,
+      subtotal: fullOrder.subtotal ?? undefined,
+      taxAmount: fullOrder.taxAmount ?? undefined,
       totalAmount: fullOrder.totalAmount,
       orderType: fullOrder.orderType,
       specialInstructions: fullOrder.specialInstructions,
@@ -399,6 +418,25 @@ export class OrdersService {
       throw new BadRequestException('Order must contain at least one item.');
     }
 
+    // Validate the location belongs to this org and pick up its tax rate.
+    const [location] = await this.db
+      .select({
+        id: schema.locations.id,
+        taxRateBps: schema.locations.taxRateBps,
+      })
+      .from(schema.locations)
+      .where(
+        and(
+          eq(schema.locations.id, dto.locationId),
+          eq(schema.locations.organizationId, orgId),
+          isNull(schema.locations.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (!location) {
+      throw new NotFoundException('Location not found in your organization.');
+    }
+
     // Resolve menu items scoped to the org, available and non-deleted only (same guard as the
     // AI-webhook path — items from other tenants must never price into an order).
     const itemIds = [...new Set(dto.items.map((i) => i.menuItemId))];
@@ -481,7 +519,7 @@ export class OrdersService {
       attachedByItem.set(row.menuItemId, list);
     }
 
-    let totalAmount = 0;
+    let subtotal = 0;
     const resolvedItems = dto.items.map((line) => {
       const menuItem = dbItemsMap.get(line.menuItemId);
       if (!menuItem) {
@@ -525,7 +563,7 @@ export class OrdersService {
       const unitPrice =
         menuItem.price +
         snapshots.reduce((sum, s) => sum + s.priceAdjustment, 0);
-      totalAmount += unitPrice * line.quantity;
+      subtotal += unitPrice * line.quantity;
 
       return {
         menuItemId: line.menuItemId,
@@ -535,6 +573,10 @@ export class OrdersService {
         notes: line.notes?.trim() || null,
       };
     });
+
+    // Tax computed server-side from the location's flat rate (basis points).
+    const taxAmount = Math.round((subtotal * location.taxRateBps) / 10000);
+    const totalAmount = subtotal + taxAmount;
 
     const now = new Date();
     const orderId = await this.db.transaction(async (tx) => {
@@ -546,6 +588,8 @@ export class OrdersService {
           customerName: dto.customerName?.trim() || 'Walk-in',
           customerPhone: dto.customerPhone?.trim() || '',
           status: 'confirmed',
+          subtotal,
+          taxAmount,
           totalAmount,
           orderType: dto.orderType ?? 'dine_in',
           specialInstructions: dto.specialInstructions ?? null,
@@ -574,6 +618,8 @@ export class OrdersService {
     });
 
     return this.dispatchOrderSideEffects(orgId, orderId, user.id, {
+      subtotal,
+      taxAmount,
       totalAmount,
       items: resolvedItems,
       status: 'confirmed',
@@ -716,6 +762,8 @@ export class OrdersService {
       orderId: fullOrder.id,
       customerName: fullOrder.customerName,
       customerPhone: fullOrder.customerPhone,
+      subtotal: fullOrder.subtotal ?? undefined,
+      taxAmount: fullOrder.taxAmount ?? undefined,
       totalAmount: fullOrder.totalAmount,
       items: fullOrder.items.map((item) => ({
         menuItemName: item.menuItemName,

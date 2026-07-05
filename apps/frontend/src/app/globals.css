@@ -7,3 +7,13 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+/* POS category pill strip: scrollable but with the scrollbar hidden
+   (arrow buttons + drag/touch handle navigation) */
+.pos-pill-strip {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* legacy Edge */
+}
+.pos-pill-strip::-webkit-scrollbar {
+  display: none; /* WebKit */
+}
