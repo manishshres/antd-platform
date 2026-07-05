@@ -19,6 +19,11 @@ interface TableToolbarProps {
   onRefresh?: () => void;
   /** Right-aligned primary actions (e.g. "New order"). */
   actions?: React.ReactNode;
+  /**
+   * Where the search box sits. "left" (default) keeps it on the leading edge with the filters;
+   * "right" groups it with the export/refresh/actions cluster on the trailing edge.
+   */
+  searchAlign?: "left" | "right";
 }
 
 /**
@@ -35,8 +40,21 @@ export default function TableToolbar({
   onExport,
   onRefresh,
   actions,
+  searchAlign = "left",
 }: TableToolbarProps) {
   const { token } = theme.useToken();
+
+  const searchBox = onSearchChange && (
+    <Input
+      allowClear
+      prefix={<SearchOutlined style={{ color: token.colorTextTertiary }} />}
+      placeholder={searchPlaceholder}
+      value={search}
+      onChange={(e) => onSearchChange(e.target.value)}
+      style={{ width: 260, maxWidth: "100%" }}
+    />
+  );
+
   return (
     <div
       style={{
@@ -49,19 +67,11 @@ export default function TableToolbar({
       }}
     >
       <Space size={token.marginXS} wrap>
-        {onSearchChange && (
-          <Input
-            allowClear
-            prefix={<SearchOutlined style={{ color: token.colorTextTertiary }} />}
-            placeholder={searchPlaceholder}
-            value={search}
-            onChange={(e) => onSearchChange(e.target.value)}
-            style={{ width: 260, maxWidth: "100%" }}
-          />
-        )}
+        {searchAlign === "left" && searchBox}
         {filters}
       </Space>
       <Space size={token.marginXS} wrap>
+        {searchAlign === "right" && searchBox}
         {onRefresh && (
           <Button icon={<ReloadOutlined />} onClick={onRefresh} aria-label="Refresh">
             Refresh

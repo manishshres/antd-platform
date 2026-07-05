@@ -12,7 +12,6 @@ import {
   Drawer,
   Descriptions,
   Divider,
-  Tooltip,
   Input,
   Select,
   theme,
@@ -20,7 +19,6 @@ import {
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import {
-  PlusOutlined,
   PrinterOutlined,
 } from "@ant-design/icons";
 import { api } from "@/lib/api";
@@ -245,64 +243,6 @@ export default function OrdersPage() {
     }
   };
 
-  interface LocalMenuItem {
-    id: string;
-    name: string;
-    description: string;
-    price: number;
-    categoryId: string;
-  }
-
-  interface LocalCategory {
-    id: string;
-    name: string;
-    items?: LocalMenuItem[];
-  }
-
-  // Generate a mock order for easy local developer testing
-  const createMockOrder = async () => {
-    try {
-      // 1. Fetch the menu to see if we have items
-      const { data: menuData } = await api.get<LocalCategory[]>("/menus");
-      const allItems = (menuData || []).flatMap((cat) => cat.items || []);
-
-      if (allItems.length === 0) {
-        // Automatically create a mock category and item if menu is empty
-        const cat = await api.post<{ id: string }>("/menus/categories", {
-          name: "Mock Delicacies",
-        });
-        const item = await api.post<LocalMenuItem>("/menus/items", {
-          categoryId: cat.data.id,
-          name: "Signature Pepperoni Pizza",
-          description: "Freshly baked pizza with authentic pepperoni slices",
-          price: 1499,
-        });
-        allItems.push(item.data);
-      }
-
-      // 2. Create the mock order using the first menu item
-      const itemToOrder = allItems[0];
-      await api.post("/orders", {
-        locationId: selectedLocationId,
-        customerName: "Alice Smith",
-        customerPhone: "+15551234567",
-        items: [
-          {
-            menuItemId: itemToOrder.id,
-            quantity: 2,
-          },
-        ],
-      });
-
-      message.success("Mock order created successfully!");
-      load();
-    } catch (err: unknown) {
-      const errorMsg =
-        err instanceof Error ? err.message : "Make sure menu items exist.";
-      message.error(`Failed to create mock order: ${errorMsg}`);
-    }
-  };
-
   const q = search.trim().toLowerCase();
   const displayedOrders = orders.filter((o) => {
     if (statusFilter && o.status !== statusFilter) return false;
@@ -375,13 +315,6 @@ export default function OrdersPage() {
       <PageHeader
         title="Restaurant Orders"
         subtitle="View customer orders placed via AI webhooks."
-        actions={
-          <Tooltip title='Create a Mock Order to test the database and UI'>
-            <Button type='dashed' icon={<PlusOutlined />} onClick={createMockOrder}>
-              Create Mock Order
-            </Button>
-          </Tooltip>
-        }
       />
 
       {error && (
@@ -398,6 +331,7 @@ export default function OrdersPage() {
           search={search}
           onSearchChange={setSearch}
           searchPlaceholder="Search customer or phone…"
+          searchAlign="right"
           filters={
             <Select
               allowClear
