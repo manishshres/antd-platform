@@ -111,7 +111,8 @@ export default function PosPage() {
     let cancelled = false;
     api
       .get<{ data: Category[] }>(
-        `/menus?locationId=${selectedLocationId}&limit=1000`,
+        // Pagination is per-category and PaginationDto caps limit at 100.
+        `/menus?locationId=${selectedLocationId}&limit=100`,
       )
       .then(({ data }) => {
         if (cancelled) return;
