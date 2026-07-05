@@ -266,13 +266,12 @@ export default function PlatformAdminDashboard() {
       </Card>
 
       {/* ADD LOCATION MODAL */}
-      <Modal
+      <Modal forceRender
         title={`Provision New Location for ${selectedOrg?.name || "Organization"}`}
         open={addLocModalVisible}
         onCancel={() => setAddLocModalVisible(false)}
         footer={null}
         destroyOnHidden
-        forceRender
       >
         <Form form={addLocForm} layout="vertical" onFinish={handleAddLocationSubmit}>
           <Form.Item name="name" label="Location Name" rules={[{ required: true }]}>
@@ -308,7 +307,7 @@ export default function PlatformAdminDashboard() {
       </Modal>
 
       {/* FEATURE FLAGS MODAL */}
-      <Modal
+      <Modal forceRender
         title={`Feature Flags: ${selectedOrg?.name || "Organization"}`}
         open={featureFlagsModalVisible}
         onCancel={() => setFeatureFlagsModalVisible(false)}

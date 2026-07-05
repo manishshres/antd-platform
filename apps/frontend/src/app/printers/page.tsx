@@ -530,7 +530,6 @@ export default function PrintersPage() {
         open={isModalOpen}
         onCancel={() => setIsModalOpen(false)}
         footer={null}
-        forceRender
       >
         <Form form={form} layout="vertical" onFinish={handleSubmit}>
           <Form.Item

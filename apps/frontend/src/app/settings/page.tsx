@@ -701,12 +701,11 @@ export default function SettingsHubPage() {
       </Card>
 
       {/* Location Modal */}
-      <Modal
+      <Modal forceRender
         title={locModalMode === "add" ? "Add Location" : "Edit Location"}
         open={locModalOpen}
         onCancel={() => setLocModalOpen(false)}
         footer={null}
-        forceRender
       >
         <Form form={locForm} layout="vertical" onFinish={handleLocSubmit}>
           <Form.Item name="name" label="Location Name" rules={[{ required: true }]}><Input /></Form.Item>
@@ -758,12 +757,11 @@ export default function SettingsHubPage() {
       </Modal>
 
       {/* Assign Manager Modal */}
-      <Modal
+      <Modal forceRender
         title="Assign Manager to Location"
         open={assignManagerModalVisible}
         onCancel={() => setAssignManagerModalVisible(false)}
         footer={null}
-        forceRender
       >
         <Form form={assignManagerForm} layout="vertical" onFinish={handleAssignManagerSubmit}>
           <Form.Item name="email" label="Manager Email Address" rules={[{ required: true, type: "email", message: "Please enter a valid email" }]}>
@@ -780,12 +778,11 @@ export default function SettingsHubPage() {
       </Modal>
 
       {/* API Key Modal */}
-      <Modal
+      <Modal forceRender
         title="Create Developer API Key"
         open={apiKeyModalVisible}
         onCancel={() => { setApiKeyModalVisible(false); setNewlyGeneratedKey(null); }}
         footer={null}
-        forceRender
       >
         {newlyGeneratedKey && (
           <Alert
@@ -822,12 +819,11 @@ export default function SettingsHubPage() {
       </Modal>
 
       {/* Webhook Modal */}
-      <Modal
+      <Modal forceRender
         title="Add Webhook Endpoint"
         open={webhookModalVisible}
         onCancel={() => setWebhookModalVisible(false)}
         footer={null}
-        forceRender
       >
         <Form form={webhookForm} layout="vertical" onFinish={handleCreateWebhook}>
           <Form.Item name="url" label="Endpoint URL" rules={[{ required: true, type: "url" }]}><Input placeholder="https://api.example.com/webhook" /></Form.Item>
