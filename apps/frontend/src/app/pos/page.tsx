@@ -5,7 +5,6 @@ import {
   App,
   Badge,
   Button,
-  Card,
   Divider,
   Empty,
   Input,
@@ -271,92 +270,142 @@ export default function PosPage() {
           display: "flex",
           gap: token.marginSM,
           alignItems: "stretch",
-          // Lock the register to the viewport: the page itself never scrolls,
-          // each panel (categories, items, cart) scrolls independently.
-          height: "calc(100vh - 200px)",
+          // Lock the register to 75% of the viewport: the page never scrolls,
+          // the item grid and cart scroll independently.
+          height: "75vh",
           minHeight: 420,
           overflow: "hidden",
         }}
       >
-        {/* Category rail */}
+        {/* Items area: category pills on top, grid below (Square/Toast pattern) */}
         <div
           style={{
-            width: 168,
-            flexShrink: 0,
+            flex: 1,
+            minWidth: 0,
             display: "flex",
             flexDirection: "column",
-            gap: 8,
-            overflowY: "auto",
+            gap: token.marginSM,
           }}
         >
-          {categories.map((cat) => {
-            const active = cat.id === selectedCatId;
-            return (
-              <Button
-                key={cat.id}
-                type={active ? "primary" : "default"}
-                onClick={() => setSelectedCatId(cat.id)}
-                aria-label={`Category ${cat.name}`}
-                style={{
-                  height: 56,
-                  whiteSpace: "normal",
-                  fontWeight: active ? 600 : 400,
-                }}
-              >
-                {cat.name}
-              </Button>
-            );
-          })}
-        </div>
-
-        {/* Item grid */}
-        <div style={{ flex: 1, overflowY: "auto" }}>
-          {visibleItems.length === 0 ? (
-            <Empty description="No items in this category." />
-          ) : (
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
-                gap: token.marginSM,
-              }}
-            >
-              {visibleItems.map((item) => (
-                <Card
-                  key={item.id}
-                  hoverable={item.isAvailable}
-                  onClick={() => handleItemTap(item)}
-                  aria-label={`Add ${item.name}`}
-                  styles={{ body: { padding: token.paddingSM } }}
+          {/* Category pills — horizontal scroll */}
+          <div
+            role="tablist"
+            aria-label="Menu categories"
+            style={{
+              display: "flex",
+              gap: 8,
+              overflowX: "auto",
+              flexShrink: 0,
+              paddingBottom: 4,
+            }}
+          >
+            {categories.map((cat) => {
+              const active = cat.id === selectedCatId;
+              return (
+                <Button
+                  key={cat.id}
+                  role="tab"
+                  aria-selected={active}
+                  type={active ? "primary" : "default"}
+                  shape="round"
+                  size="large"
+                  onClick={() => setSelectedCatId(cat.id)}
                   style={{
-                    cursor: item.isAvailable ? "pointer" : "not-allowed",
-                    opacity: item.isAvailable ? 1 : 0.45,
-                    minHeight: 96,
-                    userSelect: "none",
+                    flexShrink: 0,
+                    fontWeight: active ? 600 : 500,
+                    height: 44,
+                    paddingInline: 20,
                   }}
                 >
+                  {cat.name}
+                </Button>
+              );
+            })}
+          </div>
+
+          {/* Item grid */}
+          <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+            {visibleItems.length === 0 ? (
+              <Empty description="No items in this category." />
+            ) : (
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
+                  gap: token.marginSM,
+                }}
+              >
+                {visibleItems.map((item) => (
                   <div
+                    key={item.id}
+                    onClick={() => handleItemTap(item)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ")
+                        handleItemTap(item);
+                    }}
+                    aria-label={`Add ${item.name}`}
                     style={{
+                      cursor: item.isAvailable ? "pointer" : "not-allowed",
+                      opacity: item.isAvailable ? 1 : 0.45,
+                      userSelect: "none",
+                      background: token.colorBgContainer,
+                      border: `1px solid ${token.colorBorderSecondary}`,
+                      borderRadius: token.borderRadiusLG,
+                      padding: token.paddingSM,
+                      minHeight: 104,
                       display: "flex",
                       flexDirection: "column",
-                      gap: 4,
+                      justifyContent: "space-between",
+                      transition: "border-color 0.15s, box-shadow 0.15s",
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!item.isAvailable) return;
+                      e.currentTarget.style.borderColor = token.colorPrimary;
+                      e.currentTarget.style.boxShadow =
+                        token.boxShadowTertiary;
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor =
+                        token.colorBorderSecondary;
+                      e.currentTarget.style.boxShadow = "none";
                     }}
                   >
-                    <Text strong style={{ fontSize: 14 }}>
+                    <Text
+                      strong
+                      style={{ fontSize: 14, lineHeight: 1.35 }}
+                      ellipsis={{ tooltip: item.name }}
+                    >
                       {item.name}
                     </Text>
-                    <Text type="secondary" style={{ fontSize: 13 }}>
-                      {fmtMoney(item.price)}
-                    </Text>
-                    {(item.modifiers?.length ?? 0) > 0 && (
-                      <Tag style={{ width: "fit-content" }}>options</Tag>
-                    )}
-                    {!item.isAvailable && <Tag color="red">86&apos;d</Tag>}
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        marginTop: 8,
+                      }}
+                    >
+                      <Text
+                        strong
+                        style={{ fontSize: 14, color: token.colorPrimary }}
+                      >
+                        {fmtMoney(item.price)}
+                      </Text>
+                      {!item.isAvailable ? (
+                        <Tag color="red" style={{ margin: 0 }}>
+                          86&apos;d
+                        </Tag>
+                      ) : (item.modifiers?.length ?? 0) > 0 ? (
+                        <Tag style={{ margin: 0 }}>options</Tag>
+                      ) : null}
+                    </div>
                   </div>
-                </Card>
-              ))}
-            </div>
-          )}
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Cart panel */}
