@@ -3,6 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { HeartbeatService } from './heartbeat.service';
 import { DRIZZLE } from '../database/database.module';
 import { MqttService } from './mqtt.service';
+import { PrintJobsService } from './print-jobs.service';
 
 describe('HeartbeatService', () => {
   let service: HeartbeatService;
@@ -14,12 +15,15 @@ describe('HeartbeatService', () => {
     returning: jest.fn().mockResolvedValue([{ id: 'printer-1' }]),
   };
 
+  const mockMqtt = { publish: jest.fn() };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         HeartbeatService,
         { provide: DRIZZLE, useValue: mockDb },
-        { provide: MqttService, useValue: { publish: jest.fn() } },
+        { provide: MqttService, useValue: mockMqtt },
+        { provide: PrintJobsService, useValue: {} },
       ],
     }).compile();
 

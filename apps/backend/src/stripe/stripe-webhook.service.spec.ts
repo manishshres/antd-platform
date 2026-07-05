@@ -19,6 +19,8 @@ describe('StripeWebhookService', () => {
         limit: jest.fn().mockReturnThis(),
         insert: jest.fn().mockReturnThis(),
         values: jest.fn().mockReturnThis(),
+        onConflictDoNothing: jest.fn().mockReturnThis(),
+        returning: jest.fn().mockResolvedValue(result),
         update: jest.fn().mockReturnThis(),
         set: jest.fn().mockReturnThis(),
         then: (resolve: any) => resolve(result),
@@ -28,7 +30,7 @@ describe('StripeWebhookService', () => {
 
     dbMock = {
       select: jest.fn(() => mockQueryBuilder([])),
-      insert: jest.fn(() => mockQueryBuilder([])),
+      insert: jest.fn(() => mockQueryBuilder([{ id: 'mock-inserted-event' }])),
       update: jest.fn(() => mockQueryBuilder([])),
       get qb() {
         return qb;
@@ -89,10 +91,14 @@ describe('StripeWebhookService', () => {
           then: (resolve: any) => resolve([]), // No existing sub
         });
 
-      const insertValuesMock = jest.fn().mockResolvedValueOnce([]);
-      dbMock.insert.mockReturnValueOnce({
-        values: insertValuesMock,
+      const insertValuesMock = jest.fn().mockReturnValueOnce({
+        onConflictDoNothing: jest.fn().mockReturnThis(),
+        returning: jest.fn().mockResolvedValue([]),
       });
+      const defaultInsert = dbMock.insert.getMockImplementation();
+      dbMock.insert
+        .mockImplementationOnce(defaultInsert) // 1st call: webhookEvents idempotency
+        .mockReturnValueOnce({ values: insertValuesMock }); // 2nd call: orgSubscriptions
 
       await service.handleEvent({
         type: 'checkout.session.completed',

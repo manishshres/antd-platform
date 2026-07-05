@@ -57,7 +57,7 @@ describe('TelnyxService', () => {
   it('should format searchAvailableNumbers correctly', async () => {
     await service.searchAvailableNumbers('US', 'NY', 'New York', 5);
     expect(global.fetch).toHaveBeenCalledWith(
-      'https://api.telnyx.com/v2/available_phone_numbers?filter%5Bcountry_code%5D=US&filter%5Blimit%5D=5&filter%5Badministrative_area%5D=NY&filter%5Blocality%5D=New+York',
+      'https://api.telnyx.com/v2/available_phone_numbers?filter%5Bcountry_code%5D=US&filter%5Bphone_number_type%5D=local&filter%5Bexclude_held_numbers%5D=true&filter%5Blimit%5D=5&filter%5Bfeatures%5D=hd_voice&filter%5Badministrative_area%5D=NY&filter%5Blocality%5D=New+York',
       expect.any(Object),
     );
   });
