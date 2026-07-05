@@ -22,6 +22,7 @@ import {
   Radio,
 } from "antd";
 import { PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined, KeyOutlined, ApiOutlined, GlobalOutlined, BankOutlined, SecurityScanOutlined, BuildOutlined, CreditCardOutlined, NotificationOutlined, SettingOutlined, MailOutlined, UserAddOutlined, MinusCircleOutlined, LinkOutlined, SyncOutlined, ReloadOutlined } from "@ant-design/icons";
+import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import PageHeader from "@/components/PageHeader";
 import { useLocation, Location } from "@/contexts/LocationContext";
@@ -63,6 +64,7 @@ const WEBHOOK_EVENTS = [
 ];
 
 export default function SettingsHubPage() {
+  const router = useRouter();
   const { message } = App.useApp();
   const { token } = theme.useToken();
   const { locations, refreshLocations, loading: locLoading, selectedLocation: globalSelectedLocation, setSelectedLocationId } = useLocation();
@@ -346,7 +348,7 @@ export default function SettingsHubPage() {
           <Button size="small" icon={<UserAddOutlined />} onClick={() => openAssignManager(record)}>
             Assign Manager
           </Button>
-          <Button size="small" icon={<EditOutlined />} onClick={() => openLocModal("edit", record)}>
+          <Button size="small" icon={<EditOutlined />} onClick={() => router.push(`/settings/locations/${record.id}`)}>
             Edit
           </Button>
           <Popconfirm title="Delete this location?" onConfirm={() => handleDeleteLocation(record.id)} okText="Yes" cancelText="No">
