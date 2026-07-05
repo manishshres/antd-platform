@@ -14,8 +14,6 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
 
-import { Redis } from 'ioredis';
-
 interface WebhookJobData {
   orgId: string;
   idempotencyKey?: string;
@@ -55,19 +53,28 @@ export class WebhookQueueProcessor extends WorkerHost {
     } = job.data;
 
     if (idempotencyKey) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      const store = (this.cacheManager as any).store as { client?: Redis };
-      const client = store.client;
-      if (client && typeof client.set === 'function') {
-        const idempKey = `idempotency:inbound:${idempotencyKey}`;
-        // Set if Not eXists with a 24 hour expiry (86400 seconds)
-        const setnxResult = await client.set(idempKey, '1', 'EX', 86400, 'NX');
-        if (!setnxResult) {
+      const idempKey = `idempotency:inbound:${idempotencyKey}`;
+      // Secondary dedup guarding against a BullMQ retry re-creating an order that a prior attempt
+      // already created. This layers on top of the DB-level webhook_events reservation (the
+      // primary, atomic idempotency guard at ingestion). cache-manager v7 is Keyv-based and
+      // exposes no raw Redis client, so use its standard async API — and fail open on any cache
+      // error so a cache hiccup can never drop a legitimate order.
+      try {
+        const alreadySeen = await this.cacheManager.get(idempKey);
+        if (alreadySeen) {
           this.logger.warn(
             `Idempotency key ${idempotencyKey} already processed. Skipping duplicate AI order.`,
           );
           return { message: 'Skipped duplicate webhook' };
         }
+        // 24 hour TTL (cache-manager v7 expects milliseconds).
+        await this.cacheManager.set(idempKey, '1', 86400 * 1000);
+      } catch (err) {
+        this.logger.warn(
+          `Idempotency cache unavailable for key ${idempotencyKey}; proceeding on the DB reservation guard: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
       }
     }
 
