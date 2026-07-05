@@ -15,6 +15,7 @@ import {
   MoonOutlined,
   LogoutOutlined,
   ShoppingOutlined,
+  ShopOutlined,
   CoffeeOutlined,
   CreditCardOutlined,
   PrinterOutlined,
@@ -88,6 +89,7 @@ function SidebarMenu({
       label: 'Store Operations',
       icon: <ShoppingOutlined />,
       children: [
+        { key: "/pos", icon: <ShopOutlined />, label: "POS Register", allowed: ["platform_admin", "sysadmin", "admin", "manager", "user"] },
         { key: "/orders", icon: <ShoppingOutlined />, label: "Orders", allowed: ["platform_admin", "sysadmin", "admin", "manager", "user"] },
         { key: "/menus", icon: <CoffeeOutlined />, label: "Menu", allowed: ["platform_admin", "sysadmin", "admin", "manager"] },
         { key: "/printers", icon: <PrinterOutlined />, label: "Printers", allowed: ["platform_admin", "sysadmin", "admin", "manager"] },

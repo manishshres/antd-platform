@@ -19,6 +19,7 @@ import {
 } from '@nestjs/swagger';
 import { OrdersService } from './orders.service';
 import { CreateOrderDto } from './dto/create-order.dto';
+import { CreatePosOrderDto } from './dto/create-pos-order.dto';
 import { UpdateStatusDto } from './dto/update-status.dto';
 import { PrintOrderDto } from './dto/print-order.dto';
 import { GetOrdersDto } from './dto/get-orders.dto';
@@ -83,6 +84,20 @@ export class OrdersController {
       dto.customerPhone,
       dto.items,
     );
+  }
+
+  @Post('pos')
+  @Roles('user', 'manager', 'admin', 'sysadmin')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Create a paid order from the in-store POS' })
+  @ApiResponse({ status: 201, description: 'Order created and paid.' })
+  @ApiResponse({ status: 400, description: 'Validation failed.' })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  async createPosOrder(
+    @CurrentUser() user: CurrentUserPayload,
+    @Body() dto: CreatePosOrderDto,
+  ): Promise<unknown> {
+    return this.ordersService.createPosOrder(user, dto);
   }
 
   @Patch(':id/status')

@@ -105,6 +105,8 @@ export class OrdersService {
         id: schema.orderItems.id,
         quantity: schema.orderItems.quantity,
         price: schema.orderItems.price,
+        modifiers: schema.orderItems.modifiers,
+        notes: schema.orderItems.notes,
         menuItemId: schema.orderItems.menuItemId,
         menuItemName: schema.menuItems.name,
       })
@@ -263,6 +265,24 @@ export class OrdersService {
       return order.id;
     });
 
+    return this.dispatchOrderSideEffects(orgId, orderId, userId, {
+      totalAmount,
+      items: resolvedItems,
+      status: 'pending',
+    });
+  }
+
+  /**
+   * Shared post-insert pipeline for every order channel (AI webhook, mock generator, POS):
+   * fetch the full order, enqueue kitchen + receipt print jobs, write the audit entry, record
+   * usage, and broadcast the order to the org's realtime room.
+   */
+  private async dispatchOrderSideEffects(
+    orgId: string,
+    orderId: string,
+    userId: string | undefined,
+    auditNewValue: Record<string, unknown>,
+  ) {
     const fullOrder = await this.getOrderByIdForOrg(orgId, orderId);
 
     // Format print job payload
@@ -277,6 +297,8 @@ export class OrdersService {
         menuItemName: item.menuItemName,
         quantity: item.quantity,
         price: item.price,
+        modifiers: item.modifiers ?? undefined,
+        notes: item.notes ?? undefined,
       })),
       createdAt: fullOrder.createdAt,
     };
@@ -323,7 +345,7 @@ export class OrdersService {
       organizationId: orgId,
       entityType: 'order',
       entityId: fullOrder.id,
-      newValue: { totalAmount, items: resolvedItems, status: 'pending' },
+      newValue: auditNewValue,
     });
 
     // Only record usage when we resolved a real location — usage_events.locationId is a
@@ -347,6 +369,217 @@ export class OrdersService {
     this.eventEmitter.emit('order.created', { orgId, fullOrder });
 
     return fullOrder;
+  }
+
+  /**
+   * Create an order from the in-store POS register. Prices items AND selected modifier options
+   * server-side (never trusting client math), snapshots modifier selections onto the order items,
+   * and records how the order was paid ('cash' | 'card' — detailed payment processing is a later
+   * phase). POS orders are paid up front, so they enter the pipeline as 'confirmed'.
+   */
+  async createPosOrder(
+    user: CurrentUserPayload,
+    dto: {
+      locationId: string;
+      customerName?: string;
+      customerPhone?: string;
+      orderType?: string;
+      specialInstructions?: string;
+      paymentMethod: string;
+      items: {
+        menuItemId: string;
+        quantity: number;
+        optionIds?: string[];
+        notes?: string;
+      }[];
+    },
+  ) {
+    const orgId = await this.billingService.getRequiredOrg(user);
+    if (dto.items.length === 0) {
+      throw new BadRequestException('Order must contain at least one item.');
+    }
+
+    // Resolve menu items scoped to the org, available and non-deleted only (same guard as the
+    // AI-webhook path — items from other tenants must never price into an order).
+    const itemIds = [...new Set(dto.items.map((i) => i.menuItemId))];
+    const dbItems = await this.db
+      .select({
+        id: schema.menuItems.id,
+        price: schema.menuItems.price,
+        locationId: schema.menuItems.locationId,
+      })
+      .from(schema.menuItems)
+      .innerJoin(
+        schema.categories,
+        eq(schema.menuItems.categoryId, schema.categories.id),
+      )
+      .where(
+        and(
+          inArray(schema.menuItems.id, itemIds),
+          eq(schema.categories.organizationId, orgId),
+          isNull(schema.menuItems.deletedAt),
+          eq(schema.menuItems.isAvailable, true),
+        ),
+      );
+    const dbItemsMap = new Map(dbItems.map((i) => [i.id, i]));
+
+    // Resolve every selected modifier option in one batch, org-scoped through its group.
+    const allOptionIds = [
+      ...new Set(dto.items.flatMap((i) => i.optionIds ?? [])),
+    ];
+    const optionRows = allOptionIds.length
+      ? await this.db
+          .select({
+            id: schema.menuItemModifiers.id,
+            name: schema.menuItemModifiers.name,
+            priceAdjustment: schema.menuItemModifiers.priceAdjustment,
+            modifierId: schema.menuItemModifiers.modifierId,
+            modifierName: schema.menuModifiers.name,
+          })
+          .from(schema.menuItemModifiers)
+          .innerJoin(
+            schema.menuModifiers,
+            eq(schema.menuItemModifiers.modifierId, schema.menuModifiers.id),
+          )
+          .where(
+            and(
+              inArray(schema.menuItemModifiers.id, allOptionIds),
+              eq(schema.menuModifiers.organizationId, orgId),
+              isNull(schema.menuItemModifiers.deletedAt),
+              isNull(schema.menuModifiers.deletedAt),
+            ),
+          )
+      : [];
+    const optionMap = new Map(optionRows.map((o) => [o.id, o]));
+
+    // Which modifier groups are attached to which items (validates option→item ownership and
+    // lets us enforce required groups).
+    const attachRows = await this.db
+      .select({
+        menuItemId: schema.menuItemToModifiers.menuItemId,
+        modifierId: schema.menuItemToModifiers.modifierId,
+        isRequired: schema.menuModifiers.isRequired,
+      })
+      .from(schema.menuItemToModifiers)
+      .innerJoin(
+        schema.menuModifiers,
+        eq(schema.menuItemToModifiers.modifierId, schema.menuModifiers.id),
+      )
+      .where(
+        and(
+          inArray(schema.menuItemToModifiers.menuItemId, itemIds),
+          isNull(schema.menuModifiers.deletedAt),
+        ),
+      );
+    const attachedByItem = new Map<
+      string,
+      { modifierId: string; isRequired: boolean }[]
+    >();
+    for (const row of attachRows) {
+      const list = attachedByItem.get(row.menuItemId) ?? [];
+      list.push({ modifierId: row.modifierId, isRequired: row.isRequired });
+      attachedByItem.set(row.menuItemId, list);
+    }
+
+    let totalAmount = 0;
+    const resolvedItems = dto.items.map((line) => {
+      const menuItem = dbItemsMap.get(line.menuItemId);
+      if (!menuItem) {
+        throw new NotFoundException(
+          `Menu item ${line.menuItemId} not found, unavailable, or not in this organization.`,
+        );
+      }
+
+      const attached = attachedByItem.get(line.menuItemId) ?? [];
+      const attachedGroupIds = new Set(attached.map((a) => a.modifierId));
+      const selectedGroupIds = new Set<string>();
+
+      const snapshots = (line.optionIds ?? []).map((optionId) => {
+        const opt = optionMap.get(optionId);
+        if (!opt) {
+          throw new NotFoundException(
+            `Modifier option ${optionId} not found in this organization.`,
+          );
+        }
+        if (!attachedGroupIds.has(opt.modifierId)) {
+          throw new BadRequestException(
+            `Modifier option "${opt.name}" does not apply to menu item ${line.menuItemId}.`,
+          );
+        }
+        selectedGroupIds.add(opt.modifierId);
+        return {
+          modifier: opt.modifierName,
+          option: opt.name,
+          priceAdjustment: opt.priceAdjustment,
+        };
+      });
+
+      for (const group of attached) {
+        if (group.isRequired && !selectedGroupIds.has(group.modifierId)) {
+          throw new BadRequestException(
+            `Menu item ${line.menuItemId} is missing a required modifier selection.`,
+          );
+        }
+      }
+
+      const unitPrice =
+        menuItem.price +
+        snapshots.reduce((sum, s) => sum + s.priceAdjustment, 0);
+      totalAmount += unitPrice * line.quantity;
+
+      return {
+        menuItemId: line.menuItemId,
+        quantity: line.quantity,
+        price: unitPrice,
+        modifiers: snapshots.length > 0 ? snapshots : null,
+        notes: line.notes?.trim() || null,
+      };
+    });
+
+    const now = new Date();
+    const orderId = await this.db.transaction(async (tx) => {
+      const [order] = await tx
+        .insert(schema.orders)
+        .values({
+          organizationId: orgId,
+          locationId: dto.locationId,
+          customerName: dto.customerName?.trim() || 'Walk-in',
+          customerPhone: dto.customerPhone?.trim() || '',
+          status: 'confirmed',
+          totalAmount,
+          orderType: dto.orderType ?? 'dine_in',
+          specialInstructions: dto.specialInstructions ?? null,
+          source: 'pos',
+          paymentMethod: dto.paymentMethod,
+          paidAt: now,
+        })
+        .returning();
+
+      if (!order) {
+        throw new BadRequestException('Failed to create order.');
+      }
+
+      await tx.insert(schema.orderItems).values(
+        resolvedItems.map((item) => ({
+          orderId: order.id,
+          menuItemId: item.menuItemId,
+          quantity: item.quantity,
+          price: item.price,
+          modifiers: item.modifiers,
+          notes: item.notes,
+        })),
+      );
+
+      return order.id;
+    });
+
+    return this.dispatchOrderSideEffects(orgId, orderId, user.id, {
+      totalAmount,
+      items: resolvedItems,
+      status: 'confirmed',
+      source: 'pos',
+      paymentMethod: dto.paymentMethod,
+    });
   }
 
   /**

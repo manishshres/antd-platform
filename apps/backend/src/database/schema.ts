@@ -376,6 +376,12 @@ export const orders = pgTable(
     // from the AI order webhook. Kept nullable/permissive so a novel value never drops an order.
     orderType: varchar('order_type', { length: 50 }),
     specialInstructions: varchar('special_instructions', { length: 1000 }),
+    // POS support: which channel created the order ('pos' | 'ai_phone' | 'online'), how it was
+    // paid ('cash' | 'card' — detailed payment processing lands later), and when. Nullable so
+    // pre-POS rows and the AI webhook path stay valid without a backfill.
+    source: varchar('source', { length: 20 }),
+    paymentMethod: varchar('payment_method', { length: 20 }),
+    paidAt: timestamp('paid_at'),
     deletedAt: timestamp('deleted_at'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
@@ -403,7 +409,11 @@ export const orderItems = pgTable(
       .references(() => menuItems.id, { onDelete: 'cascade' })
       .notNull(),
     quantity: integer('quantity').notNull(),
-    price: integer('price').notNull(), // price in cents at time of order
+    price: integer('price').notNull(), // unit price in cents at time of order, incl. modifiers
+    // Snapshot of selected modifier options at order time — menu edits must never mutate
+    // historical orders. Shape: [{ modifier, option, priceAdjustment }]
+    modifiers: jsonb('modifiers'),
+    notes: varchar('notes', { length: 500 }),
     createdAt: timestamp('created_at').defaultNow().notNull(),
   },
   (t) => [index('idx_order_items_order_id').on(t.orderId)],
