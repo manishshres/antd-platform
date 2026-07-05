@@ -51,34 +51,37 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
   });
   const [selectedOrgId, setSelectedOrgIdState] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isPlatformAdmin] = useState(() => {
-    if (typeof window !== "undefined") {
+  const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
+  const [userRole, setUserRole] = useState("user");
+
+  useEffect(() => {
+    const updateAuth = () => {
       const token = localStorage.getItem("access_token");
       if (token) {
         try {
           const payload = token.split(".")[1];
           const decoded = JSON.parse(window.atob(payload.replace(/-/g, "+").replace(/_/g, "/")));
           const r = decoded.role || "user";
-          return r === "platform_admin";
-        } catch {}
+          setUserRole(r);
+          setIsPlatformAdmin(r === "platform_admin");
+        } catch {
+          setUserRole("user");
+          setIsPlatformAdmin(false);
+        }
+      } else {
+        setUserRole("user");
+        setIsPlatformAdmin(false);
       }
-    }
-    return false;
-  });
+    };
 
-  const [userRole] = useState(() => {
-    if (typeof window !== "undefined") {
-      const token = localStorage.getItem("access_token");
-      if (token) {
-        try {
-          const payload = token.split(".")[1];
-          const decoded = JSON.parse(window.atob(payload.replace(/-/g, "+").replace(/_/g, "/")));
-          return decoded.role || "user";
-        } catch {}
-      }
-    }
-    return "user";
-  });
+    updateAuth();
+    window.addEventListener("storage", updateAuth);
+    window.addEventListener("auth-change", updateAuth);
+    return () => {
+      window.removeEventListener("storage", updateAuth);
+      window.removeEventListener("auth-change", updateAuth);
+    };
+  }, []);
 
   const fetchLocations = useCallback(async (orgId?: string | null) => {
     try {

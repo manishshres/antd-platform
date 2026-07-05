@@ -36,6 +36,8 @@ export default function LoginPage() {
       if (data?.access_token) {
         // Refresh token is set as an HttpOnly cookie by the backend (H2) — do not persist it.
         localStorage.setItem("access_token", data.access_token);
+        // Notify contexts (LocationContext) to re-read the role from the new token (M15).
+        window.dispatchEvent(new Event("auth-change"));
         router.push("/dashboard");
       } else {
         setError("Invalid response format from server.");

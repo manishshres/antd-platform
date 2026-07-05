@@ -121,13 +121,15 @@ function SidebarMenu({
     })
     .filter(Boolean) as MenuProps['items'];
 
-  // Flatten to find selected key
+  // Find selected key
   let selectedKey = "/dashboard";
   filteredItems?.forEach(group => {
     if (group && 'children' in group) {
       const children = group.children as any[];
       const match = children.find(item => pathname.startsWith(item.key));
       if (match) selectedKey = match.key;
+    } else if (group && group.key && typeof group.key === 'string' && pathname.startsWith(group.key)) {
+      selectedKey = group.key;
     }
   });
 
@@ -298,6 +300,7 @@ function LayoutInner({
         // Clear tenant context so the next login on a shared device doesn't inherit it (M14).
         localStorage.removeItem("selectedOrgId");
         localStorage.removeItem("selectedLocationId");
+        window.dispatchEvent(new Event("auth-change"));
         router.push("/login");
       },
     },
@@ -411,7 +414,12 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('theme') === 'dark';
+    }
+    return false;
+  });
   const [initialized, setInitialized] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
@@ -426,11 +434,6 @@ export default function DashboardLayout({
 
   useEffect(() => {
     Promise.resolve().then(() => {
-      const saved = localStorage.getItem("theme");
-      if (saved === "dark") {
-        setIsDarkMode(true);
-      }
-      
       const token = localStorage.getItem("access_token");
       if (!token && !isAuthPage) {
         router.push("/login");
@@ -446,14 +449,6 @@ export default function DashboardLayout({
     localStorage.setItem("theme", next ? "dark" : "light");
   };
 
-  if (!initialized) {
-    return (
-      <div style={{ minHeight: "100vh", display: "flex", justifyContent: "center", alignItems: "center" }}>
-        <Spin size="large" />
-      </div>
-    );
-  }
-
   return (
     <ConfigProvider
       theme={{
@@ -462,13 +457,19 @@ export default function DashboardLayout({
       }}
     >
       <App>
-        <LocationProvider>
-          <SocketProvider>
-            <LayoutInner isDarkMode={isDarkMode} toggleTheme={toggleTheme}>
-              {children}
-            </LayoutInner>
-          </SocketProvider>
-        </LocationProvider>
+        {!initialized ? (
+          <div style={{ minHeight: "100vh", display: "flex", justifyContent: "center", alignItems: "center", background: isDarkMode ? '#141414' : '#ffffff' }}>
+            <Spin size="large" />
+          </div>
+        ) : (
+          <LocationProvider>
+            <SocketProvider>
+              <LayoutInner isDarkMode={isDarkMode} toggleTheme={toggleTheme}>
+                {children}
+              </LayoutInner>
+            </SocketProvider>
+          </LocationProvider>
+        )}
       </App>
     </ConfigProvider>
   );
