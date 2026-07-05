@@ -683,7 +683,7 @@ export default function SettingsHubPage() {
   ];
 
   return (
-    <div style={{ maxWidth: 1200, margin: "0 auto" }}>
+    <div>
       <PageHeader
         title="Settings Hub"
         subtitle="Manage your organization's configuration and developer tools."

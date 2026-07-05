@@ -101,7 +101,7 @@ export default function ConversationsPage() {
   ];
 
   return (
-    <div style={{ maxWidth: 1200, margin: "0 auto" }}>
+    <div>
       <PageHeader
         title={<><MessageOutlined style={{ color: token.colorPrimary, marginRight: 12 }} />Conversations</>}
         subtitle="Review chat threads from your AI voice agent."

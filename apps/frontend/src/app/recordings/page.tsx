@@ -124,7 +124,7 @@ export default function RecordingsPage() {
   ];
 
   return (
-    <div style={{ maxWidth: 1200, margin: "0 auto" }}>
+    <div>
       <PageHeader
         title={<><AudioOutlined style={{ color: token.colorPrimary, marginRight: 12 }} />Call Recordings</>}
         subtitle="Review and playback audio recordings of customer calls."

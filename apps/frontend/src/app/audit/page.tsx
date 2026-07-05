@@ -159,7 +159,7 @@ export default function AuditLogsPage() {
   ];
 
   return (
-    <div style={{ maxWidth: 1200, margin: "0 auto", paddingBottom: 40 }}>
+    <div style={{ paddingBottom: 40 }}>
       <PageHeader
         title={<><HistoryOutlined style={{ marginRight: 8, color: token.colorPrimary }} />Audit Logs</>}
         subtitle="Review system actions and changes for security and compliance."

@@ -284,7 +284,7 @@ export default function UsersPage() {
   ];
 
   return (
-    <div style={{ maxWidth: 1200, margin: "0 auto" }}>
+    <div>
       <PageHeader
         title={<><TeamOutlined style={{ color: token.colorPrimary, marginRight: 12 }} />User Management</>}
         subtitle="Manage team members, roles, and platform access."
