@@ -118,12 +118,21 @@ export class AnalyticsService {
   }
 
   async getDashboardMetrics(organizationId: string, locationId?: string) {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // M6: Fetch location timezone to make date bucketing TZ-aware
+    let tz = 'UTC';
+    const locQuery = await this.db
+      .select({ timezone: schema.locations.timezone })
+      .from(schema.locations)
+      .where(
+        locationId
+          ? eq(schema.locations.id, locationId)
+          : eq(schema.locations.organizationId, organizationId),
+      )
+      .limit(1);
 
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
-    sevenDaysAgo.setHours(0, 0, 0, 0);
+    if (locQuery.length > 0 && locQuery[0].timezone) {
+      tz = locQuery[0].timezone;
+    }
 
     const tenMinutesAgo = new Date();
     tenMinutesAgo.setMinutes(tenMinutesAgo.getMinutes() - 10);
@@ -152,7 +161,12 @@ export class AnalyticsService {
         ),
       })
       .from(schema.orders)
-      .where(and(...orderConditions, gte(schema.orders.createdAt, today)));
+      .where(
+        and(
+          ...orderConditions,
+          sql`${schema.orders.createdAt} AT TIME ZONE ${tz} >= date_trunc('day', now() AT TIME ZONE ${tz})`
+        ),
+      );
 
     const totalOrdersToday = kpiOrdersRes[0]?.totalOrders || 0;
     const revenueToday = (kpiOrdersRes[0]?.revenueCents || 0) / 100;
@@ -180,51 +194,62 @@ export class AnalyticsService {
         : 'Offline';
     }
 
-    // 2. Trend Queries
+    // 2. Trend Queries (grouped in SQL with TZ awareness)
     const trendOrders = await this.db
-      .select({ createdAt: schema.orders.createdAt })
+      .select({
+        dateStr: sql<string>`to_char(${schema.orders.createdAt} AT TIME ZONE ${tz}, 'YYYY-MM-DD')`,
+        count: sql<number>`count(*)::int`.mapWith(Number),
+      })
       .from(schema.orders)
       .where(
-        and(...orderConditions, gte(schema.orders.createdAt, sevenDaysAgo)),
-      );
+        and(
+          ...orderConditions,
+          sql`${schema.orders.createdAt} AT TIME ZONE ${tz} >= date_trunc('day', now() AT TIME ZONE ${tz}) - interval '6 days'`
+        ),
+      )
+      // Group by the first select expression (the date bucket) by ordinal. Repeating the
+      // to_char() here fails: Drizzle renders the column qualified in GROUP BY but unqualified
+      // in SELECT, so Postgres rejects it with 42803 (must appear in GROUP BY).
+      .groupBy(sql`1`);
 
     const trendConvs = await this.db
-      .select({ createdAt: schema.conversations.createdAt })
+      .select({
+        dateStr: sql<string>`to_char(${schema.conversations.createdAt} AT TIME ZONE ${tz}, 'YYYY-MM-DD')`,
+        count: sql<number>`count(*)::int`.mapWith(Number),
+      })
       .from(schema.conversations)
       .where(
         and(
           ...convConditions,
-          gte(schema.conversations.createdAt, sevenDaysAgo),
+          sql`${schema.conversations.createdAt} AT TIME ZONE ${tz} >= date_trunc('day', now() AT TIME ZONE ${tz}) - interval '6 days'`
         ),
-      );
+      )
+      // Group by the date bucket by ordinal — see note on the orders trend query above.
+      .groupBy(sql`1`);
 
-    // Group by date
+    // Group by date, generating the last 7 days safely in postgres
+    const datesRes = await this.db.execute(
+      sql`SELECT to_char(date_trunc('day', now() AT TIME ZONE ${tz}) - (i || ' days')::interval, 'YYYY-MM-DD') as date_str, to_char(date_trunc('day', now() AT TIME ZONE ${tz}) - (i || ' days')::interval, 'Dy') as date_label FROM generate_series(6, 0, -1) i`
+    );
+
     const trendMap = new Map<
       string,
       { date: string; orders: number; calls: number }
     >();
 
-    for (let i = 0; i < 7; i++) {
-      const d = new Date();
-      d.setDate(d.getDate() - (6 - i));
-      const key = d.toDateString();
-      const dateLabel = d.toLocaleDateString('en-US', { weekday: 'short' });
-      trendMap.set(key, { date: dateLabel, orders: 0, calls: 0 });
+    for (const row of datesRes.rows) {
+      trendMap.set(row.date_str as string, { date: row.date_label as string, orders: 0, calls: 0 });
     }
 
     trendOrders.forEach((o) => {
-      if (!o.createdAt) return;
-      const key = o.createdAt.toDateString();
-      if (trendMap.has(key)) {
-        trendMap.get(key)!.orders += 1;
+      if (trendMap.has(o.dateStr)) {
+        trendMap.get(o.dateStr)!.orders = o.count;
       }
     });
 
     trendConvs.forEach((c) => {
-      if (!c.createdAt) return;
-      const key = c.createdAt.toDateString();
-      if (trendMap.has(key)) {
-        trendMap.get(key)!.calls += 1;
+      if (trendMap.has(c.dateStr)) {
+        trendMap.get(c.dateStr)!.calls = c.count;
       }
     });
 
