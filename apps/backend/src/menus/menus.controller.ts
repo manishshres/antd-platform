@@ -75,7 +75,7 @@ export class MenusController {
   }
 
   @Post('sync-ai')
-  @Roles('sysadmin')
+  @Roles('platform_admin', 'sysadmin', 'manager')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Upload current menu to Telnyx Storage and trigger AI Embedding',

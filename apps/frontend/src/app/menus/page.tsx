@@ -38,6 +38,7 @@ import {
   AppstoreOutlined,
   FolderOutlined,
   EllipsisOutlined,
+  RobotOutlined,
 } from "@ant-design/icons";
 import {
   DndContext,
@@ -185,6 +186,7 @@ export default function MenuEditorPage() {
 
   const [catModalOpen, setCatModalOpen] = useState(false);
   const [importLoading, setImportLoading] = useState(false);
+  const [aiSyncLoading, setAiSyncLoading] = useState(false);
   const [itemModalOpen, setItemModalOpen] = useState(false);
   const [modifierModalOpen, setModifierModalOpen] = useState(false);
 
@@ -252,6 +254,21 @@ export default function MenuEditorPage() {
     } catch (e: any) {
       message.error(e.response?.data?.message || "Failed to start menu sync.");
     } finally { setImportLoading(false); }
+  };
+
+  // Push the current menu to the Telnyx AI knowledge base so the voice agent answers with the
+  // latest items/prices. This is a manual publish — menu edits don't auto-sync to the agent.
+  const handleSyncToAI = async () => {
+    try {
+      setAiSyncLoading(true);
+      const res = await api.post<{ message?: string }>(
+        `/menus/sync-ai${selectedLocationId ? `?locationId=${selectedLocationId}` : ""}`,
+      );
+      message.success(res.data?.message || "Menu published to the AI voice agent.");
+    } catch (e) {
+      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      message.error(msg || "Failed to publish menu to the AI agent.");
+    } finally { setAiSyncLoading(false); }
   };
 
   const handleAddCategory = async (values: { name: string }) => {
@@ -363,6 +380,18 @@ export default function MenuEditorPage() {
               <Button icon={<SyncOutlined />} type="primary" onClick={() => handleImportMenu('sync')} loading={importLoading}>
                 Sync Menu
               </Button>
+            )}
+            {isAdmin && (
+              <Tooltip title="Publish the current menu to the AI voice agent's knowledge base. Run this after editing the menu so callers get the latest items and prices.">
+                <Button
+                  icon={<RobotOutlined />}
+                  onClick={handleSyncToAI}
+                  loading={aiSyncLoading}
+                  disabled={!selectedLocationId}
+                >
+                  Push to AI Agent
+                </Button>
+              </Tooltip>
             )}
           </>
         }
