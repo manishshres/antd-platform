@@ -77,7 +77,6 @@ function formatPhone(raw: string) {
   return raw;
 }
 
-const TEST_PRINTER_ID = "Prn0F2C2A092605032000000D8FA588C83D";
 
 interface PaginatedOrders {
   data: Order[];
@@ -520,32 +519,21 @@ export default function OrdersPage() {
                     MQTT Print Job
                   </Title>
                   <Input
-                    placeholder={`Optional printer ID / subtopic (e.g. ${TEST_PRINTER_ID})`}
+                    placeholder="Optional printer ID / subtopic (leave blank for all)"
                     value={printerId}
                     onChange={(event) => setPrinterId(event.target.value)}
                     style={{ marginBottom: token.marginSM }}
                     allowClear
                   />
-                  <Space orientation='vertical' style={{ width: "100%" }}>
-                    <Button
-                      onClick={() => handlePrint(selectedOrder.id, printerId)}
-                      loading={printLoading}
-                      icon={<PrinterOutlined />}
-                      type='dashed'
-                      style={{ width: "100%" }}
-                    >
-                      Send to Kitchen & Receipt Printers
-                    </Button>
-                    <Button
-                      onClick={() => handlePrint(selectedOrder.id, TEST_PRINTER_ID)}
-                      loading={printLoading}
-                      icon={<PrinterOutlined />}
-                      type='primary'
-                      style={{ width: "100%" }}
-                    >
-                      Test Print to {TEST_PRINTER_ID}
-                    </Button>
-                  </Space>
+                  <Button
+                    onClick={() => handlePrint(selectedOrder.id, printerId)}
+                    loading={printLoading}
+                    icon={<PrinterOutlined />}
+                    type='primary'
+                    style={{ width: "100%" }}
+                  >
+                    Send to Kitchen &amp; Receipt Printers
+                  </Button>
                 </div>
               </>
             )}

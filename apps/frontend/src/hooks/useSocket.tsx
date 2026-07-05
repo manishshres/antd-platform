@@ -37,20 +37,9 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
       reconnectionDelayMax: 5000,
     });
 
-    socketInstance.on("connect", () => {
-      setIsConnected(true);
-      console.log("Socket connected:", socketInstance.id);
-    });
-
-    socketInstance.on("disconnect", () => {
-      setIsConnected(false);
-      console.log("Socket disconnected");
-    });
-
-    socketInstance.on("connect_error", (error) => {
-      setIsConnected(false);
-      console.error("Socket connection error:", error);
-    });
+    socketInstance.on("connect", () => setIsConnected(true));
+    socketInstance.on("disconnect", () => setIsConnected(false));
+    socketInstance.on("connect_error", () => setIsConnected(false));
 
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setSocket(socketInstance);
