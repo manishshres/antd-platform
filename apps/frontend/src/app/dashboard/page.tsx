@@ -51,14 +51,29 @@ interface DashboardMetrics {
   }[];
 }
 
-// Quick action items for SaaS dashboard
-const quickActions = [
-  { key: "calls", label: "AI Call Center", icon: <RobotOutlined />, href: "/calls", color: "#1677ff" },
-  { key: "orders", label: "View Orders", icon: <ShoppingOutlined />, href: "/orders", color: "#52c41a" },
-  { key: "menus", label: "Edit Menu", icon: <CoffeeOutlined />, href: "/menus", color: "#fa8c16" },
-  { key: "team", label: "Team Members", icon: <TeamOutlined />, href: "/users", color: "#722ed1" },
-  { key: "analytics", label: "Usage Analytics", icon: <FileTextOutlined />, href: "/analytics/usage", color: "#eb2f96" },
-  { key: "settings", label: "Settings", icon: <SettingOutlined />, href: "/settings", color: "#8c8c8c" },
+// Quick action items for SaaS dashboard. Accent colors are theme-token keys (resolved at render)
+// rather than hardcoded hex, so they follow light/dark mode (L7).
+type AccentKey =
+  | "colorPrimary"
+  | "colorSuccess"
+  | "colorWarning"
+  | "purple"
+  | "magenta"
+  | "colorTextTertiary";
+
+const quickActions: {
+  key: string;
+  label: string;
+  icon: React.ReactNode;
+  href: string;
+  accent: AccentKey;
+}[] = [
+  { key: "calls", label: "AI Call Center", icon: <RobotOutlined />, href: "/calls", accent: "colorPrimary" },
+  { key: "orders", label: "View Orders", icon: <ShoppingOutlined />, href: "/orders", accent: "colorSuccess" },
+  { key: "menus", label: "Edit Menu", icon: <CoffeeOutlined />, href: "/menus", accent: "colorWarning" },
+  { key: "team", label: "Team Members", icon: <TeamOutlined />, href: "/users", accent: "purple" },
+  { key: "analytics", label: "Usage Analytics", icon: <FileTextOutlined />, href: "/analytics/usage", accent: "magenta" },
+  { key: "settings", label: "Settings", icon: <SettingOutlined />, href: "/settings", accent: "colorTextTertiary" },
 ];
 
 export default function DashboardPage() {
@@ -280,7 +295,9 @@ export default function DashboardPage() {
         <Col xs={24} lg={8}>
           <Card title="Quick Actions" variant="borderless" size="small">
             <Row gutter={[8, 8]}>
-              {quickActions.map((action) => (
+              {quickActions.map((action) => {
+                const accent = token[action.accent] as string;
+                return (
                 <Col span={12} key={action.key}>
                   <Link href={action.href}>
                     <div
@@ -298,20 +315,21 @@ export default function DashboardPage() {
                         height: 80,
                       }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.borderColor = action.color;
-                        e.currentTarget.style.boxShadow = `0 2px 8px ${action.color}20`;
+                        e.currentTarget.style.borderColor = accent;
+                        e.currentTarget.style.boxShadow = `0 2px 8px ${token.colorFillSecondary}`;
                       }}
                       onMouseLeave={(e) => {
                         e.currentTarget.style.borderColor = token.colorBorderSecondary;
                         e.currentTarget.style.boxShadow = "none";
                       }}
                     >
-                      <span style={{ fontSize: 20, color: action.color }}>{action.icon}</span>
+                      <span style={{ fontSize: 20, color: accent }}>{action.icon}</span>
                       <Text style={{ fontSize: 12, textAlign: "center" }}>{action.label}</Text>
                     </div>
                   </Link>
                 </Col>
-              ))}
+                );
+              })}
             </Row>
           </Card>
         </Col>

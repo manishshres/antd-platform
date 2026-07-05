@@ -1,6 +1,7 @@
 import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ROLES_KEY } from '../../common/decorators/roles.decorator';
+import { ROLE_HIERARCHY, type UserRole } from '../../common/constants/roles';
 
 /**
  * RolesGuard — enforces role-based access control.
@@ -12,15 +13,6 @@ import { ROLES_KEY } from '../../common/decorators/roles.decorator';
  */
 @Injectable()
 export class RolesGuard implements CanActivate {
-  private static readonly ROLE_HIERARCHY: Record<string, number> = {
-    platform_admin: 100,
-    sysadmin: 50,
-    admin: 50,
-    owner: 50,
-    manager: 30,
-    user: 10,
-  };
-
   constructor(private reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
@@ -43,13 +35,11 @@ export class RolesGuard implements CanActivate {
       return false;
     }
 
-    const userWeight = RolesGuard.ROLE_HIERARCHY[role.toLowerCase()] ?? 0;
+    const weightOf = (r: string): number =>
+      ROLE_HIERARCHY[r.toLowerCase() as UserRole] ?? 0;
+    const userWeight = weightOf(role);
 
     // Allow access if the user's role is equal to or higher than any of the required roles
-    return requiredRoles.some((reqRole) => {
-      const requiredWeight =
-        RolesGuard.ROLE_HIERARCHY[reqRole.toLowerCase()] ?? 0;
-      return userWeight >= requiredWeight;
-    });
+    return requiredRoles.some((reqRole) => userWeight >= weightOf(reqRole));
   }
 }

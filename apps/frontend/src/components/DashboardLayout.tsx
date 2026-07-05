@@ -41,6 +41,12 @@ import { ConeekoLogo } from "./Logo";
 const { Sider, Header, Content, Footer } = Layout;
 const { Text } = Typography;
 
+// The sidebar is intentionally always-dark chrome (Sider/Menu use theme="dark"), independent of
+// the app's light/dark mode — so these are fixed brand constants rather than theme tokens, which
+// would incorrectly flip with the mode (L7).
+const SIDEBAR_BG = "#001529";
+const SIDEBAR_FG = "#ffffff";
+
 interface NavLeaf {
   key: string;
   icon: React.ReactNode;
@@ -172,7 +178,7 @@ function SidebarMenu({
           overflow: "hidden",
         }}
       >
-        <ConeekoLogo collapsed={collapsed} color="#ffffff" />
+        <ConeekoLogo collapsed={collapsed} color={SIDEBAR_FG} />
       </div>
       <Menu
         theme='dark'
@@ -397,7 +403,7 @@ function LayoutInner({
           open={drawerOpen}
           onClose={() => setDrawerOpen(false)}
           styles={{
-            body: { padding: 0, background: "#001529" },
+            body: { padding: 0, background: SIDEBAR_BG },
             wrapper: { width: 240 },
           }}
           closeIcon={null}
@@ -410,7 +416,7 @@ function LayoutInner({
         <Header
           style={{
             padding: `0 ${token.paddingLG}px`,
-            background: isDarkMode ? "#141414" : "#ffffff",
+            background: token.colorBgContainer,
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",

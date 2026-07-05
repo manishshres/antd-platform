@@ -6,9 +6,10 @@ import {
   IsIn,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { INVITABLE_ROLES } from '../../common/constants/roles';
 
-/** Roles that may be granted via an org invitation — never platform_admin (M4). */
-export const INVITABLE_ROLES = ['manager', 'admin', 'sysadmin'] as const;
+// Canonical definition lives in common/constants/roles; re-exported for existing importers (M4).
+export { INVITABLE_ROLES };
 
 export class CreateInvitationDto {
   @ApiProperty()

@@ -127,7 +127,7 @@ export class MenusController {
   @Patch('categories/:id')
   @ApiOperation({ summary: 'Update a category' })
   @ApiResponse({ status: 200, description: 'Category updated successfully.' })
-  @Roles('admin', 'manager', 'owner')
+  @Roles('sysadmin', 'manager')
   async updateCategory(
     @CurrentUser() user: CurrentUserPayload,
     @Param('id') id: string,

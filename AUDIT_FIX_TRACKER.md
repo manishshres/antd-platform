@@ -19,12 +19,12 @@ and a frontend `npm run build` — results are documented per item.
 |-------------|----------|-------|----------|
 | Critical    | 7        | 7     | 100%     |
 | High        | 9        | 9     | 100%     |
-| Medium      | 16       | 17    | 94%      |
-| Low         | 9        | 10    | 90%      |
+| Medium      | 17       | 17    | 100%     |
+| Low         | 10       | 10    | 100%     |
 | Enhancement | 8        | 8     | 100%     |
-| **Overall** | **49**   | **51**| **96%**  |
+| **Overall** | **51**   | **51**| **100%** |
 
-Backend items: 24/28 complete (86%) · Frontend items: 13/17 complete (76%) · Infra items: 1/6 complete (17%)
+Backend items: 25/28 complete (89%) · Frontend items: 14/17 complete (82%) · Infra items: 1/6 complete (17%)
 
 > **Platform-admin access fix (new, beyond the audit):** platform admins got a 403
 > ("User does not belong to an organization") on `/menus`, `/menus/modifiers/groups`,
@@ -398,8 +398,8 @@ path is removed. Build ✅.
 ### [x] M3 — Account-lockout counter race (read-modify-write)
 **Where:** `auth.service.ts` (`validateUser`) · **Impact:** parallel attempts bypass lockout increments. · **Fix:** atomic `SET failed_login_attempts = failed_login_attempts + 1`. · **Effort:** 2 h · **Status:** Completed
 
-### [~] M4 — Role model sprawl; invitation default role is `sysadmin`
-**Where:** guards, DTOs, schema, sidebar · **Impact:** four inconsistent role taxonomies; risky invite default. · **Fix:** single role enum + migration; explicit invite role required. · **Effort:** 2 days · **Status:** Not Started
+### [x] M4 — Role model sprawl; invitation default role is `sysadmin`
+**Where:** guards, DTOs, schema, sidebar · **Impact:** four inconsistent role taxonomies; risky invite default. · **Fix:** single role enum + migration; explicit invite role required. · **Effort:** 2 days · **Status:** Completed — single source of truth in `common/constants/roles.ts` (`USER_ROLES`, `ROLE_HIERARCHY`, `INVITABLE_ROLES`); `RolesGuard` and the invitation DTO now import it. Removed the phantom `owner` role (was in the hierarchy + one guard but never a valid DB role) and fixed the `@Roles('admin','manager','owner')` menu route. Invite default already hardened to `manager` with `@IsIn(INVITABLE_ROLES)` (no `platform_admin`). Kept the `varchar` + CHECK columns rather than a Postgres enum-type migration — lower risk, same guarantees.
 
 ### [x] M5 — `syncMenuToAI`: shared Telnyx bucket, global embed, raw `process.env`
 **Where:** `menus.service.ts:852` · **Impact:** cross-tenant knowledge-base contamination risk. · **Fix:** per-org object prefix/bucket; ConfigService; typed responses. · **Effort:** 2 days · **Status:** Completed
@@ -450,7 +450,7 @@ path is removed. Build ✅.
 ### [x] L4 — `formatPrice`/`formatPhone`/status maps duplicated across pages → `src/lib/format.ts` · **Status:** Completed — `src/lib/format.ts`; orders/calls/calls[id] import it.
 ### [x] L5 — `console.log` in `useSocket`; socket never re-auths after token refresh · **Status:** Completed — removed console logs from useSocket (re-auth-on-refresh still TODO).
 ### [x] L6 — `any` types in layout/context (`rawItems: any[]`, `aiSettings?: any`) · **Status:** Completed — NavItem union types; Location.aiSettings typed.
-### [ ] L7 — Hardcoded hex colors in dashboard quick actions & sidebar (violates token rule) · **Status:** Not Started
+### [x] L7 — Hardcoded hex colors in dashboard quick actions & sidebar (violates token rule) · **Status:** Completed — dashboard quick-action accents now resolve from theme tokens (`colorPrimary`/`colorSuccess`/`colorWarning`/`purple`/`magenta`/`colorTextTertiary`); header background uses `colorBgContainer`. The intentionally always-dark sidebar chrome (`Sider`/`Menu theme="dark"`) is hoisted into documented `SIDEBAR_BG`/`SIDEBAR_FG` constants rather than theme tokens (which would wrongly flip with light/dark mode).
 ### [x] L8 — Zero controller/e2e tests on webhooks, recordings processor, guards · **Status:** Completed — recordings-processor C2 tests (guards/telnyx-sig/webhooks already covered).
 ### [x] L9 — Stray scripts in backend root (`test-telnyx-*.js`, `generate.exp`) · **Status:** Completed — deleted generate.exp, test-telnyx-*.js.
 ### [x] L10 — Frontend package still named `antd-demo` · **Status:** Completed — renamed frontend package to coneeko-frontend.
