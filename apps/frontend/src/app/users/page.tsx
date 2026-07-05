@@ -15,7 +15,6 @@ import {
   Tag,
   Popconfirm,
   Tooltip,
-  theme,
   App,
   Tabs,
 } from "antd";
@@ -26,7 +25,6 @@ import {
   LogoutOutlined,
   UserOutlined,
   MailOutlined,
-  TeamOutlined,
   LockOutlined,
 } from "@ant-design/icons";
 import { api } from "@/lib/api";
@@ -73,7 +71,6 @@ export default function UsersPage() {
   const { locations } = useLocation();
   
   const [form] = Form.useForm();
-  const { token } = theme.useToken();
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
@@ -286,7 +283,7 @@ export default function UsersPage() {
   return (
     <div>
       <PageHeader
-        title={<><TeamOutlined style={{ color: token.colorPrimary, marginRight: 12 }} />User Management</>}
+        title="User Management"
         subtitle="Manage team members, roles, and platform access."
         actions={
           !isPlatformAdmin && (

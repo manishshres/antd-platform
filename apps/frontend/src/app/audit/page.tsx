@@ -12,13 +12,11 @@ import {
   App,
   Row,
   Col,
-  theme
 } from "antd";
 import { 
   SearchOutlined, 
   DownloadOutlined, 
   ReloadOutlined,
-  HistoryOutlined
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { api } from "@/lib/api";
@@ -31,7 +29,6 @@ const { RangePicker } = DatePicker;
 
 export default function AuditLogsPage() {
   const { message } = App.useApp();
-  const { token } = theme.useToken();
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
@@ -161,7 +158,7 @@ export default function AuditLogsPage() {
   return (
     <div style={{ paddingBottom: 40 }}>
       <PageHeader
-        title={<><HistoryOutlined style={{ marginRight: 8, color: token.colorPrimary }} />Audit Logs</>}
+        title="Audit Logs"
         subtitle="Review system actions and changes for security and compliance."
         actions={
           <>

@@ -51,19 +51,13 @@ export default function ProfilePage() {
   useEffect(() => {
     api
       .get<UserProfile>("/users/me")
-      .then(({ data }) => {
-        setProfile(data);
-        profileForm.setFieldsValue({
-          firstName: data.firstName ?? "",
-          lastName: data.lastName ?? "",
-          email: data.email,
-          phoneNumber: data.phoneNumber ?? "",
-          companyName: data.companyName ?? "",
-        });
-      })
+      // The Form isn't mounted while loading (a Skeleton is shown), so populate it via
+      // initialValues from `profile` on mount rather than setFieldsValue here — the latter
+      // warns "useForm is not connected to any Form element" when called pre-mount.
+      .then(({ data }) => setProfile(data))
       .catch(() => message.error("Failed to load profile."))
       .finally(() => setLoading(false));
-  }, [profileForm, message]);
+  }, [message]);
 
   const onSaveProfile = async (values: Record<string, string>) => {
     setSavingProfile(true);
@@ -139,6 +133,13 @@ export default function ProfilePage() {
           layout="vertical"
           onFinish={onSaveProfile}
           requiredMark={false}
+          initialValues={{
+            firstName: profile?.firstName ?? "",
+            lastName: profile?.lastName ?? "",
+            email: profile?.email ?? "",
+            phoneNumber: profile?.phoneNumber ?? "",
+            companyName: profile?.companyName ?? "",
+          }}
         >
           <Row gutter={16}>
             <Col xs={24} sm={12}>
