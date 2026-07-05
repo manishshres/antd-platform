@@ -32,6 +32,7 @@ import { useLocation } from "@/contexts/LocationContext";
 import CallForwardingGuide from "@/components/CallForwardingGuide";
 import PageHeader from "@/components/PageHeader";
 import { ErrorState, EmptyState } from "@/components/PageStates";
+import PlatformOverview from "@/components/PlatformOverview";
 import Link from "next/link";
 
 const { Title, Text, Paragraph } = Typography;
@@ -64,7 +65,8 @@ export default function DashboardPage() {
   const [data, setData] = useState<DashboardMetrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { selectedLocationId, selectedLocation, refreshLocations } = useLocation();
+  const { selectedLocationId, selectedLocation, refreshLocations, userRole } = useLocation();
+  const isPlatformAdmin = userRole === "platform_admin";
   const [togglingStore, setTogglingStore] = useState(false);
 
   const { token } = theme.useToken();
@@ -147,10 +149,21 @@ export default function DashboardPage() {
     return <ErrorState message={error} onRetry={() => window.location.reload()} />;
   }
 
-  if (!data)
+  if (!data) {
+    // Platform admins land on a platform-wide overview rather than an empty location dashboard;
+    // they can drill into a location via the header switcher for the operational view.
+    if (isPlatformAdmin) {
+      return (
+        <div>
+          <PlatformOverview />
+          <EmptyState description="Select an organization and location above to view its operational dashboard." />
+        </div>
+      );
+    }
     return (
       <EmptyState description="Select a location above to view its dashboard." />
     );
+  }
 
   // Calculate some derived metrics
   const totalWeekOrders = data.trend.reduce((sum, d) => sum + d.orders, 0);
