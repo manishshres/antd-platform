@@ -3,7 +3,6 @@
 import { use, useEffect, useState } from "react";
 import {
   Spin,
-  Alert,
   Card,
   Descriptions,
   Table,
@@ -19,8 +18,10 @@ import type { ColumnsType } from "antd/es/table";
 import { ArrowLeftOutlined, SaveOutlined } from "@ant-design/icons";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
+import PageHeader from "@/components/PageHeader";
+import { ErrorState } from "@/components/PageStates";
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 interface VoiceSettings {
   voice?: string;
@@ -154,11 +155,9 @@ export default function AssistantDetailPage({
 
   if (error || !agent) {
     return (
-      <Alert
-        type='error'
-        title='Error'
-        description={error ?? "Agent not found."}
-        showIcon
+      <ErrorState
+        message={error ?? "Agent not found."}
+        onRetry={() => router.push("/assistant")}
       />
     );
   }
@@ -182,35 +181,20 @@ export default function AssistantDetailPage({
     <>
       {contextHolder}
 
-      {/* Header row */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          marginBottom: token.margin,
-        }}
-      >
-        <Space>
-          <Button
-            icon={<ArrowLeftOutlined />}
-            type='text'
-            onClick={() => router.push("/assistant")}
-          />
-          <Title level={4} style={{ margin: 0 }}>
+      <PageHeader
+        title={
+          <Space size={8}>
+            <Button size="small" type='text' icon={<ArrowLeftOutlined />} onClick={() => router.push("/assistant")} />
             {agent.name}
-          </Title>
-          <Tag color='blue'>{agent.model}</Tag>
-        </Space>
-        <Button
-          type='primary'
-          icon={<SaveOutlined />}
-          loading={saving}
-          onClick={handleSave}
-        >
-          Save Changes
-        </Button>
-      </div>
+            <Tag color='blue'>{agent.model}</Tag>
+          </Space>
+        }
+        actions={
+          <Button type='primary' icon={<SaveOutlined />} loading={saving} onClick={handleSave}>
+            Save Changes
+          </Button>
+        }
+      />
 
       <Space orientation='vertical' size={token.margin} style={{ width: "100%" }}>
         {/* Greeting */}

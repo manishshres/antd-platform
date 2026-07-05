@@ -4,10 +4,12 @@ import React, { useEffect, useState } from "react";
 import { Card, Typography, Skeleton, Alert, theme, Button, Space, Avatar, Divider } from "antd";
 import { ArrowLeftOutlined, RobotOutlined, UserOutlined } from "@ant-design/icons";
 import { api } from "@/lib/api";
+import PageHeader from "@/components/PageHeader";
+import { ErrorState } from "@/components/PageStates";
 import { useParams, useRouter } from "next/navigation";
 import dayjs from "dayjs";
 
-const { Title, Text, Paragraph } = Typography;
+const { Text, Paragraph } = Typography;
 
 interface Message {
   role: "user" | "assistant" | "system";
@@ -64,30 +66,29 @@ export default function ConversationDetailPage() {
   if (error || !conversation) {
     return (
       <div style={{ maxWidth: 800, margin: "0 auto" }}>
-        <Button icon={<ArrowLeftOutlined />} onClick={() => router.push("/conversations")} style={{ marginBottom: 16 }}>
-          Back to Conversations
-        </Button>
-        <Alert type="error" title={error || "Conversation not found"} showIcon />
+        <ErrorState
+          message={error || "Conversation not found"}
+          onRetry={() => router.push("/conversations")}
+        />
       </div>
     );
   }
 
   return (
     <div style={{ maxWidth: 800, margin: "0 auto" }}>
-      <Button icon={<ArrowLeftOutlined />} onClick={() => router.push("/conversations")} style={{ marginBottom: 16 }}>
-        Back to Conversations
-      </Button>
+      <PageHeader
+        overline={
+          <Button size="small" type="text" icon={<ArrowLeftOutlined />} onClick={() => router.push("/conversations")}>
+            Back to Conversations
+          </Button>
+        }
+        title="Conversation Thread"
+        subtitle={`Call Session: ${conversation.callSessionId}`}
+        actions={<Text type="secondary">{dayjs(conversation.createdAt).format("MMM D, YYYY h:mm A")}</Text>}
+      />
 
       <Card>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24 }}>
-          <div>
-            <Title level={4} style={{ margin: 0 }}>Conversation Thread</Title>
-            <Text type="secondary">Call Session: {conversation.callSessionId}</Text>
-          </div>
-          <Text type="secondary">{dayjs(conversation.createdAt).format("MMM D, YYYY h:mm A")}</Text>
-        </div>
-
-        <Divider />
+        <Divider style={{ marginTop: 0 }} />
 
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           {conversation.messages?.map((msg, idx) => {

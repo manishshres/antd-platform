@@ -2,6 +2,7 @@
 
 import { Table, Button, Typography, Tag, Card } from "antd";
 import { DownloadOutlined } from "@ant-design/icons";
+import PageHeader from "@/components/PageHeader";
 
 const { Title, Text } = Typography;
 
@@ -60,8 +61,8 @@ export default function BillingHistoryPage() {
 
   return (
     <div>
-      <Title level={4} style={{ marginBottom: 24 }}>Billing History</Title>
-      
+      <PageHeader title="Billing History" subtitle="Past invoices and payment records." />
+
       <Card variant="borderless" style={{ borderRadius: 8 }}>
         <Table 
           dataSource={mockInvoices} 

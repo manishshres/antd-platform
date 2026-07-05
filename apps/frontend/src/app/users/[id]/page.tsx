@@ -2,11 +2,11 @@
 
 import React, { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Card, Form, Input, Button, Select, Space, Typography, message, theme, Breadcrumb } from "antd";
+import { Card, Form, Input, Button, Select, Space, message, theme, Breadcrumb } from "antd";
 import { ArrowLeftOutlined, SaveOutlined, UserOutlined, MailOutlined, PhoneOutlined } from "@ant-design/icons";
 import { api } from "@/lib/api";
+import PageHeader from "@/components/PageHeader";
 
-const { Title } = Typography;
 
 interface User {
   id: string;
@@ -78,21 +78,22 @@ export default function EditUserPage() {
 
   return (
     <div>
-      <Breadcrumb
-        items={[
-          { title: <a onClick={() => router.push("/users")}>Users</a> },
-          { title: "Edit User" },
-        ]}
-        style={{ marginBottom: token.margin }}
+      <PageHeader
+        overline={
+          <Breadcrumb
+            items={[
+              { title: <a onClick={() => router.push("/users")}>Users</a> },
+              { title: "Edit User" },
+            ]}
+          />
+        }
+        title={
+          <Space size={8}>
+            <Button size="small" icon={<ArrowLeftOutlined />} onClick={() => router.push("/users")} />
+            Edit User
+          </Space>
+        }
       />
-      
-      <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: token.marginLG }}>
-        <Button 
-          icon={<ArrowLeftOutlined />} 
-          onClick={() => router.push("/users")}
-        />
-        <Title level={4} style={{ margin: 0 }}>Edit User</Title>
-      </div>
 
       <Card loading={loading}>
         <Form

@@ -37,6 +37,7 @@ import {
   UserOutlined,
 } from "@ant-design/icons";
 import { api } from "@/lib/api";
+import { ErrorState } from "@/components/PageStates";
 import type { CallRecord, ConversationMessage } from "@platform/shared-types";
 import { useLocation } from "@/contexts/LocationContext";
 
@@ -514,16 +515,10 @@ export default function CallDetailPage({
 
   if (callError || !call) {
     return (
-      <div>
-        <Button
-          icon={<ArrowLeftOutlined />}
-          onClick={() => router.push("/calls")}
-          style={{ marginBottom: 24 }}
-        >
-          Back to Call Logs
-        </Button>
-        <Alert type='error' title={callError ?? "Call not found."} showIcon />
-      </div>
+      <ErrorState
+        message={callError ?? "Call not found."}
+        onRetry={() => router.push("/calls")}
+      />
     );
   }
 

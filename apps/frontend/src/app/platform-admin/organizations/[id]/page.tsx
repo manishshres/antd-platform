@@ -34,6 +34,7 @@ import {
   ArrowLeftOutlined,
 } from "@ant-design/icons";
 import { api } from "@/lib/api";
+import PageHeader from "@/components/PageHeader";
 import { Organization, ProvisioningStatusResponse } from "../../types";
 
 const { Title, Text } = Typography;
@@ -349,25 +350,28 @@ export default function OrganizationDetailPage() {
 
   return (
     <div style={{ maxWidth: 1200, margin: "0 auto", padding: "24px" }}>
-      <div style={{ marginBottom: 24, display: "flex", alignItems: "center", gap: 16 }}>
-        <Button icon={<ArrowLeftOutlined />} onClick={() => router.push("/platform-admin")} />
-        <Breadcrumb
-          items={[
-            { title: <a onClick={() => router.push("/platform-admin")}>Platform Admin</a> },
-            { title: org.name },
-          ]}
-        />
-      </div>
-
-      <div style={{ marginBottom: 32 }}>
-        <Title level={2} style={{ margin: 0 }}>
-          {org.name}
-        </Title>
-        <Space style={{ marginTop: 8 }}>
-          <Tag color={org.status === "active" ? "green" : "red"}>{org.status.toUpperCase()}</Tag>
-          <Text type="secondary">ID: {org.id}</Text>
-        </Space>
-      </div>
+      <PageHeader
+        overline={
+          <Breadcrumb
+            items={[
+              { title: <a onClick={() => router.push("/platform-admin")}>Platform Admin</a> },
+              { title: org.name },
+            ]}
+          />
+        }
+        title={
+          <Space size={8}>
+            <Button size="small" icon={<ArrowLeftOutlined />} onClick={() => router.push("/platform-admin")} />
+            {org.name}
+          </Space>
+        }
+        subtitle={
+          <Space size={8}>
+            <Tag color={org.status === "active" ? "green" : "red"}>{org.status.toUpperCase()}</Tag>
+            <Text type="secondary">ID: {org.id}</Text>
+          </Space>
+        }
+      />
 
       <div style={{ background: token.colorBgContainer, borderRadius: token.borderRadius, padding: 24, minHeight: 600 }}>
         <Tabs
