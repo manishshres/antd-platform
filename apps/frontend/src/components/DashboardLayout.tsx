@@ -40,12 +40,10 @@ function SidebarMenu({
   onClick,
   collapsed,
   role,
-  email,
 }: {
   onClick?: () => void;
   collapsed?: boolean;
   role: string;
-  email: string;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -262,6 +260,25 @@ function LayoutInner({
   };
 
   const profileMenu: MenuProps['items'] = [
+    // Signed-in identity — moved here from the navbar.
+    ...(email
+      ? [
+          {
+            key: 'signed-in-as',
+            label: (
+              <div style={{ padding: '4px 4px 8px' }}>
+                <Text type="secondary" style={{ fontSize: 12 }}>Signed in as</Text>
+                <div>
+                  <Text strong ellipsis style={{ maxWidth: 220, display: 'block' }}>{email}</Text>
+                </div>
+              </div>
+            ),
+            disabled: true,
+            style: { cursor: 'default' },
+          },
+          { type: 'divider' as const },
+        ]
+      : []),
     // On desktop the tenant switcher lives in the header (E1); keep the compact version in the
     // profile dropdown only on mobile where header space is tight.
     ...(isMobile
@@ -331,7 +348,7 @@ function LayoutInner({
             zIndex: 101,
           }}
         >
-          <SidebarMenu collapsed={siderCollapsed} role={role} email={email} />
+          <SidebarMenu collapsed={siderCollapsed} role={role} />
         </Sider>
       )}
 
@@ -347,7 +364,7 @@ function LayoutInner({
           }}
           closeIcon={null}
         >
-          <SidebarMenu onClick={() => setDrawerOpen(false)} role={role} email={email} />
+          <SidebarMenu onClick={() => setDrawerOpen(false)} role={role} />
         </Drawer>
       )}
 
@@ -377,9 +394,12 @@ function LayoutInner({
                 />
               </Tooltip>
             ) : null}
+          </div>
 
-            {/* E1: Tenant context switcher, surfaced in the header instead of buried in the
-                profile dropdown — the primary control in a multi-tenant, multi-location app. */}
+          <Space size={12}>
+            {/* E1: Tenant context switcher, surfaced in the header (right side, next to the
+                avatar) instead of buried in the profile dropdown — the primary control in a
+                multi-tenant, multi-location app. */}
             {!isMobile && (
               <Space size={8}>
                 {isPlatformAdmin && organizations.length > 0 && (
@@ -417,14 +437,15 @@ function LayoutInner({
                 )}
               </Space>
             )}
-          </div>
 
-          <Space size={12}>
-            {/* Profile Dropdown containing location logic now */}
+            {/* Profile dropdown — avatar only (email removed from the navbar). */}
             <Dropdown menu={{ items: profileMenu }} trigger={['click']} placement="bottomRight">
-              <a onClick={(e) => e.preventDefault()} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', padding: '0 8px' }}>
+              <a
+                onClick={(e) => e.preventDefault()}
+                aria-label="Account menu"
+                style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', padding: '0 4px' }}
+              >
                 <Avatar icon={<UserOutlined />} style={{ backgroundColor: token.colorPrimary }} />
-                {!isMobile && <span style={{ color: token.colorText }}>{email.split('@')[0]}</span>}
               </a>
             </Dropdown>
           </Space>
