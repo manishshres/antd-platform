@@ -195,7 +195,7 @@ export class MailService {
   async sendPasswordReset(to: string, resetToken: string): Promise<void> {
     const appUrl =
       this.configService.get<string>('FRONTEND_URL') || 'http://localhost:3000';
-    const resetUrl = `${appUrl}/auth/reset-password?token=${resetToken}`;
+    const resetUrl = `${appUrl}/reset-password?token=${resetToken}`;
 
     const text = [
       'You requested a password reset.',
@@ -227,7 +227,7 @@ export class MailService {
   async sendEmailVerification(to: string, verifyToken: string): Promise<void> {
     const appUrl =
       this.configService.get<string>('FRONTEND_URL') || 'http://localhost:3000';
-    const verifyUrl = `${appUrl}/auth/verify-email?token=${verifyToken}`;
+    const verifyUrl = `${appUrl}/verify-email?token=${verifyToken}`;
 
     const text = [
       'Welcome! Please verify your email address.',
