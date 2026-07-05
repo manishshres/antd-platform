@@ -67,7 +67,7 @@ export default function ForgotPasswordPage() {
         {success ? (
           <div style={{ textAlign: "center" }}>
             <Alert
-              message="Check your email"
+              title="Check your email"
               description="If an account exists for that email, we have sent instructions to reset your password."
               type="success"
               showIcon

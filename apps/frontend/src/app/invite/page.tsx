@@ -89,7 +89,7 @@ function InviteContent() {
     return (
       <div style={{ textAlign: "center" }}>
         <Alert
-          message={isExpired ? "Invitation Expired" : "Invitation Error"}
+          title={isExpired ? "Invitation Expired" : "Invitation Error"}
           description={
             <div>
               <p>{error}</p>

@@ -789,7 +789,7 @@ export default function SettingsHubPage() {
         {newlyGeneratedKey && (
           <Alert
             type="success"
-            message="API Key Created"
+            title="API Key Created"
             description={
               <div>
                 <Text>Please copy your new API key now. You won't be able to see it again!</Text>

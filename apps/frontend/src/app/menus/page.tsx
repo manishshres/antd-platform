@@ -368,10 +368,10 @@ export default function MenuEditorPage() {
         </Space>
       </div>
 
-      {error && <Alert type="error" message={error} showIcon style={{ marginBottom: 16 }} />}
+      {error && <Alert type="error" title={error} showIcon style={{ marginBottom: 16 }} />}
 
       {!selectedLocationId && !loading ? (
-        <Alert type="info" message="Please select a location to view its menu." showIcon style={{ marginBottom: 24 }} />
+        <Alert type="info" title="Please select a location to view its menu." showIcon style={{ marginBottom: 24 }} />
       ) : activeView === 'menu' ? (
         /* Split Panel */
         <div style={{

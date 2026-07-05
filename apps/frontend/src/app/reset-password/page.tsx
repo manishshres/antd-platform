@@ -55,7 +55,7 @@ function ResetPasswordForm() {
   if (!resetToken) {
     return (
       <Alert 
-        message="Missing Token" 
+        title="Missing Token" 
         description="The password reset token is missing from the URL. Please check the link in your email." 
         type="error" 
         showIcon 
@@ -67,7 +67,7 @@ function ResetPasswordForm() {
     return (
       <div style={{ textAlign: "center" }}>
         <Alert
-          message="Password Reset Successful"
+          title="Password Reset Successful"
           description="Your password has been successfully reset. Redirecting to login..."
           type="success"
           showIcon
