@@ -25,6 +25,7 @@ import {
   SafetyCertificateOutlined,
   EnvironmentOutlined,
   BankOutlined,
+  CompassOutlined,
 } from "@ant-design/icons";
 import { usePathname, useRouter } from "next/navigation";
 import { api } from "@/lib/api";
@@ -32,6 +33,8 @@ import { LocationProvider, useLocation } from "@/contexts/LocationContext";
 import { SocketProvider, useSocket } from "@/hooks/useSocket";
 import { NotificationsProvider } from "@/contexts/NotificationsContext";
 import NotificationsBell from "./NotificationsBell";
+import CommandPalette from "./CommandPalette";
+import OnboardingTour from "./OnboardingTour";
 import { themeConfig } from "@/lib/theme";
 import { ConeekoLogo } from "./Logo";
 
@@ -241,6 +244,22 @@ function LayoutInner({
   const isPlatformAdmin = role === "platform_admin";
   const isManager = role === "manager";
 
+  const handleLogout = async () => {
+    try {
+      // Refresh token lives in the HttpOnly cookie (H2); the backend reads it and clears it.
+      await api.post("/auth/logout", {});
+    } catch {
+      // Ignore logout failure
+    }
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("refresh_token");
+    // Clear tenant context so the next login on a shared device doesn't inherit it (M14).
+    localStorage.removeItem("selectedOrgId");
+    localStorage.removeItem("selectedLocationId");
+    window.dispatchEvent(new Event("auth-change"));
+    router.push("/login");
+  };
+
   // Build the profile dropdown context panel
   const renderContextSelectors = () => {
     return (
@@ -329,6 +348,12 @@ function LayoutInner({
       onClick: toggleTheme,
     },
     {
+      key: 'tour',
+      label: 'Take a tour',
+      icon: <CompassOutlined />,
+      onClick: () => window.dispatchEvent(new Event('start-onboarding')),
+    },
+    {
       type: 'divider',
     },
     {
@@ -336,26 +361,14 @@ function LayoutInner({
       label: 'Logout',
       icon: <LogoutOutlined />,
       danger: true,
-      onClick: async () => {
-        try {
-          // Refresh token lives in the HttpOnly cookie (H2); the backend reads it and clears it.
-          await api.post("/auth/logout", {});
-        } catch {
-          // Ignore logout failure
-        }
-        localStorage.removeItem("access_token");
-        localStorage.removeItem("refresh_token");
-        // Clear tenant context so the next login on a shared device doesn't inherit it (M14).
-        localStorage.removeItem("selectedOrgId");
-        localStorage.removeItem("selectedLocationId");
-        window.dispatchEvent(new Event("auth-change"));
-        router.push("/login");
-      },
+      onClick: handleLogout,
     },
   ];
 
   return (
     <Layout style={{ minHeight: "100vh", background: token.colorBgLayout }}>
+      <CommandPalette onToggleTheme={toggleTheme} onLogout={handleLogout} />
+      <OnboardingTour />
       {/* Desktop sidebar */}
       {!isMobile && (
         <Sider

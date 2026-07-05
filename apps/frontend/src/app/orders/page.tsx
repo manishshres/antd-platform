@@ -14,18 +14,18 @@ import {
   Divider,
   Tooltip,
   Input,
+  Select,
   theme,
   App,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import {
-  ReloadOutlined,
   PlusOutlined,
   PrinterOutlined,
-  DownloadOutlined,
 } from "@ant-design/icons";
 import { api } from "@/lib/api";
 import PageHeader from "@/components/PageHeader";
+import TableToolbar from "@/components/TableToolbar";
 import { useLocation } from "@/contexts/LocationContext";
 import { useSocket } from "@/hooks/useSocket";
 import { formatPrice, formatPhone } from "@/lib/format";
@@ -84,6 +84,10 @@ export default function OrdersPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [total, setTotal] = useState(0);
+
+  // Quick client-side filters over the loaded page (E2 toolbar)
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("");
 
   // Detail Drawer
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
@@ -299,6 +303,16 @@ export default function OrdersPage() {
     }
   };
 
+  const q = search.trim().toLowerCase();
+  const displayedOrders = orders.filter((o) => {
+    if (statusFilter && o.status !== statusFilter) return false;
+    if (!q) return true;
+    return (
+      o.customerName?.toLowerCase().includes(q) ||
+      o.customerPhone?.toLowerCase().includes(q)
+    );
+  });
+
   const columns: ColumnsType<Order> = [
     {
       title: "Customer",
@@ -362,23 +376,11 @@ export default function OrdersPage() {
         title="Restaurant Orders"
         subtitle="View customer orders placed via AI webhooks."
         actions={
-          <>
-            <Tooltip title='Create a Mock Order to test the database and UI'>
-              <Button type='dashed' icon={<PlusOutlined />} onClick={createMockOrder}>
-                Create Mock Order
-              </Button>
-            </Tooltip>
-            <Button
-              icon={<DownloadOutlined />}
-              onClick={exportCsv}
-              disabled={orders.length === 0}
-            >
-              Export CSV
+          <Tooltip title='Create a Mock Order to test the database and UI'>
+            <Button type='dashed' icon={<PlusOutlined />} onClick={createMockOrder}>
+              Create Mock Order
             </Button>
-            <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>
-              Refresh
-            </Button>
-          </>
+          </Tooltip>
         }
       />
 
@@ -392,11 +394,32 @@ export default function OrdersPage() {
       )}
 
       <Card variant="borderless">
+        <TableToolbar
+          search={search}
+          onSearchChange={setSearch}
+          searchPlaceholder="Search customer or phone…"
+          filters={
+            <Select
+              allowClear
+              placeholder="All statuses"
+              value={statusFilter || undefined}
+              onChange={(v) => setStatusFilter(v ?? "")}
+              style={{ width: 180 }}
+              options={Object.entries(STATUS_LABEL).map(([value, label]) => ({
+                value,
+                label,
+              }))}
+            />
+          }
+          onExport={orders.length > 0 ? exportCsv : undefined}
+          onRefresh={load}
+        />
         <Table
           columns={columns}
-          dataSource={orders}
+          dataSource={displayedOrders}
           rowKey='id'
           loading={loading}
+          sticky
           pagination={{
             current: page,
             pageSize,

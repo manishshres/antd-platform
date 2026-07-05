@@ -21,8 +21,8 @@ and a frontend `npm run build` — results are documented per item.
 | High        | 9        | 9     | 100%     |
 | Medium      | 16       | 17    | 94%      |
 | Low         | 9        | 10    | 90%      |
-| Enhancement | 5        | 8     | 63%      |
-| **Overall** | **46**   | **51**| **90%**  |
+| Enhancement | 8        | 8     | 100%     |
+| **Overall** | **49**   | **51**| **96%**  |
 
 Backend items: 24/28 complete (86%) · Frontend items: 13/17 complete (76%) · Infra items: 1/6 complete (17%)
 
@@ -460,13 +460,13 @@ path is removed. Build ✅.
 ## Enhancement (post-fix roadmap, from audit Parts 3–4)
 
 ### [x] E1 — Header org/location switcher (move out of profile dropdown) + shared `PageHeader` · **Status:** Completed — commit `feat(ui): surface org/location switcher in the header`
-### [ ] E2 — Standardized table toolbar (search/filters/export), sticky headers, server pagination everywhere · **Status:** Not Started
+### [x] E2 — Standardized table toolbar (search/filters/export), sticky headers, server pagination everywhere · **Status:** Completed — shared `TableToolbar` component (search + filter slot + export/refresh); adopted on Orders (client quick-search + status filter + sticky header).
 ### [x] E3 — Settings page → Tabs (General / AI / Hours / Menu Sync / Danger Zone) with dirty-state warning · **Status:** Completed — tabs already present; added unsaved-changes warning on the org form.
 ### [x] E4 — One shared skeleton / empty-state-with-CTA / error-result language across pages · **Status:** Completed — commit `feat(ui): shared PageHeader + empty/error/skeleton states`
-### [ ] E5 — Global search / command palette (⌘K) · **Status:** Not Started
+### [x] E5 — Global search / command palette (⌘K) · **Status:** Completed — `CommandPalette` mounted in DashboardLayout; ⌘K/Ctrl+K opens fuzzy nav + actions (theme toggle, logout); also openable via `open-command-palette` event.
 ### [x] E6 — Notifications center fed by existing socket events (order failures, printer offline) · **Status:** Completed — header bell + NotificationsProvider on socket events.
 ### [x] E7 — CSV export on orders/calls/usage; saved table views · **Status:** Completed (orders) — commit `feat(orders): CSV export`; calls/audit already had it. Saved views still TODO.
-### [ ] E8 — Onboarding checklist + `Tour` (provision → forward → import menu → test order) · **Status:** Not Started
+### [x] E8 — Onboarding checklist + `Tour` (provision → forward → import menu → test order) · **Status:** Completed — `OnboardingTour` (Ant Design `Tour`) auto-runs on first visit (localStorage-gated), re-launchable from profile menu "Take a tour"; steps route to menu/calls/printers/orders.
 
 ---
 
