@@ -114,6 +114,8 @@ export class WebhooksController {
         customerName: dto.customerName,
         customerPhone: dto.customerPhone,
         items: dto.items,
+        orderType: dto.orderType,
+        specialInstructions: dto.specialInstructions,
         idempotencyKey,
       });
     } catch (err) {

@@ -26,6 +26,8 @@ interface WebhookJobData {
     name?: string;
     quantity: number;
   }[];
+  orderType?: string;
+  specialInstructions?: string;
 }
 
 @Processor('webhook-queue')
@@ -42,8 +44,15 @@ export class WebhookQueueProcessor extends WorkerHost {
   }
 
   async process(job: Job<WebhookJobData, any, string>): Promise<any> {
-    const { orgId, customerName, customerPhone, items, idempotencyKey } =
-      job.data;
+    const {
+      orgId,
+      customerName,
+      customerPhone,
+      items,
+      orderType,
+      specialInstructions,
+      idempotencyKey,
+    } = job.data;
 
     if (idempotencyKey) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
@@ -119,6 +128,8 @@ export class WebhookQueueProcessor extends WorkerHost {
       customerName,
       customerPhone,
       items: resolvedItems,
+      orderType,
+      specialInstructions,
     });
 
     this.logger.log(

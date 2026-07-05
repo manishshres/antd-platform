@@ -7,6 +7,7 @@ import {
   IsInt,
   Min,
   IsOptional,
+  MaxLength,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -55,4 +56,25 @@ export class AiOrderWebhookDto {
   @ValidateNested({ each: true })
   @Type(() => WebhookOrderItemDto)
   items: WebhookOrderItemDto[];
+
+  @ApiProperty({
+    example: 'pickup',
+    description:
+      'Fulfilment type for the order (e.g. pickup, delivery, dine_in). Optional.',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  orderType?: string;
+
+  @ApiProperty({
+    example: 'No onions, allergic to peanuts. Ring doorbell on arrival.',
+    description: 'Free-form special instructions / kitchen notes. Optional.',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  specialInstructions?: string;
 }

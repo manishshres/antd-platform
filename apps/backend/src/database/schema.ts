@@ -349,6 +349,10 @@ export const orders = pgTable(
     customerPhone: varchar('customer_phone', { length: 50 }).notNull(),
     status: varchar('status', { length: 50 }).default('pending').notNull(), // 'pending', 'preparing', 'ready', 'completed', 'cancelled'
     totalAmount: integer('total_amount').notNull(), // in cents
+    // Fulfilment type (e.g. 'pickup', 'delivery', 'dine_in') and free-form kitchen notes captured
+    // from the AI order webhook. Kept nullable/permissive so a novel value never drops an order.
+    orderType: varchar('order_type', { length: 50 }),
+    specialInstructions: varchar('special_instructions', { length: 1000 }),
     deletedAt: timestamp('deleted_at'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),

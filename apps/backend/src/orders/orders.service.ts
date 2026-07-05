@@ -143,12 +143,18 @@ export class OrdersService {
     customerName: string;
     customerPhone: string;
     items: { menuItemId: string; quantity: number }[];
+    orderType?: string;
+    specialInstructions?: string;
   }) {
     return this.createOrderForOrg(
       payload.orgId,
       payload.customerName,
       payload.customerPhone,
       payload.items,
+      undefined,
+      undefined,
+      payload.orderType,
+      payload.specialInstructions,
     );
   }
 
@@ -159,6 +165,8 @@ export class OrdersService {
     items: { menuItemId: string; quantity: number }[],
     userId?: string,
     locationId?: string,
+    orderType?: string,
+    specialInstructions?: string,
   ) {
     if (items.length === 0) {
       throw new BadRequestException('Order must contain at least one item.');
@@ -233,6 +241,8 @@ export class OrdersService {
           customerPhone,
           status: 'pending',
           totalAmount,
+          orderType: orderType ?? null,
+          specialInstructions: specialInstructions ?? null,
         })
         .returning();
 
@@ -261,6 +271,8 @@ export class OrdersService {
       customerName: fullOrder.customerName,
       customerPhone: fullOrder.customerPhone,
       totalAmount: fullOrder.totalAmount,
+      orderType: fullOrder.orderType,
+      specialInstructions: fullOrder.specialInstructions,
       items: fullOrder.items.map((item) => ({
         menuItemName: item.menuItemName,
         quantity: item.quantity,
