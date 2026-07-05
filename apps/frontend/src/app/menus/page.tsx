@@ -24,6 +24,7 @@ import {
   Spin,
 } from "antd";
 import { useLocation } from "@/contexts/LocationContext";
+import PageHeader from "@/components/PageHeader";
 import {
   PlusOutlined,
   DeleteOutlined,
@@ -349,24 +350,23 @@ export default function MenuEditorPage() {
 
   return (
     <>
-      {/* Header */}
-      <div style={{ marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div>
-          <Title level={4} style={{ margin: 0, fontWeight: 700 }}>Menu Management</Title>
-          <Text type="secondary">Build and manage your restaurant menu card with add-ons and modifiers.</Text>
-        </div>
-        <Space>
-          <Button.Group>
-            <Button type={activeView === 'menu' ? 'primary' : 'default'} icon={<AppstoreOutlined />} onClick={() => setActiveView('menu')}>Menu</Button>
-            <Button type={activeView === 'modifiers' ? 'primary' : 'default'} icon={<EllipsisOutlined />} onClick={() => setActiveView('modifiers')}>Modifiers</Button>
-          </Button.Group>
-          {isAdmin && (
-            <Button icon={<SyncOutlined />} type="primary" onClick={() => handleImportMenu('sync')} loading={importLoading}>
-              Sync Menu
-            </Button>
-          )}
-        </Space>
-      </div>
+      <PageHeader
+        title="Menu Management"
+        subtitle="Build and manage your restaurant menu card with add-ons and modifiers."
+        actions={
+          <>
+            <Space.Compact>
+              <Button type={activeView === 'menu' ? 'primary' : 'default'} icon={<AppstoreOutlined />} onClick={() => setActiveView('menu')}>Menu</Button>
+              <Button type={activeView === 'modifiers' ? 'primary' : 'default'} icon={<EllipsisOutlined />} onClick={() => setActiveView('modifiers')}>Modifiers</Button>
+            </Space.Compact>
+            {isAdmin && (
+              <Button icon={<SyncOutlined />} type="primary" onClick={() => handleImportMenu('sync')} loading={importLoading}>
+                Sync Menu
+              </Button>
+            )}
+          </>
+        }
+      />
 
       {error && <Alert type="error" title={error} showIcon style={{ marginBottom: 16 }} />}
 

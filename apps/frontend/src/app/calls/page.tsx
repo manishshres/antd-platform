@@ -30,11 +30,12 @@ import {
   ReloadOutlined,
 } from "@ant-design/icons";
 import { api } from "@/lib/api";
+import PageHeader from "@/components/PageHeader";
 import { useLocation } from "@/contexts/LocationContext";
 import type { Dayjs } from "dayjs";
 import type { CallRecord } from "@platform/shared-types";
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 const { RangePicker } = DatePicker;
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -375,14 +376,10 @@ export default function CallsPage() {
       `}</style>
 
 
-      <div style={{ marginBottom: token.margin }}>
-        <Title level={4} style={{ margin: 0, fontWeight: 700 }}>
-          AI Phone Calls
-        </Title>
-        <Text type='secondary' style={{ fontSize: 14 }}>
-          View and inspect all your AI call history.
-        </Text>
-      </div>
+      <PageHeader
+        title="AI Phone Calls"
+        subtitle="View and inspect all your AI call history."
+      />
 
       {error && (
         <Alert

@@ -32,6 +32,7 @@ import {
   SyncOutlined,
 } from "@ant-design/icons";
 import { api } from "@/lib/api";
+import PageHeader from "@/components/PageHeader";
 import { useLocation } from "@/contexts/LocationContext";
 
 const { Title, Text } = Typography;
@@ -441,24 +442,22 @@ export default function PrintersPage() {
 
   return (
     <>
-      <div style={{ marginBottom: token.margin, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div>
-          <Title level={4} style={{ margin: 0, fontWeight: 700 }}>
-            Printer Management
-          </Title>
-          <Text type="secondary">Monitor and configure cloud thermal printers connected via MQTT.</Text>
-        </div>
-        <Space size={8}>
-          {isPlatformAdmin && (
-            <Button type="primary" icon={<PlusOutlined />} onClick={() => handleOpenModal()}>
-              Register Printer
+      <PageHeader
+        title="Printer Management"
+        subtitle="Monitor and configure cloud thermal printers connected via MQTT."
+        actions={
+          <>
+            {isPlatformAdmin && (
+              <Button type="primary" icon={<PlusOutlined />} onClick={() => handleOpenModal()}>
+                Register Printer
+              </Button>
+            )}
+            <Button icon={<ReloadOutlined />} onClick={() => { loadPrinters(); loadDLQ(); }} loading={loading}>
+              Refresh
             </Button>
-          )}
-          <Button icon={<ReloadOutlined />} onClick={() => { loadPrinters(); loadDLQ(); }} loading={loading}>
-            Refresh
-          </Button>
-        </Space>
-      </div>
+          </>
+        }
+      />
 
       {error && (
         <Alert
@@ -526,7 +525,7 @@ export default function PrintersPage() {
       />
 
       {/* Register/Edit Modal */}
-      <Modal
+      <Modal forceRender
         title={editingPrinter ? "Edit Printer Config" : "Register New Printer"}
         open={isModalOpen}
         onCancel={() => setIsModalOpen(false)}

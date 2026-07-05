@@ -24,6 +24,7 @@ import {
   PrinterOutlined,
 } from "@ant-design/icons";
 import { api } from "@/lib/api";
+import PageHeader from "@/components/PageHeader";
 import { useLocation } from "@/contexts/LocationContext";
 import { useSocket } from "@/hooks/useSocket";
 
@@ -346,37 +347,22 @@ export default function OrdersPage() {
 
   return (
     <>
-      <div
-        style={{
-          marginBottom: token.margin,
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-        }}
-      >
-        <div>
-          <Title level={4} style={{ margin: 0, fontWeight: 700 }}>
-            Restaurant Orders
-          </Title>
-          <Text type='secondary'>
-            View customer orders placed via AI webhooks.
-          </Text>
-        </div>
-        <Space size={8}>
-          <Tooltip title='Create a Mock Order to test the database and UI'>
-            <Button
-              type='dashed'
-              icon={<PlusOutlined />}
-              onClick={createMockOrder}
-            >
-              Create Mock Order
+      <PageHeader
+        title="Restaurant Orders"
+        subtitle="View customer orders placed via AI webhooks."
+        actions={
+          <>
+            <Tooltip title='Create a Mock Order to test the database and UI'>
+              <Button type='dashed' icon={<PlusOutlined />} onClick={createMockOrder}>
+                Create Mock Order
+              </Button>
+            </Tooltip>
+            <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>
+              Refresh
             </Button>
-          </Tooltip>
-          <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>
-            Refresh
-          </Button>
-        </Space>
-      </div>
+          </>
+        }
+      />
 
       {error && (
         <Alert
