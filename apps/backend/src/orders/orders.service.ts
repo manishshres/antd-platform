@@ -386,7 +386,11 @@ export class OrdersService {
     return null;
   }
 
-  async updateOrderStatus(user: CurrentUserPayload, orderId: string, status: string) {
+  async updateOrderStatus(
+    user: CurrentUserPayload,
+    orderId: string,
+    status: string,
+  ) {
     const orgId = await this.billingService.getRequiredOrg(user);
 
     const validStatuses = [
@@ -467,7 +471,11 @@ export class OrdersService {
     return this.printJobsService.listOrderPrintJobs(orgId, orderId, filters);
   }
 
-  async printOrder(user: CurrentUserPayload, orderId: string, printerId?: string) {
+  async printOrder(
+    user: CurrentUserPayload,
+    orderId: string,
+    printerId?: string,
+  ) {
     const orgId = await this.billingService.getRequiredOrg(user);
     const fullOrder = await this.getOrderByIdForOrg(orgId, orderId);
 

@@ -13,22 +13,29 @@ import {
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
-export const organizations = pgTable('organizations', {
-  id: uuid('id').defaultRandom().primaryKey(),
-  name: varchar('name', { length: 255 }).notNull(),
-  slug: varchar('slug', { length: 255 }),
-  status: varchar('status', { length: 50 }).default('draft').notNull(),
-  webhookApiKey: varchar('webhook_api_key', { length: 255 }),
-  brandingLogoUrl: varchar('branding_logo_url', { length: 1024 }),
-  brandingColor: varchar('branding_color', { length: 50 }),
-  settings: jsonb('settings'),
-  featureFlags: jsonb('feature_flags').default({}).notNull(),
-  deletedAt: timestamp('deleted_at'),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-  updatedAt: timestamp('updated_at').defaultNow().notNull(),
-}, (t) => [
-  check('organizations_status_check', sql`${t.status} IN ('draft', 'active', 'suspended', 'archived', 'provisioning')`)
-]);
+export const organizations = pgTable(
+  'organizations',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    name: varchar('name', { length: 255 }).notNull(),
+    slug: varchar('slug', { length: 255 }),
+    status: varchar('status', { length: 50 }).default('draft').notNull(),
+    webhookApiKey: varchar('webhook_api_key', { length: 255 }),
+    brandingLogoUrl: varchar('branding_logo_url', { length: 1024 }),
+    brandingColor: varchar('branding_color', { length: 50 }),
+    settings: jsonb('settings'),
+    featureFlags: jsonb('feature_flags').default({}).notNull(),
+    deletedAt: timestamp('deleted_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (t) => [
+    check(
+      'organizations_status_check',
+      sql`${t.status} IN ('draft', 'active', 'suspended', 'archived', 'provisioning')`,
+    ),
+  ],
+);
 
 export const locations = pgTable(
   'locations',
@@ -72,7 +79,10 @@ export const locations = pgTable(
   },
   (t) => [
     index('idx_locations_organization_id').on(t.organizationId),
-    check('locations_status_check', sql`${t.status} IN ('draft', 'active', 'suspended', 'archived', 'deprovisioned', 'provisioning')`)
+    check(
+      'locations_status_check',
+      sql`${t.status} IN ('draft', 'active', 'suspended', 'archived', 'deprovisioned', 'provisioning')`,
+    ),
   ],
 );
 
@@ -100,8 +110,14 @@ export const orgInvitations = pgTable(
   (t) => [
     index('idx_org_invitations_organization_id').on(t.organizationId),
     index('idx_org_invitations_email').on(t.email),
-    check('org_invitations_role_check', sql`${t.role} IN ('user', 'manager', 'admin', 'sysadmin', 'platform_admin')`),
-    check('org_invitations_status_check', sql`${t.status} IN ('pending', 'accepted', 'expired', 'revoked')`)
+    check(
+      'org_invitations_role_check',
+      sql`${t.role} IN ('user', 'manager', 'admin', 'sysadmin', 'platform_admin')`,
+    ),
+    check(
+      'org_invitations_status_check',
+      sql`${t.status} IN ('pending', 'accepted', 'expired', 'revoked')`,
+    ),
   ],
 );
 
@@ -162,7 +178,10 @@ export const users = pgTable(
     index('idx_users_email').on(t.email),
     index('idx_users_organization_id').on(t.organizationId),
     index('idx_users_location_id').on(t.locationId),
-    check('users_role_check', sql`${t.role} IN ('user', 'manager', 'admin', 'sysadmin', 'platform_admin')`)
+    check(
+      'users_role_check',
+      sql`${t.role} IN ('user', 'manager', 'admin', 'sysadmin', 'platform_admin')`,
+    ),
   ],
 );
 
@@ -366,7 +385,10 @@ export const orders = pgTable(
     index('idx_orders_location_id').on(t.locationId),
     // M11: composite index for tenant-scoped paginated order lists
     index('idx_orders_org_created').on(t.organizationId, t.createdAt),
-    check('orders_status_check', sql`${t.status} IN ('pending', 'confirmed', 'preparing', 'ready', 'delivered', 'cancelled')`)
+    check(
+      'orders_status_check',
+      sql`${t.status} IN ('pending', 'confirmed', 'preparing', 'ready', 'delivered', 'cancelled')`,
+    ),
   ],
 );
 
@@ -651,7 +673,11 @@ export const usageEvents = pgTable(
     index('idx_usage_events_organization_id').on(t.organizationId),
     index('idx_usage_events_location_id').on(t.locationId),
     // M11: composite index for billing aggregation queries
-    index('idx_usage_events_org_type_created').on(t.organizationId, t.eventType, t.createdAt),
+    index('idx_usage_events_org_type_created').on(
+      t.organizationId,
+      t.eventType,
+      t.createdAt,
+    ),
   ],
 );
 

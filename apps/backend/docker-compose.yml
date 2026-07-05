@@ -21,7 +21,7 @@ services:
     image: eclipse-mosquitto:2.1-alpine
     container_name: antd-mosquitto
     ports:
-      - '1883:1883'
+      - '51883:1883' # Obscured public port for IoT Printers
       - '9001:9001'
     volumes:
       - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
@@ -59,15 +59,4 @@ services:
       - postgres
       - redis
       - mosquitto
-    restart: unless-stopped
-
-  frontend:
-    image: ${DOCKER_REGISTRY:-ghcr.io/your-org}/antd-frontend:${FRONTEND_VERSION:-latest}
-    container_name: antd-frontend
-    ports:
-      - '3000:3000'
-    environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:4000/api/v1
-    depends_on:
-      - backend
     restart: unless-stopped

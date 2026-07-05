@@ -422,7 +422,7 @@ export default function MenuEditorPage() {
           overflow: 'hidden', background: token.colorBgContainer,
         }}>
           {/* Sidebar */}
-          <div style={{ width: 240, flexShrink: 0, borderRight: `1px solid ${token.colorBorderSecondary}`, background: token.colorBgLayout, display: 'flex', flexDirection: 'column' }}>
+          <div style={{ width: 300, flexShrink: 0, borderRight: `1px solid ${token.colorBorderSecondary}`, background: token.colorBgLayout, display: 'flex', flexDirection: 'column' }}>
             <div style={{ padding: '16px 16px 12px', borderBottom: `1px solid ${token.colorBorderSecondary}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <Text strong style={{ fontSize: 13 }}>Categories</Text>
               {isAdmin && <Tooltip title="Add Category"><Button size="small" type="text" icon={<PlusOutlined />} onClick={() => setCatModalOpen(true)} /></Tooltip>}

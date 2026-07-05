@@ -164,7 +164,7 @@ export class AnalyticsService {
       .where(
         and(
           ...orderConditions,
-          sql`${schema.orders.createdAt} AT TIME ZONE ${tz} >= date_trunc('day', now() AT TIME ZONE ${tz})`
+          sql`${schema.orders.createdAt} AT TIME ZONE ${tz} >= date_trunc('day', now() AT TIME ZONE ${tz})`,
         ),
       );
 
@@ -204,7 +204,7 @@ export class AnalyticsService {
       .where(
         and(
           ...orderConditions,
-          sql`${schema.orders.createdAt} AT TIME ZONE ${tz} >= date_trunc('day', now() AT TIME ZONE ${tz}) - interval '6 days'`
+          sql`${schema.orders.createdAt} AT TIME ZONE ${tz} >= date_trunc('day', now() AT TIME ZONE ${tz}) - interval '6 days'`,
         ),
       )
       // Group by the first select expression (the date bucket) by ordinal. Repeating the
@@ -221,7 +221,7 @@ export class AnalyticsService {
       .where(
         and(
           ...convConditions,
-          sql`${schema.conversations.createdAt} AT TIME ZONE ${tz} >= date_trunc('day', now() AT TIME ZONE ${tz}) - interval '6 days'`
+          sql`${schema.conversations.createdAt} AT TIME ZONE ${tz} >= date_trunc('day', now() AT TIME ZONE ${tz}) - interval '6 days'`,
         ),
       )
       // Group by the date bucket by ordinal — see note on the orders trend query above.
@@ -229,7 +229,7 @@ export class AnalyticsService {
 
     // Group by date, generating the last 7 days safely in postgres
     const datesRes = await this.db.execute(
-      sql`SELECT to_char(date_trunc('day', now() AT TIME ZONE ${tz}) - (i || ' days')::interval, 'YYYY-MM-DD') as date_str, to_char(date_trunc('day', now() AT TIME ZONE ${tz}) - (i || ' days')::interval, 'Dy') as date_label FROM generate_series(6, 0, -1) i`
+      sql`SELECT to_char(date_trunc('day', now() AT TIME ZONE ${tz}) - (i || ' days')::interval, 'YYYY-MM-DD') as date_str, to_char(date_trunc('day', now() AT TIME ZONE ${tz}) - (i || ' days')::interval, 'Dy') as date_label FROM generate_series(6, 0, -1) i`,
     );
 
     const trendMap = new Map<
@@ -238,7 +238,11 @@ export class AnalyticsService {
     >();
 
     for (const row of datesRes.rows) {
-      trendMap.set(row.date_str as string, { date: row.date_label as string, orders: 0, calls: 0 });
+      trendMap.set(row.date_str as string, {
+        date: row.date_label as string,
+        orders: 0,
+        calls: 0,
+      });
     }
 
     trendOrders.forEach((o) => {

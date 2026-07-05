@@ -7,10 +7,7 @@ import { MailService } from '../common/services/mail.service';
 import { AuditService } from '../common/services/audit.service';
 import { DRIZZLE } from '../database/database.module';
 import * as bcrypt from 'bcrypt';
-import {
-  HttpException,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { HttpException, UnauthorizedException } from '@nestjs/common';
 
 jest.mock('bcrypt');
 

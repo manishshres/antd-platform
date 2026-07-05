@@ -103,7 +103,10 @@ export class AuthService {
       if (isNowLocked) {
         await this.db
           .update(schema.users)
-          .set({ lockedUntil: new Date(Date.now() + lockoutDuration), updatedAt: new Date() })
+          .set({
+            lockedUntil: new Date(Date.now() + lockoutDuration),
+            updatedAt: new Date(),
+          })
           .where(eq(schema.users.id, user.id));
         this.logger.warn(
           `Account ${email} locked after ${newAttempts} failed attempts.`,
@@ -259,7 +262,10 @@ export class AuthService {
       // M2: Reuse the TTL from the original token family so rememberMe sessions stay long.
       const refreshTtlSecs =
         storedToken.ttlSecs ??
-        this.configService.get<number>('JWT_REFRESH_EXPIRATION', REFRESH_TTL_DEFAULT);
+        this.configService.get<number>(
+          'JWT_REFRESH_EXPIRATION',
+          REFRESH_TTL_DEFAULT,
+        );
       const newRefreshToken = this.jwtService.sign(
         { sub: user.id },
         {
