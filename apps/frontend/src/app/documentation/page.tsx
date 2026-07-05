@@ -28,7 +28,7 @@ import {
 import { api } from "@/lib/api";
 import PageHeader from "@/components/PageHeader";
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 const { Dragger } = Upload;
 
 const ACCEPT = ".pdf,.json,.csv,.xlsx,.xls,.docx,.doc,.txt";

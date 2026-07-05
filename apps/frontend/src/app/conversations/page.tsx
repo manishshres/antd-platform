@@ -14,7 +14,7 @@ import { useRouter } from "next/navigation";
 
 dayjs.extend(relativeTime);
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 interface Conversation {
   id: string;

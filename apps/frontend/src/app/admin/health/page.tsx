@@ -7,7 +7,7 @@ import PageHeader from "@/components/PageHeader";
 import { ErrorState } from "@/components/PageStates";
 import { DashboardOutlined } from "@ant-design/icons";
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 interface HealthResponse {
   status: string;

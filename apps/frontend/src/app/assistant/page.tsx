@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Table, Spin, Alert, Tag, Typography, Button, theme, Card } from "antd";
+import { Table, Spin, Tag, Button, theme, Card } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
@@ -10,7 +10,6 @@ import { ErrorState } from "@/components/PageStates";
 import { useLocation } from "@/contexts/LocationContext";
 import type { Assistant } from "@platform/shared-types";
 
-const { Title } = Typography;
 
 export default function AssistantPage() {
   const [agents, setAgents] = useState<Assistant[]>([]);

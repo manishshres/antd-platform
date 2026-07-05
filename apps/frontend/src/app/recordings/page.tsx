@@ -11,7 +11,7 @@ import { useLocation } from "@/contexts/LocationContext";
 import dayjs from "dayjs";
 import type { CallRecord } from "@platform/shared-types";
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 function formatDuration(ms: number) {
   if (!ms) return "—";

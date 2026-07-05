@@ -25,7 +25,7 @@ import {
 import { api } from "@/lib/api";
 import PageHeader from "@/components/PageHeader";
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 interface UserProfile {
   id: string;
