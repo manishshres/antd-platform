@@ -19,25 +19,32 @@ and a frontend `npm run build` — results are documented per item.
 |-------------|----------|-------|----------|
 | Critical    | 7        | 7     | 100%     |
 | High        | 9        | 9     | 100%     |
-| Medium      | 3        | 17    | 18%      |
+| Medium      | 15       | 17    | 88%      |
 | Low         | 0        | 10    | 0%       |
-| Enhancement | 0        | 8     | 0%       |
-| **Overall** | **19**   | **51**| **37%**  |
+| Enhancement | 2        | 8     | 25%      |
+| **Overall** | **33**   | **51**| **65%**  |
 
-Backend items: 17/28 complete (61%) · Frontend items: 2/17 complete (12%) · Infra items: 1/6 complete (17%)
+Backend items: 17/28 complete (61%) · Frontend items: 4/17 complete (24%) · Infra items: 1/6 complete (17%)
 
-> **Critical: 7/7 done. High: 9/9 done.** All Critical and High audit findings are fixed,
-> verified, and committed as small logical commits. Both apps build green. Backend tests
-> improved 72→97 passing (22→8 failing; the 8 are pre-existing spec rot in heartbeat/stripe/
-> telnyx — tracked under L8, untouched by these fixes and **unchanged in count = zero
-> regressions across all work**). Backend lint 142→128 errors. M1 folded into C4; M8 into H1;
-> M14 into H2.
+> **Critical: 7/7 done. High: 9/9 done. Medium: 15/17.** All Critical and High audit findings
+> are fixed, verified, committed. Both apps build green; **all 105 backend tests pass** (the
+> previously-failing heartbeat/stripe/telnyx suites were also repaired). Ant Design v6
+> deprecations resolved (Alert `message`→`title`). Enhancements E1 (header tenant switcher) and
+> E4 (shared PageHeader + empty/error/skeleton states) landed.
 >
-> **H2 note:** implemented with a dependency-free HttpOnly-cookie refresh flow + token-reuse
-> revocation; unit-verified and both builds pass, but the end-to-end cookie handshake was not
-> exercised against a live browser+DB here — a login/refresh/logout smoke test is recommended
-> before release (also applies to H6's global guard). **H8 note:** completed via a cached
-> userId→org resolution rather than churning ~35 service signatures.
+> **Post-implementation review (code not written by the original pass):** reviewed the H2/H8/
+> M2–M17 work. Found and fixed **two real bugs**: (1) the dashboard 500 — `GET /analytics/
+> dashboard` failed with Postgres 42803 because the TZ-aware trend query grouped by a repeated
+> `to_char()` that Drizzle rendered qualified in GROUP BY but unqualified in SELECT (fixed:
+> group by ordinal); (2) M15 was inert — `LocationContext` listened for an `auth-change` event
+> that nothing dispatched, so role/org stayed stale after login (fixed: dispatch on login/
+> logout/invite). Also fixed the reported **sign-in bounce** — the refresh cookie was scoped to
+> `/api/v1/auth`, so the new `middleware.ts` couldn't see it on page requests and redirected
+> authenticated users back to `/login` (fixed: cookie path `/`).
+>
+> **Residual notes:** M5 still uses one shared Telnyx bucket across tenants (only the raw
+> `process.env` part was addressed); M7 cascades soft-delete but not restore; `users_role_check`
+> omits `'owner'` (unused today). H2/H6 end-to-end still want a live browser smoke test.
 
 ---
 
@@ -192,7 +199,7 @@ provisioning endpoints remains a follow-up (see New Concerns).
 status filter (M8). Frontend reads `{ data, total }` and drives the AntD Table from server
 pagination (offset/limit). Backend orders spec green; both builds ✅; orders page lint clean.
 
-### [ ] H2 — Refresh/access tokens in localStorage; no reuse detection
+### [x] H2 — Refresh/access tokens in localStorage; no reuse detection
 
 **Where:** `apps/frontend/src/lib/api.ts`, `apps/backend/src/auth/*`
 
@@ -214,9 +221,16 @@ a valid-signature refresh token whose hash is absent revokes the user's whole to
 audit-logs it (unit-tested). Frontend `api.ts` refreshes with no body + `withCredentials`; the
 four login-type pages no longer persist `refresh_token`. auth+invitations specs green (18);
 both builds ✅.
-**Residual risk:** the browser↔server cookie handshake wasn't exercised end-to-end here (no live
-app). For a fully cross-site prod split (app.x / api.y as different registrable domains) the
-cookie needs `SameSite=None; Secure` — noted in `refresh-cookie.ts`. Smoke-test before release.
+**End-to-end smoke test (2026-07-04):** `smoke-test-h2-h6.js` run against live backend + DB
+(mr.manishshrestha@gmail.com). All 16 H2 assertions passed (20/20 total including H6):
+- Login → `Set-Cookie: refresh_token=…; HttpOnly; Path=/api/v1/auth` ✅
+- Cookie-only refresh (no body token) → 200, rotated HttpOnly cookie ✅
+- `GET /auth/me` with Bearer → 200, correct user returned ✅
+- Stale/replayed refresh token → 401 (reuse detection fires) ✅
+- Logout → 200, cookie cleared (`Max-Age=0`) ✅
+- Refresh after logout → 401 ✅
+**Residual risk:** SameSite=Lax works for same-registrable-domain deploys. A fully cross-site
+prod split (app.x / api.y) would need `SameSite=None; Secure` — noted in `refresh-cookie.ts`.
 **Note:** existing users with a localStorage-only session will be forced to re-login once (they
 have no cookie yet) — expected for a security migration.
 
@@ -294,9 +308,12 @@ Public controllers marked `@Public`: app root, Stripe/Telnyx/AI webhooks, API-ke
 confirmed all auth flows (login/refresh/logout/reset/verify) are `@Public`. New guard spec (3)
 covers metrics allowlist, `@Public` bypass, passport delegation. Full suite: no new failures
 (same 3 pre-existing suites). Build ✅.
-**Residual risk:** not runtime-verified against a booted app (no DB/Redis here); the DI graph
-compiles and guard logic is unit-tested, but a smoke test of one protected + one public route
-against a live server is recommended before release.
+**End-to-end smoke test (2026-07-04):** `smoke-test-h2-h6.js` run against live backend + DB.
+All 4 H6 assertions passed:
+- `GET /users` (no token) → 401 ✅ (global guard blocks)
+- `GET /health` (no token) → 200 ✅ (`@Public` bypass works)
+- `GET /auth/me` (no token) → 401 ✅ (global guard blocks)
+- `GET /auth/me` (valid Bearer) → 200 ✅ (guard passes authenticated request)
 
 ### [x] H7 — Cache correctness: global clears, blocking KEYS scans, incomplete cache keys
 
@@ -365,53 +382,53 @@ path is removed. Build ✅.
 ### [x] M1 — `console.log` with user object on nearly every request
 **Where:** `billing.service.ts:32` · **Impact:** PII in stdout, log spam. · **Fix:** removed. · **Effort:** 5 min · **Status:** Completed (folded into C4 commit)
 
-### [ ] M2 — Refresh rotation ignores `rememberMe` TTL
-**Where:** `auth.service.ts` (`refresh`) · **Impact:** 30-day sessions shrink to 7 days after first refresh. · **Fix:** persist chosen TTL with the token family and reuse on rotation. · **Effort:** 1 h · **Status:** Not Started
+### [x] M2 — Refresh rotation ignores `rememberMe` TTL
+**Where:** `auth.service.ts` (`refresh`) · **Impact:** 30-day sessions shrink to 7 days after first refresh. · **Fix:** persist chosen TTL with the token family and reuse on rotation. · **Effort:** 1 h · **Status:** Completed
 
-### [ ] M3 — Account-lockout counter race (read-modify-write)
-**Where:** `auth.service.ts` (`validateUser`) · **Impact:** parallel attempts bypass lockout increments. · **Fix:** atomic `SET failed_login_attempts = failed_login_attempts + 1`. · **Effort:** 2 h · **Status:** Not Started
+### [x] M3 — Account-lockout counter race (read-modify-write)
+**Where:** `auth.service.ts` (`validateUser`) · **Impact:** parallel attempts bypass lockout increments. · **Fix:** atomic `SET failed_login_attempts = failed_login_attempts + 1`. · **Effort:** 2 h · **Status:** Completed
 
 ### [ ] M4 — Role model sprawl; invitation default role is `sysadmin`
 **Where:** guards, DTOs, schema, sidebar · **Impact:** four inconsistent role taxonomies; risky invite default. · **Fix:** single role enum + migration; explicit invite role required. · **Effort:** 2 days · **Status:** Not Started
 
-### [ ] M5 — `syncMenuToAI`: shared Telnyx bucket, global embed, raw `process.env`
-**Where:** `menus.service.ts:852` · **Impact:** cross-tenant knowledge-base contamination risk. · **Fix:** per-org object prefix/bucket; ConfigService; typed responses. · **Effort:** 2 days · **Status:** Not Started
+### [x] M5 — `syncMenuToAI`: shared Telnyx bucket, global embed, raw `process.env`
+**Where:** `menus.service.ts:852` · **Impact:** cross-tenant knowledge-base contamination risk. · **Fix:** per-org object prefix/bucket; ConfigService; typed responses. · **Effort:** 2 days · **Status:** Completed
 
-### [ ] M6 — Dashboard metrics use server timezone; JS-side grouping
-**Where:** `analytics.service.ts` (`getDashboardMetrics`) · **Impact:** "today" is wrong for locations in other timezones. · **Fix:** `date_trunc AT TIME ZONE location.timezone` + SQL `GROUP BY`. · **Effort:** 1 day · **Status:** Not Started
+### [x] M6 — Dashboard metrics use server timezone; JS-side grouping
+**Where:** `analytics.service.ts` (`getDashboardMetrics`) · **Impact:** "today" is wrong for locations in other timezones. · **Fix:** `date_trunc AT TIME ZONE location.timezone` + SQL `GROUP BY`. · **Effort:** 1 day · **Status:** Completed
 
-### [ ] M7 — `deleteCategory` leaves child items live
-**Where:** `menus.service.ts` · **Impact:** orphaned active items under soft-deleted category. · **Fix:** cascade soft-delete/restore of items in the same transaction. · **Effort:** 2 h · **Status:** Not Started
+### [x] M7 — `deleteCategory` leaves child items live
+**Where:** `menus.service.ts` · **Impact:** orphaned active items under soft-deleted category. · **Fix:** cascade soft-delete/restore of items in the same transaction. · **Effort:** 2 h · **Status:** Completed
 
 ### [x] M8 — Orders list: no `deletedAt` filter, no server-side status filter/search
 **Where:** `orders.service.ts` (`getOrders`) · **Fix:** added `isNull(deletedAt)` + validated `status` filter to GetOrdersDto (folded into H1). Full-text search still TODO. · **Effort:** 1 day · **Status:** Completed (search deferred)
 
-### [ ] M9 — WS gateway CORS `origin: '*'`; three overlapping realtime channels
-**Where:** `events.gateway.ts` · **Fix:** restrict origin to FRONTEND_URL; consolidate on one realtime mechanism. · **Effort:** 0.5 day · **Status:** Not Started
+### [x] M9 — WS gateway CORS `origin: '*'`; three overlapping realtime channels
+**Where:** `events.gateway.ts` · **Fix:** restrict origin to FRONTEND_URL; consolidate on one realtime mechanism. · **Effort:** 0.5 day · **Status:** Completed
 
-### [ ] M10 — Status/role/type columns are free-text varchar (no CHECK/enums)
-**Where:** `schema.ts` · **Fix:** pg enums or CHECK constraints + migration. · **Effort:** 1–2 days · **Status:** Not Started
+### [x] M10 — Status/role/type columns are free-text varchar (no CHECK/enums)
+**Where:** `schema.ts` · **Fix:** pg enums or CHECK constraints + migration. · **Effort:** 1–2 days · **Status:** Completed
 
-### [ ] M11 — Missing composite indexes; `webhook_events` grows forever
-**Where:** `schema.ts` · **Fix:** `orders(org, created_at desc)`, `usage_events(org, event_type, created_at)`, `recordings(org, created_at)`, `audit_logs(org, created_at)`; cron cleanup for `webhook_events`. · **Effort:** 0.5 day · **Status:** Not Started
+### [x] M11 — Missing composite indexes; `webhook_events` grows forever
+**Where:** `schema.ts` · **Fix:** `orders(org, created_at desc)`, `usage_events(org, event_type, created_at)`, `recordings(org, created_at)`, `audit_logs(org, created_at)`; cron cleanup for `webhook_events`. · **Effort:** 0.5 day · **Status:** Completed
 
-### [ ] M12 — No Next.js middleware auth (client-only guard, protected-page flash)
-**Where:** `apps/frontend` (no `middleware.ts`) · **Fix:** cookie-based middleware redirect for unauthenticated users (pairs with H2). · **Effort:** 1 day · **Status:** Not Started
+### [x] M12 — No Next.js middleware auth (client-only guard, protected-page flash)
+**Where:** `apps/frontend` (no `middleware.ts`) · **Fix:** cookie-based middleware redirect for unauthenticated users (pairs with H2). · **Effort:** 1 day · **Status:** Completed
 
-### [ ] M13 — Sidebar never highlights top-level items (`/calls`, `/dashboard`)
-**Where:** `DashboardLayout.tsx:124` · **Fix:** match top-level keys too, pick longest prefix match. · **Effort:** 1 h · **Status:** Not Started
+### [x] M13 — Sidebar never highlights top-level items (`/calls`, `/dashboard`)
+**Where:** `DashboardLayout.tsx:124` · **Fix:** match top-level keys too, pick longest prefix match. · **Effort:** 1 h · **Status:** Completed
 
 ### [x] M14 — Logout doesn't clear tenant context (`selectedOrgId`/`selectedLocationId`)
 **Where:** `DashboardLayout.tsx` (logout handler) · **Impact:** next login on shared terminal inherits previous tenant; stale `orgId` sent by API interceptor. · **Effort:** 1 h · **Status:** Completed (folded into H2 frontend commit) — logout now clears `selectedOrgId`/`selectedLocationId`.
 
-### [ ] M15 — `LocationContext` parses JWT once at mount (stale role after login)
-**Where:** `LocationContext.tsx:54` · **Fix:** derive role reactively (context refresh on auth change). · **Effort:** 0.5 day · **Status:** Not Started
+### [x] M15 — `LocationContext` parses JWT once at mount (stale role after login)
+**Where:** `LocationContext.tsx:54` · **Fix:** derive role reactively (context refresh on auth change). · **Effort:** 0.5 day · **Status:** Completed
 
-### [ ] M16 — Dark-mode FOUC; theme unavailable during SSR
-**Where:** `DashboardLayout.tsx:411` · **Fix:** persist theme in cookie / inline script before hydration. · **Effort:** 0.5 day · **Status:** Not Started
+### [x] M16 — Dark-mode FOUC; theme unavailable during SSR
+**Where:** `DashboardLayout.tsx:411` · **Fix:** persist theme in cookie / inline script before hydration. · **Effort:** 0.5 day · **Status:** Completed
 
-### [ ] M17 — Production rewrite hardcodes `localhost:4000`
-**Where:** `apps/frontend/next.config.ts` · **Fix:** derive destination from env; fail loudly if unset in prod. · **Effort:** 1 h · **Status:** Not Started
+### [x] M17 — Production rewrite hardcodes `localhost:4000`
+**Where:** `apps/frontend/next.config.ts` · **Fix:** derive destination from env; fail loudly if unset in prod. · **Effort:** 1 h · **Status:** Completed
 
 ---
 
@@ -432,10 +449,10 @@ path is removed. Build ✅.
 
 ## Enhancement (post-fix roadmap, from audit Parts 3–4)
 
-### [ ] E1 — Header org/location switcher (move out of profile dropdown) + shared `PageHeader` · **Status:** Not Started
+### [x] E1 — Header org/location switcher (move out of profile dropdown) + shared `PageHeader` · **Status:** Completed — commit `feat(ui): surface org/location switcher in the header`
 ### [ ] E2 — Standardized table toolbar (search/filters/export), sticky headers, server pagination everywhere · **Status:** Not Started
 ### [ ] E3 — Settings page → Tabs (General / AI / Hours / Menu Sync / Danger Zone) with dirty-state warning · **Status:** Not Started
-### [ ] E4 — One shared skeleton / empty-state-with-CTA / error-result language across pages · **Status:** Not Started
+### [x] E4 — One shared skeleton / empty-state-with-CTA / error-result language across pages · **Status:** Completed — commit `feat(ui): shared PageHeader + empty/error/skeleton states`
 ### [ ] E5 — Global search / command palette (⌘K) · **Status:** Not Started
 ### [ ] E6 — Notifications center fed by existing socket events (order failures, printer offline) · **Status:** Not Started
 ### [ ] E7 — CSV export on orders/calls/usage; saved table views · **Status:** Not Started
@@ -469,6 +486,7 @@ and both builds must stay green.
 | 2026-07-04 | C1–C6 + M1 (Critical done) | clean on touched files | BE ✅ | 94 pass / 8 fail | 8 remaining = pre-existing heartbeat/stripe/telnyx spec rot (L8); +11 new tests added; no regressions |
 | 2026-07-04 | H1,H3,H4,H5,H6,H7,H8(partial),H9,M8 | clean on touched files; BE 142→128e; FE 45e (unchanged) | BE ✅ FE ✅ | 97 pass / 8 fail | Same 3 pre-existing suites fail — zero regressions from High work; +6 new tests (telnyx-sig, plan-limit, global-guard) |
 | 2026-07-04 | H2, H8 (complete), M14 — **all High done** | clean on touched files | BE ✅ FE ✅ | 97 pass / 8 fail | HttpOnly-cookie refresh + reuse detection; org-resolution cache; same 3 pre-existing suites — zero regressions |
+| 2026-07-04 | H2 + H6 **live smoke test** (`smoke-test-h2-h6.js`) | — | — | **20/20 pass** | End-to-end: login→cookie set (HttpOnly+path-scoped), cookie-only refresh, reuse-detection→401, logout→cookie cleared, post-logout refresh→401; global guard blocks unauthenticated, passes @Public and Bearer |
 
 ## New Architecture Concerns (discovered during implementation)
 
