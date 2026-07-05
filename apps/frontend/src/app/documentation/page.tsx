@@ -26,6 +26,7 @@ import {
   UploadOutlined,
 } from "@ant-design/icons";
 import { api } from "@/lib/api";
+import PageHeader from "@/components/PageHeader";
 
 const { Title, Text } = Typography;
 const { Dragger } = Upload;
@@ -252,27 +253,17 @@ export default function DocumentationPage() {
 
   return (
     <>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: 24,
-        }}
-      >
-        <Title level={4} style={{ margin: 0 }}>
-          Documentation
-        </Title>
-        {isAdmin && (
-          <Button
-            type='primary'
-            icon={<UploadOutlined />}
-            onClick={() => setUploadOpen(true)}
-          >
-            Upload Files
-          </Button>
-        )}
-      </div>
+      <PageHeader
+        title="Documentation"
+        subtitle="Manage your AI agent's knowledge base documents."
+        actions={
+          isAdmin && (
+            <Button type='primary' icon={<UploadOutlined />} onClick={() => setUploadOpen(true)}>
+              Upload Files
+            </Button>
+          )
+        }
+      />
 
       {error && (
         <Alert

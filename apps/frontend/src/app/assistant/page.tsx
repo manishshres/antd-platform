@@ -5,6 +5,8 @@ import { Table, Spin, Alert, Tag, Typography, Button, theme, Card } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
+import PageHeader from "@/components/PageHeader";
+import { ErrorState } from "@/components/PageStates";
 import { useLocation } from "@/contexts/LocationContext";
 import type { Assistant } from "@platform/shared-types";
 
@@ -70,14 +72,12 @@ export default function AssistantPage() {
   }
 
   if (error) {
-    return <Alert type='error' title='Error' description={error} showIcon />;
+    return <ErrorState message={error} onRetry={() => window.location.reload()} />;
   }
 
   return (
     <>
-      <Title level={4} style={{ marginBottom: token.margin }}>
-        AI Agents
-      </Title>
+      <PageHeader title="AI Agents" subtitle="Voice AI agents configured for your locations." />
       <Card variant="borderless">
         <Table
           columns={columns}

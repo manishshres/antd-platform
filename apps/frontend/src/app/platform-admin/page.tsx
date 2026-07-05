@@ -36,6 +36,7 @@ import {
   MoreOutlined,
 } from "@ant-design/icons";
 import { api } from "@/lib/api";
+import PageHeader from "@/components/PageHeader";
 import {
   ProvisioningSummary,
   Organization,
@@ -222,15 +223,18 @@ export default function PlatformAdminDashboard() {
 
   return (
     <div style={{ maxWidth: 1200, margin: "0 auto", paddingBottom: 64 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-        <Title level={3} style={{ margin: 0 }}>Platform Administration</Title>
-        <Space>
-          <Button icon={<ReloadOutlined />} onClick={loadDashboardData}>Refresh</Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => router.push("/provisioning/new")}>
-            Provision New Organization
-          </Button>
-        </Space>
-      </div>
+      <PageHeader
+        title="Platform Administration"
+        subtitle="Manage organizations across the platform."
+        actions={
+          <>
+            <Button icon={<ReloadOutlined />} onClick={loadDashboardData}>Refresh</Button>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => router.push("/provisioning/new")}>
+              Provision New Organization
+            </Button>
+          </>
+        }
+      />
 
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
         <Col span={6}>

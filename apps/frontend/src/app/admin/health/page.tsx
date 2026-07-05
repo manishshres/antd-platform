@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { Card, Typography, Spin, Alert, Row, Col, Badge, Statistic } from "antd";
 import { api } from "@/lib/api";
+import PageHeader from "@/components/PageHeader";
+import { ErrorState } from "@/components/PageStates";
 import { DashboardOutlined } from "@ant-design/icons";
 
 const { Title, Text } = Typography;
@@ -51,7 +53,7 @@ export default function AdminHealthPage() {
   }
 
   if (error && !data) {
-    return <Alert type='error' title={error} showIcon />;
+    return <ErrorState message={error} onRetry={() => window.location.reload()} />;
   }
 
   const getStatusColor = (status: string) => {
@@ -75,16 +77,16 @@ export default function AdminHealthPage() {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-        <Title level={4} style={{ margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
-          <DashboardOutlined /> System Health Dashboard
-        </Title>
-        {data && (
-          <Text type="secondary">
-            Last checked: {new Date(data.timestamp).toLocaleTimeString()}
-          </Text>
-        )}
-      </div>
+      <PageHeader
+        title={<><DashboardOutlined style={{ marginRight: 8 }} />System Health Dashboard</>}
+        actions={
+          data && (
+            <Text type="secondary">
+              Last checked: {new Date(data.timestamp).toLocaleTimeString()}
+            </Text>
+          )
+        }
+      />
 
       {error && <Alert type='error' title={error} showIcon style={{ marginBottom: 16 }} />}
 

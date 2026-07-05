@@ -23,6 +23,7 @@ import {
   SaveOutlined,
 } from "@ant-design/icons";
 import { api } from "@/lib/api";
+import PageHeader from "@/components/PageHeader";
 
 const { Title, Text } = Typography;
 
@@ -116,14 +117,10 @@ export default function ProfilePage() {
 
   return (
     <Space orientation="vertical" style={{ width: "100%", maxWidth: 720 }} size={token.margin}>
-      <div>
-        <Title level={3} style={{ margin: 0 }}>
-          My Profile
-        </Title>
-        <Text type="secondary">
-          Manage your personal information and account security.
-        </Text>
-      </div>
+      <PageHeader
+        title="My Profile"
+        subtitle="Manage your personal information and account security."
+      />
 
       {/* Personal Information */}
       <Card

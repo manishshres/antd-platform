@@ -5,6 +5,8 @@ import { Table, Card, Typography, Space, Button, Input, Tag, Skeleton, Alert, Em
 import type { ColumnsType } from "antd/es/table";
 import { DownloadOutlined, PlayCircleOutlined, SearchOutlined, AudioOutlined } from "@ant-design/icons";
 import { api } from "@/lib/api";
+import PageHeader from "@/components/PageHeader";
+import { EmptyState } from "@/components/PageStates";
 import { useLocation } from "@/contexts/LocationContext";
 import dayjs from "dayjs";
 import type { CallRecord } from "@platform/shared-types";
@@ -123,15 +125,10 @@ export default function RecordingsPage() {
 
   return (
     <div style={{ maxWidth: 1200, margin: "0 auto" }}>
-      <div style={{ marginBottom: token.marginLG, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div>
-          <Title level={2} style={{ margin: 0, display: "flex", alignItems: "center", gap: 12 }}>
-            <AudioOutlined style={{ color: token.colorPrimary }} />
-            Call Recordings
-          </Title>
-          <Text type="secondary">Review and playback audio recordings of customer calls.</Text>
-        </div>
-      </div>
+      <PageHeader
+        title={<><AudioOutlined style={{ color: token.colorPrimary, marginRight: 12 }} />Call Recordings</>}
+        subtitle="Review and playback audio recordings of customer calls."
+      />
 
       <Card>
         <div style={{ marginBottom: token.margin, display: "flex", justifyContent: "space-between" }}>
@@ -147,7 +144,7 @@ export default function RecordingsPage() {
         {error && <Alert type="error" title={error} style={{ marginBottom: token.margin }} />}
         
         {!selectedLocationId && !loading ? (
-          <Empty description="Please select a location to view recordings." />
+          <EmptyState description="Select a location above to view its recordings." />
         ) : loading ? (
           <Skeleton active paragraph={{ rows: 8 }} />
         ) : (

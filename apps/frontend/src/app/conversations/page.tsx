@@ -5,6 +5,8 @@ import { Table, Card, Typography, Space, Button, Tag, Skeleton, Alert, Empty, th
 import type { ColumnsType } from "antd/es/table";
 import { MessageOutlined, EyeOutlined } from "@ant-design/icons";
 import { api } from "@/lib/api";
+import PageHeader from "@/components/PageHeader";
+import { EmptyState } from "@/components/PageStates";
 import { useLocation } from "@/contexts/LocationContext";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
@@ -100,21 +102,16 @@ export default function ConversationsPage() {
 
   return (
     <div style={{ maxWidth: 1200, margin: "0 auto" }}>
-      <div style={{ marginBottom: token.marginLG, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div>
-          <Title level={2} style={{ margin: 0, display: "flex", alignItems: "center", gap: 12 }}>
-            <MessageOutlined style={{ color: token.colorPrimary }} />
-            Conversations
-          </Title>
-          <Text type="secondary">Review chat threads from your AI voice agent.</Text>
-        </div>
-      </div>
+      <PageHeader
+        title={<><MessageOutlined style={{ color: token.colorPrimary, marginRight: 12 }} />Conversations</>}
+        subtitle="Review chat threads from your AI voice agent."
+      />
 
       <Card>
         {error && <Alert type="error" title={error} style={{ marginBottom: token.margin }} />}
-        
+
         {!selectedLocationId && !loading ? (
-          <Empty description="Please select a location to view conversations." />
+          <EmptyState description="Select a location above to view its conversations." />
         ) : loading ? (
           <Skeleton active paragraph={{ rows: 8 }} />
         ) : (

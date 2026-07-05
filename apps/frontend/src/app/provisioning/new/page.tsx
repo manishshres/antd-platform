@@ -5,6 +5,7 @@ import { Card, Steps, Form, Input, Button, Space, Typography, Select, message, R
 import { AppstoreAddOutlined, RocketOutlined, UploadOutlined } from "@ant-design/icons";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
+import PageHeader from "@/components/PageHeader";
 import { CreateOrgProvisionDto } from "../../platform-admin/types";
 
 const { Title, Text } = Typography;
@@ -158,13 +159,10 @@ export default function ProvisioningWizardPage() {
 
   return (
     <div style={{ maxWidth: 1000, margin: "0 auto", padding: "24px 0" }}>
-      <div style={{ marginBottom: 32 }}>
-        <Title level={2} style={{ display: "flex", alignItems: "center", gap: 12, margin: 0 }}>
-          <RocketOutlined style={{ color: "#1677ff" }} />
-          New Tenant Provisioning
-        </Title>
-        <Text type="secondary">Follow the 8-step wizard to set up a new organization.</Text>
-      </div>
+      <PageHeader
+        title={<><RocketOutlined style={{ color: "#1677ff", marginRight: 12 }} />New Tenant Provisioning</>}
+        subtitle="Follow the 8-step wizard to set up a new organization."
+      />
 
       <Steps current={current} items={steps} style={{ marginBottom: 40 }} size="small" titlePlacement="vertical" />
 

@@ -19,6 +19,8 @@ import {
   CreditCardOutlined,
 } from "@ant-design/icons";
 import { api } from "@/lib/api";
+import PageHeader from "@/components/PageHeader";
+import { ErrorState } from "@/components/PageStates";
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -139,11 +141,9 @@ export default function BillingPage() {
 
   if (error || !billingInfo) {
     return (
-      <Alert
-        type="error"
-        title="Billing Load Error"
-        description={error ?? "Could not load billing details."}
-        showIcon
+      <ErrorState
+        message={error ?? "Could not load billing details."}
+        onRetry={() => window.location.reload()}
       />
     );
   }
@@ -153,12 +153,10 @@ export default function BillingPage() {
 
   return (
     <>
-      <div style={{ marginBottom: 24 }}>
-        <Title level={4} style={{ margin: 0, fontWeight: 700 }}>
-          Billing &amp; Subscription
-        </Title>
-        <Text type="secondary">Manage your organization&apos;s subscription plans and limits.</Text>
-      </div>
+      <PageHeader
+        title="Billing & Subscription"
+        subtitle="Manage your organization's subscription plans and limits."
+      />
 
       <Row gutter={[24, 24]}>
         {/* Subscription Summary Card */}
