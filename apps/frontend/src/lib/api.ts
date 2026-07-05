@@ -20,7 +20,12 @@ api.interceptors.request.use((config) => {
 
       const orgId = localStorage.getItem("selectedOrgId");
       if (orgId && orgId !== "undefined" && orgId !== "null") {
-        config.params = { ...config.params, orgId };
+        const hasOrgIdInUrl = config.url && config.url.includes("orgId=");
+        const hasOrgIdInParams = config.params && config.params.orgId !== undefined;
+        
+        if (!hasOrgIdInUrl && !hasOrgIdInParams) {
+          config.params = { ...config.params, orgId };
+        }
       }
     }
   }

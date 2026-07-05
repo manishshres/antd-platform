@@ -40,6 +40,22 @@ interface LocationContextType {
 
 const LocationContext = createContext<LocationContextType | undefined>(undefined);
 
+/** Read the role from the stored JWT synchronously (SSR-safe). */
+function getRoleFromToken(): string {
+  if (typeof window === "undefined") return "user";
+  const token = localStorage.getItem("access_token");
+  if (!token) return "user";
+  try {
+    const payload = token.split(".")[1];
+    const decoded = JSON.parse(
+      window.atob(payload.replace(/-/g, "+").replace(/_/g, "/")),
+    ) as { role?: string };
+    return decoded.role || "user";
+  } catch {
+    return "user";
+  }
+}
+
 export function LocationProvider({ children }: { children: React.ReactNode }) {
   const [locations, setLocations] = useState<Location[]>([]);
   const [organizations, setOrganizations] = useState<Organization[]>([]);
@@ -51,8 +67,14 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
   });
   const [selectedOrgId, setSelectedOrgIdState] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
-  const [userRole, setUserRole] = useState("user");
+  // Initialise the role synchronously from the token so the first render already knows whether
+  // this is a platform admin. Otherwise the initial (false) value makes the load effect run the
+  // non-admin path first — GET /locations with no org — which returns nothing for a platform
+  // admin and leaves no location selected until a racy second fetch.
+  const [isPlatformAdmin, setIsPlatformAdmin] = useState(
+    () => getRoleFromToken() === "platform_admin",
+  );
+  const [userRole, setUserRole] = useState(getRoleFromToken);
 
   useEffect(() => {
     const updateAuth = () => {
@@ -85,11 +107,9 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
 
   const fetchLocations = useCallback(async (orgId?: string | null) => {
     try {
-      let url = "/locations";
-      if (orgId) {
-        url += `?orgId=${orgId}`;
-      }
-      const { data } = await api.get<Location[]>(url);
+      const { data } = await api.get<Location[]>("/locations", {
+        params: orgId ? { orgId } : undefined,
+      });
       setLocations(data);
       
       if (data.length > 0) {
