@@ -8,7 +8,6 @@ import { AuditService } from '../common/services/audit.service';
 import { DRIZZLE } from '../database/database.module';
 import * as bcrypt from 'bcrypt';
 import {
-  ForbiddenException,
   HttpException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -77,21 +76,6 @@ describe('AuthService', () => {
 
   it('should be defined', () => {
     expect(service).toBeDefined();
-  });
-
-  describe('register', () => {
-    it('should throw ForbiddenException since self-registration is disabled', async () => {
-      await expect(
-        service.register(
-          'test@test.com',
-          'hash',
-          'John',
-          'Doe',
-          'Company',
-          '12345',
-        ),
-      ).rejects.toThrow(ForbiddenException);
-    });
   });
 
   describe('validateUser', () => {

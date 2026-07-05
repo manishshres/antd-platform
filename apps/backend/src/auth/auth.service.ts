@@ -52,28 +52,6 @@ export class AuthService {
     return bcrypt.hash(password, BCRYPT_ROUNDS);
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await
-  async register(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    email: string,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    passwordHash: string,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    firstName: string,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    lastName: string,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    companyName: string,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    phoneNumber: string,
-  ): Promise<any> {
-    // Self-registration disabled — organizations are created by platform admin only.
-    // This endpoint now only creates a user without an org (or is removed entirely).
-    throw new ForbiddenException(
-      'Self-registration is disabled. Contact your platform administrator for an invitation.',
-    );
-  }
-
   async validateUser(
     email: string,
     pass: string,

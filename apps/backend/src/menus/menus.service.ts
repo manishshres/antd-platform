@@ -535,7 +535,6 @@ export class MenusService {
 
   /**
    * Returns the current status of a BullMQ import job.
-import { notDeleted } from '../database/db.utils';
    * States: waiting | active | completed | failed | delayed | unknown
    */
   async getImportJobStatus(jobId: string) {

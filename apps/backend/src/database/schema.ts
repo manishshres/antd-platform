@@ -84,7 +84,8 @@ export const orgInvitations = pgTable(
       onDelete: 'cascade',
     }),
     email: varchar('email', { length: 255 }).notNull(),
-    role: varchar('role', { length: 50 }).default('sysadmin').notNull(),
+    // Default to the least-privileged org role, not the highest (M4).
+    role: varchar('role', { length: 50 }).default('manager').notNull(),
     tokenHash: varchar('token_hash', { length: 255 }).notNull().unique(),
     status: varchar('status', { length: 50 }).default('pending').notNull(),
     // 'pending' | 'accepted' | 'expired' | 'revoked'

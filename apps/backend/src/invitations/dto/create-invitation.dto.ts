@@ -1,5 +1,14 @@
-import { IsString, IsEmail, IsNotEmpty, IsOptional } from 'class-validator';
+import {
+  IsString,
+  IsEmail,
+  IsNotEmpty,
+  IsOptional,
+  IsIn,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+
+/** Roles that may be granted via an org invitation — never platform_admin (M4). */
+export const INVITABLE_ROLES = ['manager', 'admin', 'sysadmin'] as const;
 
 export class CreateInvitationDto {
   @ApiProperty()
@@ -7,9 +16,10 @@ export class CreateInvitationDto {
   @IsNotEmpty()
   email!: string;
 
-  @ApiProperty({ description: 'Role to assign: sysadmin or manager' })
+  @ApiProperty({ description: 'Role to assign', enum: INVITABLE_ROLES })
   @IsString()
   @IsNotEmpty()
+  @IsIn(INVITABLE_ROLES)
   role!: string;
 
   @ApiPropertyOptional({ description: 'Location ID to assign manager to' })

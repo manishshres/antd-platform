@@ -5,6 +5,7 @@ import {
   Req,
   Res,
   UnauthorizedException,
+  ForbiddenException,
   HttpCode,
   HttpStatus,
   UseGuards,
@@ -48,28 +49,14 @@ export class AuthController {
 
   @Public()
   @Post('register')
-  @ApiOperation({ summary: 'Register a new user account' })
-  @ApiResponse({ status: 201, description: 'User successfully created.' })
-  @ApiResponse({ status: 400, description: 'Validation failed.' })
-  @ApiResponse({ status: 409, description: 'Email address already in use.' })
-  async register(@Body() registerDto: RegisterDto) {
-    const passwordHash = await this.authService.hashPassword(
-      registerDto.password,
+  @ApiOperation({ summary: 'Register a new user account (disabled)' })
+  @ApiResponse({ status: 403, description: 'Self-registration is disabled.' })
+  register(@Body() _registerDto: RegisterDto) {
+    // Self-registration is disabled — organizations and users are created by a platform admin
+    // and joined via invitation.
+    throw new ForbiddenException(
+      'Self-registration is disabled. Contact your platform administrator for an invitation.',
     );
-    await this.authService.register(
-      registerDto.email,
-      passwordHash,
-      registerDto.firstName,
-      registerDto.lastName,
-      registerDto.companyName,
-      registerDto.phoneNumber,
-    );
-    return {
-      id: '',
-      email: '',
-      role: '',
-      createdAt: new Date(),
-    };
   }
 
   @Public()
