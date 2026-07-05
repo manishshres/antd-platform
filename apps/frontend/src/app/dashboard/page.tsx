@@ -6,16 +6,12 @@ import {
   ShoppingOutlined,
   DollarOutlined,
   PhoneOutlined,
-  RiseOutlined,
   RobotOutlined,
   FileTextOutlined,
   SettingOutlined,
   TeamOutlined,
   CoffeeOutlined,
   ArrowRightOutlined,
-  ClockCircleOutlined,
-  CheckCircleOutlined,
-  SyncOutlined,
 } from "@ant-design/icons";
 import {
   AreaChart,

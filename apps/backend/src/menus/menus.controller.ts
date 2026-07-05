@@ -312,11 +312,7 @@ export class MenusController {
     @Param('itemId') itemId: string,
     @Body() dto: AssignModifierDto,
   ): Promise<unknown> {
-    return this.menusService.assignModifierToItem(
-      user,
-      itemId,
-      dto.modifierId,
-    );
+    return this.menusService.assignModifierToItem(user, itemId, dto.modifierId);
   }
 
   // --- NEW ROUTES FOR PHASE 10 ---

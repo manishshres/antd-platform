@@ -13,6 +13,7 @@ import {
   Typography,
   Skeleton,
   App,
+  theme,
 } from "antd";
 import {
   ArrowLeftOutlined,
@@ -31,6 +32,7 @@ export default function EditLocationPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const { message } = App.useApp();
+  const { token } = theme.useToken();
   const { locations, loading: locLoading, refreshLocations } = useLocation();
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
@@ -50,6 +52,7 @@ export default function EditLocationPage() {
         state: location.state,
         country: location.country,
         timezone: location.timezone,
+        menuBucket: location.aiSettings?.menuBucket ?? "",
         dynamicVariables: Object.entries(dynVars).map(([key, value]) => ({
           key,
           value,
@@ -67,14 +70,22 @@ export default function EditLocationPage() {
       for (const dv of dynamicVarsArr) {
         if (dv && dv.key) dynamicVariables[dv.key] = dv.value || "";
       }
-      const { dynamicVariables: _omit, ...locationFields } = values;
-      void _omit;
+      const menuBucket = ((values.menuBucket as string) || "").trim();
+      const {
+        dynamicVariables: _omitVars,
+        menuBucket: _omitBucket,
+        ...locationFields
+      } = values;
+      void _omitVars;
+      void _omitBucket;
 
       await api.patch(`/locations/${id}`, locationFields);
-      if (Object.keys(dynamicVariables).length > 0) {
-        await api.patch(`/locations/${id}/ai-config`, {
-          aiSettings: { dynamicVariables },
-        });
+
+      // aiSettings is merged server-side, so only send the AI keys this form owns.
+      const aiSettings: Record<string, unknown> = { dynamicVariables };
+      if (menuBucket) aiSettings.menuBucket = menuBucket;
+      if (Object.keys(dynamicVariables).length > 0 || menuBucket) {
+        await api.patch(`/locations/${id}/ai-config`, { aiSettings });
       }
       message.success("Location updated");
       await refreshLocations();
@@ -154,6 +165,13 @@ export default function EditLocationPage() {
           </Space>
 
           <Divider>AI Agent Config</Divider>
+          <Form.Item
+            name="menuBucket"
+            label="Menu Knowledge Bucket"
+            extra="Pre-created Telnyx storage bucket this location's menu is published to for AI retrieval (e.g. 'makalu'). Leave blank to auto-generate a per-location bucket. Never share a bucket between restaurants — it causes cross-menu answers."
+          >
+            <Input placeholder="e.g. makalu" />
+          </Form.Item>
           <Form.List name="dynamicVariables">
             {(fields, { add, remove }) => (
               <>
@@ -174,7 +192,11 @@ export default function EditLocationPage() {
                     <Form.Item {...restField} name={[name, "value"]}>
                       <Input placeholder="Variable Value (Optional)" />
                     </Form.Item>
-                    <MinusCircleOutlined onClick={() => remove(name)} style={{ color: "#ff4d4f" }} />
+                    <MinusCircleOutlined
+                      aria-label="Remove variable"
+                      onClick={() => remove(name)}
+                      style={{ color: token.colorError }}
+                    />
                   </Space>
                 ))}
                 <Form.Item>

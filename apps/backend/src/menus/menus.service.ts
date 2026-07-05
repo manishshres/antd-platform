@@ -53,7 +53,9 @@ export class MenusService {
     return this.getMenuByOrg(orgId, pagination, locationId);
   }
 
-  async clearMenuCache(user: CurrentUserPayload): Promise<{ cleared: boolean }> {
+  async clearMenuCache(
+    user: CurrentUserPayload,
+  ): Promise<{ cleared: boolean }> {
     // Scope the clear to the caller's org — never flush every tenant's cache (H7).
     const orgId = await this.billingService.getRequiredOrg(user);
     await this.invalidateMenuCache(orgId);
@@ -274,7 +276,11 @@ export class MenusService {
     );
   }
 
-  async createCategory(user: CurrentUserPayload, name: string, locationId?: string) {
+  async createCategory(
+    user: CurrentUserPayload,
+    name: string,
+    locationId?: string,
+  ) {
     const orgId = await this.billingService.getRequiredOrg(user);
     const newCats = await this.db
       .insert(schema.categories)
@@ -986,6 +992,7 @@ export class MenusService {
       .select({
         id: schema.locations.id,
         telnyxAssistantId: schema.locations.telnyxAssistantId,
+        aiSettings: schema.locations.aiSettings,
       })
       .from(schema.locations)
       .where(
@@ -1018,9 +1025,10 @@ export class MenusService {
           name: item.name,
           description: item.description,
           price: item.price,
+          available: item.isAvailable !== false,
           modifiers: item.modifiers?.map((mod: any) => ({
-            name: mod.groupName,
-            required: mod.required,
+            name: mod.name,
+            required: mod.isRequired,
             options: mod.options.map((opt: any) => ({
               id: opt.id,
               name: opt.name,
@@ -1035,8 +1043,16 @@ export class MenusService {
 
     // One bucket per location keeps tenants strictly isolated: an assistant only ever retrieves its
     // own location's menu, and each embed re-processes just this one file (fast + cheap) instead of
-    // every tenant's menu in a shared bucket. Location ids are lowercase UUIDs → DNS-safe names.
-    const bucket = `menu-${loc.id}`;
+    // every tenant's menu in a shared bucket. Sharing a bucket across restaurants would let one
+    // assistant retrieve another's items (cross-tenant hallucination), so never reuse a bucket.
+    //
+    // A location may pin a pre-created bucket via aiSettings.menuBucket (e.g. 'makalu'); this is
+    // required while Telnyx Cloud Storage suspension blocks on-the-fly bucket creation. Otherwise
+    // fall back to a per-location name (location ids are lowercase UUIDs → DNS-safe).
+    const configuredBucket = (
+      loc.aiSettings as { menuBucket?: string } | null
+    )?.menuBucket?.trim();
+    const bucket = configuredBucket || `menu-${loc.id}`;
     const fileName = 'menu.json';
 
     await this.telnyxService.uploadKnowledgeDocument(

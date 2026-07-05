@@ -15,7 +15,10 @@ export interface Location {
   timezone?: string;
   phoneNumber?: string;
   status: string;
-  aiSettings?: { dynamicVariables?: Record<string, string> };
+  aiSettings?: {
+    dynamicVariables?: Record<string, string>;
+    menuBucket?: string;
+  };
   telnyxAssistantId?: string | null;
   menuLastSyncedAt?: string | null;
 }

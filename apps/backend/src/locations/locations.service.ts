@@ -138,31 +138,13 @@ export class LocationsService {
       .where(eq(schema.locations.id, locationId));
 
     if (location.telnyxAssistantId) {
-      // Sync to Telnyx immediately (synchronous non-blocking or just await)
-      // Since they didn't specify BullMQ strict requirement, await is fine.
-
-      const [org] = await this.db
-        .select()
-        .from(schema.organizations)
-        .where(eq(schema.organizations.id, organizationId))
-        .limit(1);
-
-      // Build a dynamic prompt
-      let dynamicInstructions = '';
-      if (newAiSettings.greeting) {
-        dynamicInstructions += `\nGreeting: ${newAiSettings.greeting}`;
+      // Only push instructions to Telnyx when explicitly provided — never auto-generate
+      // a generic prompt that would overwrite the user's custom system prompt.
+      if (dto.aiSettings?.instructions) {
+        await this.telnyxService.updateAssistant(location.telnyxAssistantId, {
+          instructions: dto.aiSettings.instructions,
+        });
       }
-      if (newAiSettings.menuUrl) {
-        dynamicInstructions += `\nMenu URL: ${newAiSettings.menuUrl}`;
-      }
-
-      const systemPrompt = `You are a helpful AI assistant for ${org.name}, located in ${location.city || ''}, ${location.state || ''}.
-The business name is ${org.name}.
-Always be polite and assist customers with their inquiries and orders.${dynamicInstructions}`;
-
-      await this.telnyxService.updateAssistant(location.telnyxAssistantId, {
-        instructions: systemPrompt,
-      });
 
       if (
         newAiSettings.dynamicVariables &&

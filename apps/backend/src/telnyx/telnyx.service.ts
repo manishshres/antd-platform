@@ -1,4 +1,8 @@
-import { Injectable, ServiceUnavailableException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 /**
@@ -23,6 +27,7 @@ export class TelnyxStorageSuspendedError extends ServiceUnavailableException {
  */
 @Injectable()
 export class TelnyxService {
+  private readonly logger = new Logger(TelnyxService.name);
   private readonly apiKey: string;
   private readonly baseURL: string;
 
@@ -57,8 +62,11 @@ export class TelnyxService {
     return res.json() as Promise<unknown>;
   }
 
-  async getRecordings(): Promise<unknown> {
-    return this.fetchJson('/recordings');
+  async getRecordings(callSessionId?: string): Promise<any> {
+    const params = new URLSearchParams();
+    if (callSessionId) params.set('filter[call_session_id]', callSessionId);
+    const queryString = params.toString();
+    return this.fetchJson(`/recordings${queryString ? `?${queryString}` : ''}`);
   }
 
   async getTranscriptions(recordingId?: string): Promise<unknown> {
@@ -121,13 +129,13 @@ export class TelnyxService {
     }
   }
 
-  async getConversations(assistantId?: string): Promise<unknown> {
+  async getConversations(assistantId?: string): Promise<any> {
     const params = new URLSearchParams({ 'page[size]': '100' });
     if (assistantId) params.set('assistant_id', assistantId);
     return this.fetchJson(`/ai/conversations?${params.toString()}`);
   }
 
-  async getConversationMessages(conversationId: string): Promise<unknown> {
+  async getConversationMessages(conversationId: string): Promise<any> {
     return this.fetchJson(
       `/ai/conversations/${encodeURIComponent(conversationId)}/messages?page[size]=100`,
     );
@@ -289,29 +297,33 @@ export class TelnyxService {
       method: 'PUT',
       headers: { Authorization: `Bearer ${this.apiKey}` },
     }).catch((e) =>
-      console.warn(
+      this.logger.warn(
         `Bucket creation check failed (might already exist): ${e.message}`,
       ),
     );
 
     // Step 2: Upload file
-    const res = await fetch(
-      `https://telnyxcloudstorage.com/${bucketName}/${fileName}`,
-      {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: content,
+    const uploadUrl = `https://telnyxcloudstorage.com/${bucketName}/${fileName}`;
+    const res = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        'Content-Type': 'application/json',
       },
-    );
+      body: content,
+    });
 
     if (!res.ok) {
       const text = await res.text();
       // 403 UserSuspended = negative available credit on the Telnyx account; surface a clear,
       // actionable error rather than a raw storage dump.
       if (res.status === 403 && text.includes('UserSuspended')) {
+        // Log the exact request + raw Telnyx body so it can be forwarded to Telnyx support as
+        // evidence of the storage-write restriction (they asked for the precise 403 payload).
+        this.logger.error(
+          `Telnyx Cloud Storage write blocked (UserSuspended). ` +
+            `PUT ${uploadUrl} → ${res.status} ${res.statusText}. Raw response: ${text}`,
+        );
         throw new TelnyxStorageSuspendedError();
       }
       throw new Error(`Failed to upload to Telnyx Storage: ${text}`);
