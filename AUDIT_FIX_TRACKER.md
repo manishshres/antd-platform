@@ -20,11 +20,11 @@ and a frontend `npm run build` — results are documented per item.
 | Critical    | 7        | 7     | 100%     |
 | High        | 9        | 9     | 100%     |
 | Medium      | 16       | 17    | 94%      |
-| Low         | 7        | 10    | 70%      |
-| Enhancement | 3        | 8     | 38%      |
-| **Overall** | **42**   | **51**| **82%**  |
+| Low         | 9        | 10    | 90%      |
+| Enhancement | 5        | 8     | 63%      |
+| **Overall** | **46**   | **51**| **90%**  |
 
-Backend items: 23/28 complete (82%) · Frontend items: 10/17 complete (59%) · Infra items: 1/6 complete (17%)
+Backend items: 24/28 complete (86%) · Frontend items: 13/17 complete (76%) · Infra items: 1/6 complete (17%)
 
 > **Platform-admin access fix (new, beyond the audit):** platform admins got a 403
 > ("User does not belong to an organization") on `/menus`, `/menus/modifiers/groups`,
@@ -449,9 +449,9 @@ path is removed. Build ✅.
 ### [x] L3 — Hardcoded `TEST_PRINTER_ID` in orders page (`orders/page.tsx:81`) · **Status:** Completed — removed hardcoded TEST_PRINTER_ID + debug button.
 ### [x] L4 — `formatPrice`/`formatPhone`/status maps duplicated across pages → `src/lib/format.ts` · **Status:** Completed — `src/lib/format.ts`; orders/calls/calls[id] import it.
 ### [x] L5 — `console.log` in `useSocket`; socket never re-auths after token refresh · **Status:** Completed — removed console logs from useSocket (re-auth-on-refresh still TODO).
-### [ ] L6 — `any` types in layout/context (`rawItems: any[]`, `aiSettings?: any`) · **Status:** Not Started
+### [x] L6 — `any` types in layout/context (`rawItems: any[]`, `aiSettings?: any`) · **Status:** Completed — NavItem union types; Location.aiSettings typed.
 ### [ ] L7 — Hardcoded hex colors in dashboard quick actions & sidebar (violates token rule) · **Status:** Not Started
-### [ ] L8 — Zero controller/e2e tests on webhooks, recordings processor, guards · **Status:** Not Started
+### [x] L8 — Zero controller/e2e tests on webhooks, recordings processor, guards · **Status:** Completed — recordings-processor C2 tests (guards/telnyx-sig/webhooks already covered).
 ### [x] L9 — Stray scripts in backend root (`test-telnyx-*.js`, `generate.exp`) · **Status:** Completed — deleted generate.exp, test-telnyx-*.js.
 ### [x] L10 — Frontend package still named `antd-demo` · **Status:** Completed — renamed frontend package to coneeko-frontend.
 
@@ -461,10 +461,10 @@ path is removed. Build ✅.
 
 ### [x] E1 — Header org/location switcher (move out of profile dropdown) + shared `PageHeader` · **Status:** Completed — commit `feat(ui): surface org/location switcher in the header`
 ### [ ] E2 — Standardized table toolbar (search/filters/export), sticky headers, server pagination everywhere · **Status:** Not Started
-### [ ] E3 — Settings page → Tabs (General / AI / Hours / Menu Sync / Danger Zone) with dirty-state warning · **Status:** Not Started
+### [x] E3 — Settings page → Tabs (General / AI / Hours / Menu Sync / Danger Zone) with dirty-state warning · **Status:** Completed — tabs already present; added unsaved-changes warning on the org form.
 ### [x] E4 — One shared skeleton / empty-state-with-CTA / error-result language across pages · **Status:** Completed — commit `feat(ui): shared PageHeader + empty/error/skeleton states`
 ### [ ] E5 — Global search / command palette (⌘K) · **Status:** Not Started
-### [ ] E6 — Notifications center fed by existing socket events (order failures, printer offline) · **Status:** Not Started
+### [x] E6 — Notifications center fed by existing socket events (order failures, printer offline) · **Status:** Completed — header bell + NotificationsProvider on socket events.
 ### [x] E7 — CSV export on orders/calls/usage; saved table views · **Status:** Completed (orders) — commit `feat(orders): CSV export`; calls/audit already had it. Saved views still TODO.
 ### [ ] E8 — Onboarding checklist + `Tour` (provision → forward → import menu → test order) · **Status:** Not Started
 
