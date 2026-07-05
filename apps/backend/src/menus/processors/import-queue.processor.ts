@@ -166,15 +166,26 @@ export class ImportQueueProcessor extends WorkerHost {
           existingCats.map((c) => [c.name.toLowerCase(), c.id]),
         );
 
+        // Tenant isolation: for org-level imports (no locationId) scope existing items to THIS
+        // org's categories — never select all menu items globally, or name-matching and the
+        // sync-disable below would touch other tenants' menus.
+        const orgCatIds = existingCats.map((c) => c.id);
         const existingItems = locationId
           ? await tx
               .select()
               .from(schema.menuItems)
               .where(eq(schema.menuItems.locationId, locationId))
-          : await tx.select().from(schema.menuItems);
+          : orgCatIds.length > 0
+            ? await tx
+                .select()
+                .from(schema.menuItems)
+                .where(inArray(schema.menuItems.categoryId, orgCatIds))
+            : [];
         const itemMap = new Map(
           existingItems.map((i) => [i.name.toLowerCase(), i]),
         );
+
+        const processedItemIds = new Set<string>();
 
         for (const cat of menuData.categories) {
           if (cat.items.length === 0) continue;
@@ -227,6 +238,10 @@ export class ImportQueueProcessor extends WorkerHost {
               itemId = insertedItem.id;
             }
 
+            if (itemId) {
+              processedItemIds.add(itemId);
+            }
+
             if (
               item.modifiers &&
               item.modifiers.length > 0 &&
@@ -266,6 +281,19 @@ export class ImportQueueProcessor extends WorkerHost {
                 }
               }
             }
+          }
+        }
+
+        if (importMode === 'sync') {
+          const itemsToDisable = Array.from(itemMap.values())
+            .filter((item) => !processedItemIds.has(item.id))
+            .map((item) => item.id);
+
+          if (itemsToDisable.length > 0) {
+            await tx
+              .update(schema.menuItems)
+              .set({ isAvailable: false })
+              .where(inArray(schema.menuItems.id, itemsToDisable));
           }
         }
       });

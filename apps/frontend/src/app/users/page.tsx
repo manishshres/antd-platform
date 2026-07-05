@@ -336,7 +336,7 @@ export default function UsersPage() {
         />
       </Card>
 
-      <Modal
+      <Modal forceRender
         title={
           <Space>
             <UserOutlined />
