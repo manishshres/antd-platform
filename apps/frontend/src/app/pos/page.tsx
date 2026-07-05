@@ -97,6 +97,7 @@ export default function PosPage() {
   const [cart, setCart] = useState<CartLine[]>([]);
   const [orderType, setOrderType] = useState<string>("dine_in");
   const [customerName, setCustomerName] = useState("");
+  const [orderNotes, setOrderNotes] = useState("");
   const [charging, setCharging] = useState<"cash" | "card" | null>(null);
 
   // Modifier picker state
@@ -171,11 +172,8 @@ export default function PosPage() {
 
   const handleItemTap = (item: MenuItem) => {
     if (!item.isAvailable) return;
-    const groups = item.modifiers ?? [];
-    if (groups.length === 0) {
-      addLine(item, []);
-      return;
-    }
+    // Always open the picker — even items without modifier groups can take
+    // per-item kitchen notes ("no onions", "extra spicy", ...).
     setPickerItem(item);
     setPickerSelections({});
     setPickerNotes("");
@@ -229,6 +227,7 @@ export default function PosPage() {
           orderType,
           paymentMethod: method,
           customerName: customerName.trim() || undefined,
+          specialInstructions: orderNotes.trim() || undefined,
           items: cart.map((l) => ({
             menuItemId: l.menuItemId,
             quantity: l.quantity,
@@ -243,6 +242,7 @@ export default function PosPage() {
       );
       setCart([]);
       setCustomerName("");
+      setOrderNotes("");
     } catch {
       message.error("Failed to place the order. Nothing was charged.");
     } finally {
@@ -271,7 +271,11 @@ export default function PosPage() {
           display: "flex",
           gap: token.marginSM,
           alignItems: "stretch",
-          minHeight: "calc(100vh - 220px)",
+          // Lock the register to the viewport: the page itself never scrolls,
+          // each panel (categories, items, cart) scrolls independently.
+          height: "calc(100vh - 200px)",
+          minHeight: 420,
+          overflow: "hidden",
         }}
       >
         {/* Category rail */}
@@ -411,7 +415,7 @@ export default function PosPage() {
             style={{ marginBottom: token.marginXS }}
           />
 
-          <div style={{ flex: 1, overflowY: "auto" }}>
+          <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
             {cart.length === 0 ? (
               <Empty
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
@@ -486,6 +490,15 @@ export default function PosPage() {
           </div>
 
           <Divider style={{ margin: "8px 0" }} />
+          <Input.TextArea
+            rows={2}
+            placeholder="Order instructions (optional) — e.g. allergy, rush"
+            value={orderNotes}
+            onChange={(e) => setOrderNotes(e.target.value)}
+            maxLength={1000}
+            aria-label="Order instructions"
+            style={{ marginBottom: token.marginXS }}
+          />
           <div
             style={{
               display: "flex",
