@@ -9,6 +9,7 @@ import {
   text,
   primaryKey,
   index,
+  check,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
@@ -25,7 +26,9 @@ export const organizations = pgTable('organizations', {
   deletedAt: timestamp('deleted_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
+}, (t) => [
+  check('organizations_status_check', sql`${t.status} IN ('draft', 'active', 'suspended', 'archived', 'provisioning')`)
+]);
 
 export const locations = pgTable(
   'locations',
@@ -64,7 +67,10 @@ export const locations = pgTable(
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
-  (t) => [index('idx_locations_organization_id').on(t.organizationId)],
+  (t) => [
+    index('idx_locations_organization_id').on(t.organizationId),
+    check('locations_status_check', sql`${t.status} IN ('draft', 'active', 'suspended', 'archived', 'deprovisioned', 'provisioning')`)
+  ],
 );
 
 export const orgInvitations = pgTable(
@@ -90,6 +96,8 @@ export const orgInvitations = pgTable(
   (t) => [
     index('idx_org_invitations_organization_id').on(t.organizationId),
     index('idx_org_invitations_email').on(t.email),
+    check('org_invitations_role_check', sql`${t.role} IN ('user', 'manager', 'admin', 'sysadmin', 'platform_admin')`),
+    check('org_invitations_status_check', sql`${t.status} IN ('pending', 'accepted', 'expired', 'revoked')`)
   ],
 );
 
@@ -146,8 +154,10 @@ export const users = pgTable(
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
   (t) => [
+    index('idx_users_email').on(t.email),
     index('idx_users_organization_id').on(t.organizationId),
     index('idx_users_location_id').on(t.locationId),
+    check('users_role_check', sql`${t.role} IN ('user', 'manager', 'admin', 'sysadmin', 'platform_admin')`)
   ],
 );
 
@@ -159,6 +169,8 @@ export const refreshTokens = pgTable(
     userId: uuid('user_id')
       .references(() => users.id, { onDelete: 'cascade' })
       .notNull(),
+    /** TTL in seconds chosen at login (rememberMe or default). Preserved across rotations (M2). */
+    ttlSecs: integer('ttl_secs').notNull().default(604800),
     expiresAt: timestamp('expires_at').notNull(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
   },
@@ -343,6 +355,9 @@ export const orders = pgTable(
   (t) => [
     index('idx_orders_organization_id').on(t.organizationId),
     index('idx_orders_location_id').on(t.locationId),
+    // M11: composite index for tenant-scoped paginated order lists
+    index('idx_orders_org_created').on(t.organizationId, t.createdAt),
+    check('orders_status_check', sql`${t.status} IN ('pending', 'confirmed', 'preparing', 'ready', 'delivered', 'cancelled')`)
   ],
 );
 
@@ -415,6 +430,8 @@ export const auditLogs = pgTable(
   (t) => [
     index('idx_audit_logs_organization_id').on(t.organizationId),
     index('idx_audit_logs_created_at').on(t.createdAt),
+    // M11: composite index for tenant-scoped audit log queries
+    index('idx_audit_logs_org_created').on(t.organizationId, t.createdAt),
   ],
 );
 
@@ -574,6 +591,8 @@ export const recordings = pgTable(
   (t) => [
     index('idx_recordings_organization_id').on(t.organizationId),
     index('idx_recordings_location_id').on(t.locationId),
+    // M11: composite index for tenant-scoped recording lists
+    index('idx_recordings_org_created').on(t.organizationId, t.createdAt),
     index('idx_recordings_fts').using(
       'gin',
       sql`to_tsvector('english', coalesce(${t.transcript}, '') || ' ' || coalesce(${t.aiSummary}, ''))`,
@@ -622,6 +641,8 @@ export const usageEvents = pgTable(
   (t) => [
     index('idx_usage_events_organization_id').on(t.organizationId),
     index('idx_usage_events_location_id').on(t.locationId),
+    // M11: composite index for billing aggregation queries
+    index('idx_usage_events_org_type_created').on(t.organizationId, t.eventType, t.createdAt),
   ],
 );
 

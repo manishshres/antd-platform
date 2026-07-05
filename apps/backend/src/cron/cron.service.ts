@@ -232,4 +232,23 @@ export class CronService {
 
     this.logger.log(`Swept ${recordingsToDelete.length} expired recordings.`);
   }
+
+  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
+  async sweepWebhookEvents() {
+    this.logger.log('Starting webhook events cleanup sweep...');
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+    try {
+      const deleted = await this.db
+        .delete(schema.webhookEvents)
+        .where(lt(schema.webhookEvents.receivedAt, thirtyDaysAgo))
+        .returning({ id: schema.webhookEvents.eventId });
+
+      this.logger.log(`Swept ${deleted.length} expired webhook events.`);
+    } catch (err: unknown) {
+      this.logger.error(
+        `Failed to sweep webhook events: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
 }

@@ -47,7 +47,8 @@ describe('AuthService', () => {
 
   const mockDb = {
     insert: jest.fn().mockReturnThis(),
-    values: jest.fn().mockResolvedValue([{ id: 'test-id' }]),
+    values: jest.fn().mockReturnThis(),
+    returning: jest.fn().mockResolvedValue([{ id: 'test-id' }]),
     update: jest.fn().mockReturnThis(),
     set: jest.fn().mockReturnThis(),
     where: jest.fn().mockReturnThis(),
@@ -148,7 +149,7 @@ describe('AuthService', () => {
       expect(result).toBeNull();
       expect(mockDb.update).toHaveBeenCalled();
       expect(mockDb.set).toHaveBeenCalledWith(
-        expect.objectContaining({ failedLoginAttempts: 2 }),
+        expect.objectContaining({ failedLoginAttempts: expect.anything() }),
       );
     });
   });

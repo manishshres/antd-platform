@@ -16,7 +16,7 @@ import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../database/schema';
 import * as bcrypt from 'bcrypt';
 import { createHash, randomBytes } from 'crypto';
-import { eq, and, isNull } from 'drizzle-orm';
+import { eq, and, isNull, sql } from 'drizzle-orm';
 import { MailService } from '../common/services/mail.service';
 import { AuditService } from '../common/services/audit.service';
 
@@ -99,7 +99,6 @@ export class AuthService {
     const passwordValid = await bcrypt.compare(pass, user.passwordHash);
 
     if (!passwordValid) {
-      const attempts = (user.failedLoginAttempts ?? 0) + 1;
       const maxAttempts = this.configService.get<number>(
         'ACCOUNT_MAX_FAILED_ATTEMPTS',
         5,
@@ -109,22 +108,27 @@ export class AuthService {
         60000,
       );
 
-      const isNowLocked = attempts >= maxAttempts;
-
-      await this.db
+      // M3: Atomic increment — eliminates the read-modify-write race on concurrent requests.
+      // We increment in SQL and then re-fetch to decide whether to lock.
+      const [updated] = await this.db
         .update(schema.users)
         .set({
-          failedLoginAttempts: attempts,
-          lockedUntil: isNowLocked
-            ? new Date(Date.now() + lockoutDuration)
-            : null,
+          failedLoginAttempts: sql<number>`${schema.users.failedLoginAttempts} + 1`,
           updatedAt: new Date(),
         })
-        .where(eq(schema.users.id, user.id));
+        .where(eq(schema.users.id, user.id))
+        .returning({ attempts: schema.users.failedLoginAttempts });
+
+      const newAttempts = updated?.attempts ?? 1;
+      const isNowLocked = newAttempts >= maxAttempts;
 
       if (isNowLocked) {
+        await this.db
+          .update(schema.users)
+          .set({ lockedUntil: new Date(Date.now() + lockoutDuration), updatedAt: new Date() })
+          .where(eq(schema.users.id, user.id));
         this.logger.warn(
-          `Account ${email} locked after ${attempts} failed attempts.`,
+          `Account ${email} locked after ${newAttempts} failed attempts.`,
         );
       }
       return null;
@@ -187,6 +191,8 @@ export class AuthService {
     await this.db.insert(schema.refreshTokens).values({
       token: tokenHash,
       userId: user.id,
+      // M2: Persist the chosen TTL so refresh() can reuse it across rotations.
+      ttlSecs: refreshTtlSecs,
       expiresAt,
     });
 
@@ -272,10 +278,10 @@ export class AuthService {
       };
       const newAccessToken = this.jwtService.sign(newPayload);
 
-      const refreshTtlSecs = this.configService.get<number>(
-        'JWT_REFRESH_EXPIRATION',
-        REFRESH_TTL_DEFAULT,
-      );
+      // M2: Reuse the TTL from the original token family so rememberMe sessions stay long.
+      const refreshTtlSecs =
+        storedToken.ttlSecs ??
+        this.configService.get<number>('JWT_REFRESH_EXPIRATION', REFRESH_TTL_DEFAULT);
       const newRefreshToken = this.jwtService.sign(
         { sub: user.id },
         {
@@ -290,6 +296,7 @@ export class AuthService {
       await this.db.insert(schema.refreshTokens).values({
         token: newTokenHash,
         userId: user.id,
+        ttlSecs: refreshTtlSecs,
         expiresAt: newExpiresAt,
       });
 
