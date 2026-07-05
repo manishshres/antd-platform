@@ -39,17 +39,17 @@ export class MenusService {
   ) {}
 
   async getMenu(
-    userId: string,
+    user: CurrentUserPayload,
     pagination: PaginationDto,
     locationId?: string,
   ): Promise<PaginatedResponseDto<unknown>> {
-    const orgId = await this.billingService.getRequiredOrg(userId);
+    const orgId = await this.billingService.getRequiredOrg(user);
     return this.getMenuByOrg(orgId, pagination, locationId);
   }
 
-  async clearMenuCache(userId: string): Promise<{ cleared: boolean }> {
+  async clearMenuCache(user: CurrentUserPayload): Promise<{ cleared: boolean }> {
     // Scope the clear to the caller's org — never flush every tenant's cache (H7).
-    const orgId = await this.billingService.getRequiredOrg(userId);
+    const orgId = await this.billingService.getRequiredOrg(user);
     await this.invalidateMenuCache(orgId);
     return { cleared: true };
   }
@@ -232,8 +232,8 @@ export class MenusService {
     );
   }
 
-  async createCategory(userId: string, name: string, locationId?: string) {
-    const orgId = await this.billingService.getRequiredOrg(userId);
+  async createCategory(user: CurrentUserPayload, name: string, locationId?: string) {
+    const orgId = await this.billingService.getRequiredOrg(user);
     const newCats = await this.db
       .insert(schema.categories)
       .values({
@@ -246,7 +246,7 @@ export class MenusService {
 
     void this.auditService.log({
       action: 'menu.category.create',
-      userId,
+      userId: user.id,
       organizationId: orgId,
       entityType: 'category',
       entityId: newCats[0].id,
@@ -257,11 +257,11 @@ export class MenusService {
   }
 
   async updateCategory(
-    userId: string,
+    user: CurrentUserPayload,
     id: string,
     dto: { name?: string; isAvailable?: boolean },
   ) {
-    const orgId = await this.billingService.getRequiredOrg(userId);
+    const orgId = await this.billingService.getRequiredOrg(user);
 
     const cat = await this.db
       .select()
@@ -290,7 +290,7 @@ export class MenusService {
 
     void this.auditService.log({
       action: 'menu.category.update',
-      userId,
+      userId: user.id,
       organizationId: orgId,
       entityType: 'category',
       entityId: id,
@@ -300,8 +300,8 @@ export class MenusService {
     return updated;
   }
 
-  async deleteCategory(userId: string, id: string) {
-    const orgId = await this.billingService.getRequiredOrg(userId);
+  async deleteCategory(user: CurrentUserPayload, id: string) {
+    const orgId = await this.billingService.getRequiredOrg(user);
 
     // Ensure category belongs to user's organization
     const cat = await this.db
@@ -340,7 +340,7 @@ export class MenusService {
 
     void this.auditService.log({
       action: 'menu.category.delete',
-      userId,
+      userId: user.id,
       organizationId: orgId,
       entityType: 'category',
       entityId: id,
@@ -350,7 +350,7 @@ export class MenusService {
   }
 
   async createMenuItem(
-    userId: string,
+    user: CurrentUserPayload,
     categoryId: string,
     name: string,
     description: string,
@@ -358,7 +358,7 @@ export class MenusService {
     imageUrl?: string,
     locationId?: string,
   ) {
-    const orgId = await this.billingService.getRequiredOrg(userId);
+    const orgId = await this.billingService.getRequiredOrg(user);
 
     // Validate category belongs to organization
     const cat = await this.db
@@ -392,7 +392,7 @@ export class MenusService {
 
     void this.auditService.log({
       action: 'menu.item.create',
-      userId,
+      userId: user.id,
       organizationId: orgId,
       entityType: 'menu_item',
       entityId: newItems[0].id,
@@ -409,8 +409,8 @@ export class MenusService {
     return newItems[0];
   }
 
-  async deleteMenuItem(userId: string, id: string) {
-    const orgId = await this.billingService.getRequiredOrg(userId);
+  async deleteMenuItem(user: CurrentUserPayload, id: string) {
+    const orgId = await this.billingService.getRequiredOrg(user);
 
     const item = await this.db
       .select()
@@ -448,7 +448,7 @@ export class MenusService {
 
     void this.auditService.log({
       action: 'menu.item.delete',
-      userId,
+      userId: user.id,
       organizationId: orgId,
       entityType: 'menu_item',
       entityId: id,
@@ -569,12 +569,12 @@ import { notDeleted } from '../database/db.utils';
   }
 
   async createModifierGroup(
-    userId: string,
+    user: CurrentUserPayload,
     name: string,
     locationId?: string,
     isRequired: boolean = false,
   ) {
-    const orgId = await this.billingService.getRequiredOrg(userId);
+    const orgId = await this.billingService.getRequiredOrg(user);
     const newGroup = await this.db
       .insert(schema.menuModifiers)
       .values({
@@ -587,7 +587,7 @@ import { notDeleted } from '../database/db.utils';
 
     void this.auditService.log({
       action: 'menu.modifier_group.create',
-      userId,
+      userId: user.id,
       organizationId: orgId,
       entityType: 'menu_modifier',
       entityId: newGroup[0].id,
@@ -598,12 +598,12 @@ import { notDeleted } from '../database/db.utils';
   }
 
   async createModifierOption(
-    userId: string,
+    user: CurrentUserPayload,
     modifierId: string,
     name: string,
     priceAdjustment: number,
   ) {
-    const orgId = await this.billingService.getRequiredOrg(userId);
+    const orgId = await this.billingService.getRequiredOrg(user);
 
     // verify modifier group exists and belongs to org
     const modGroup = await this.db
@@ -634,11 +634,11 @@ import { notDeleted } from '../database/db.utils';
   }
 
   async assignModifierToItem(
-    userId: string,
+    user: CurrentUserPayload,
     menuItemId: string,
     modifierId: string,
   ) {
-    const orgId = await this.billingService.getRequiredOrg(userId);
+    const orgId = await this.billingService.getRequiredOrg(user);
 
     // verify menu item exists and belongs to org (via category)
     const item = await this.db
@@ -687,7 +687,7 @@ import { notDeleted } from '../database/db.utils';
   // --- NEW METHODS FOR PHASE 10 ---
 
   async updateMenuItem(
-    userId: string,
+    user: CurrentUserPayload,
     id: string,
     dto: {
       name?: string;
@@ -700,7 +700,7 @@ import { notDeleted } from '../database/db.utils';
       availabilitySchedule?: unknown;
     },
   ) {
-    const orgId = await this.billingService.getRequiredOrg(userId);
+    const orgId = await this.billingService.getRequiredOrg(user);
 
     // verify ownership
     const item = await this.db
@@ -728,7 +728,7 @@ import { notDeleted } from '../database/db.utils';
 
     void this.auditService.log({
       action: 'menu.item.update',
-      userId,
+      userId: user.id,
       organizationId: orgId,
       entityType: 'menu_item',
       entityId: id,
@@ -738,8 +738,8 @@ import { notDeleted } from '../database/db.utils';
     return updated;
   }
 
-  async restoreCategory(userId: string, id: string) {
-    const orgId = await this.billingService.getRequiredOrg(userId);
+  async restoreCategory(user: CurrentUserPayload, id: string) {
+    const orgId = await this.billingService.getRequiredOrg(user);
     const [restored] = await this.db
       .update(schema.categories)
       .set({ deletedAt: null, updatedAt: new Date() })
@@ -756,8 +756,8 @@ import { notDeleted } from '../database/db.utils';
     return restored;
   }
 
-  async restoreMenuItem(userId: string, id: string) {
-    const orgId = await this.billingService.getRequiredOrg(userId);
+  async restoreMenuItem(user: CurrentUserPayload, id: string) {
+    const orgId = await this.billingService.getRequiredOrg(user);
     // verify ownership via category
     const item = await this.db
       .select({ orgId: schema.categories.organizationId })
@@ -783,10 +783,10 @@ import { notDeleted } from '../database/db.utils';
   }
 
   async reorderCategories(
-    userId: string,
+    user: CurrentUserPayload,
     orders: { id: string; sortOrder: number }[],
   ) {
-    const orgId = await this.billingService.getRequiredOrg(userId);
+    const orgId = await this.billingService.getRequiredOrg(user);
     await this.db.transaction(async (tx) => {
       for (const order of orders) {
         await tx
@@ -805,10 +805,10 @@ import { notDeleted } from '../database/db.utils';
   }
 
   async reorderMenuItems(
-    userId: string,
+    user: CurrentUserPayload,
     orders: { id: string; sortOrder: number }[],
   ) {
-    const orgId = await this.billingService.getRequiredOrg(userId);
+    const orgId = await this.billingService.getRequiredOrg(user);
 
     if (orders.length === 0) return { success: true };
 
@@ -848,8 +848,8 @@ import { notDeleted } from '../database/db.utils';
     return { success: true };
   }
 
-  async getModifierGroups(userId: string, locationId?: string) {
-    const orgId = await this.billingService.getRequiredOrg(userId);
+  async getModifierGroups(user: CurrentUserPayload, locationId?: string) {
+    const orgId = await this.billingService.getRequiredOrg(user);
     const groups = await this.db
       .select()
       .from(schema.menuModifiers)
@@ -885,8 +885,8 @@ import { notDeleted } from '../database/db.utils';
     }));
   }
 
-  async deleteModifierGroup(userId: string, id: string) {
-    const orgId = await this.billingService.getRequiredOrg(userId);
+  async deleteModifierGroup(user: CurrentUserPayload, id: string) {
+    const orgId = await this.billingService.getRequiredOrg(user);
     const [deleted] = await this.db
       .update(schema.menuModifiers)
       .set({ deletedAt: new Date(), updatedAt: new Date() })
@@ -902,8 +902,8 @@ import { notDeleted } from '../database/db.utils';
     return { success: true };
   }
 
-  async deleteModifierOption(userId: string, id: string) {
-    const orgId = await this.billingService.getRequiredOrg(userId);
+  async deleteModifierOption(user: CurrentUserPayload, id: string) {
+    const orgId = await this.billingService.getRequiredOrg(user);
     const opt = await this.db
       .select({ orgId: schema.menuModifiers.organizationId })
       .from(schema.menuItemModifiers)

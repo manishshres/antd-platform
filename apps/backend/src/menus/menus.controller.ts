@@ -71,7 +71,7 @@ export class MenusController {
     @Query() pagination: PaginationDto,
     @Query('locationId') locationId?: string,
   ): Promise<PaginatedResponseDto<unknown>> {
-    return this.menusService.getMenu(user.id, pagination, locationId);
+    return this.menusService.getMenu(user, pagination, locationId);
   }
 
   @Post('sync-ai')
@@ -107,7 +107,7 @@ export class MenusController {
   async clearMenuCache(
     @CurrentUser() user: CurrentUserPayload,
   ): Promise<{ cleared: boolean }> {
-    return this.menusService.clearMenuCache(user.id);
+    return this.menusService.clearMenuCache(user);
   }
 
   @Post('categories')
@@ -121,7 +121,7 @@ export class MenusController {
     @CurrentUser() user: CurrentUserPayload,
     @Body() dto: CreateCategoryDto,
   ): Promise<unknown> {
-    return this.menusService.createCategory(user.id, dto.name, dto.locationId);
+    return this.menusService.createCategory(user, dto.name, dto.locationId);
   }
 
   @Patch('categories/:id')
@@ -133,7 +133,7 @@ export class MenusController {
     @Param('id') id: string,
     @Body() dto: UpdateCategoryDto,
   ) {
-    return this.menusService.updateCategory(user.id, id, dto);
+    return this.menusService.updateCategory(user, id, dto);
   }
 
   @Delete('categories/:id')
@@ -148,7 +148,7 @@ export class MenusController {
     @Param('id') id: string,
   ): Promise<{ success: boolean }> {
     if (!id) throw new BadRequestException('Category ID is required.');
-    return this.menusService.deleteCategory(user.id, id);
+    return this.menusService.deleteCategory(user, id);
   }
 
   @Post('items')
@@ -163,7 +163,7 @@ export class MenusController {
     @Body() dto: CreateItemDto,
   ): Promise<unknown> {
     return this.menusService.createMenuItem(
-      user.id,
+      user,
       dto.categoryId,
       dto.name,
       dto.description || '',
@@ -185,7 +185,7 @@ export class MenusController {
     @Param('id') id: string,
   ): Promise<{ success: boolean }> {
     if (!id) throw new BadRequestException('Item ID is required.');
-    return this.menusService.deleteMenuItem(user.id, id);
+    return this.menusService.deleteMenuItem(user, id);
   }
 
   @Post('import')
@@ -277,7 +277,7 @@ export class MenusController {
     @Body() dto: CreateModifierGroupDto,
   ): Promise<unknown> {
     return this.menusService.createModifierGroup(
-      user.id,
+      user,
       dto.name,
       dto.locationId,
       dto.isRequired || false,
@@ -295,7 +295,7 @@ export class MenusController {
     @Body() dto: CreateModifierOptionDto,
   ): Promise<unknown> {
     return this.menusService.createModifierOption(
-      user.id,
+      user,
       modifierId,
       dto.name,
       dto.priceAdjustment,
@@ -313,7 +313,7 @@ export class MenusController {
     @Body() dto: AssignModifierDto,
   ): Promise<unknown> {
     return this.menusService.assignModifierToItem(
-      user.id,
+      user,
       itemId,
       dto.modifierId,
     );
@@ -330,7 +330,7 @@ export class MenusController {
     @Param('id') id: string,
     @Body() dto: UpdateItemDto,
   ) {
-    return this.menusService.updateMenuItem(user.id, id, dto);
+    return this.menusService.updateMenuItem(user, id, dto);
   }
 
   @Post('categories/:id/restore')
@@ -341,7 +341,7 @@ export class MenusController {
     @CurrentUser() user: CurrentUserPayload,
     @Param('id') id: string,
   ) {
-    return this.menusService.restoreCategory(user.id, id);
+    return this.menusService.restoreCategory(user, id);
   }
 
   @Post('items/:id/restore')
@@ -352,7 +352,7 @@ export class MenusController {
     @CurrentUser() user: CurrentUserPayload,
     @Param('id') id: string,
   ) {
-    return this.menusService.restoreMenuItem(user.id, id);
+    return this.menusService.restoreMenuItem(user, id);
   }
 
   @Patch('reorder/categories')
@@ -363,7 +363,7 @@ export class MenusController {
     @CurrentUser() user: CurrentUserPayload,
     @Body() dto: ReorderDto,
   ) {
-    return this.menusService.reorderCategories(user.id, dto.items);
+    return this.menusService.reorderCategories(user, dto.items);
   }
 
   @Patch('reorder/items')
@@ -374,7 +374,7 @@ export class MenusController {
     @CurrentUser() user: CurrentUserPayload,
     @Body() dto: ReorderDto,
   ) {
-    return this.menusService.reorderMenuItems(user.id, dto.items);
+    return this.menusService.reorderMenuItems(user, dto.items);
   }
 
   @Get('modifiers/groups')
@@ -384,7 +384,7 @@ export class MenusController {
     @CurrentUser() user: CurrentUserPayload,
     @Query('locationId') locationId?: string,
   ) {
-    return this.menusService.getModifierGroups(user.id, locationId);
+    return this.menusService.getModifierGroups(user, locationId);
   }
 
   @Delete('modifiers/groups/:id')
@@ -395,7 +395,7 @@ export class MenusController {
     @CurrentUser() user: CurrentUserPayload,
     @Param('id') id: string,
   ) {
-    return this.menusService.deleteModifierGroup(user.id, id);
+    return this.menusService.deleteModifierGroup(user, id);
   }
 
   @Delete('modifiers/options/:id')
@@ -406,7 +406,7 @@ export class MenusController {
     @CurrentUser() user: CurrentUserPayload,
     @Param('id') id: string,
   ) {
-    return this.menusService.deleteModifierOption(user.id, id);
+    return this.menusService.deleteModifierOption(user, id);
   }
 
   @Post('upload')
