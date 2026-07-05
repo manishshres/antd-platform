@@ -5,6 +5,7 @@ import {
   ForbiddenException,
   BadRequestException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { CurrentUserPayload } from '../common/decorators/current-user.decorator';
 import { DRIZZLE } from '../database/database.module';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
@@ -34,6 +35,7 @@ export class MenusService {
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
     private readonly telnyxService: TelnyxService,
     private readonly analyticsService: AnalyticsService,
+    private readonly configService: ConfigService,
   ) {}
 
   async getMenu(
@@ -318,11 +320,21 @@ export class MenusService {
       throw new NotFoundException('Category not found.');
     }
 
-    // Cascade deletion is handled by DB foreign keys, but wrap in a transaction for safety
+    // M7: Cascade soft-delete child items in the same transaction to prevent orphaned active items.
     await this.db.transaction(async (tx) => {
+      const now = new Date();
+      await tx
+        .update(schema.menuItems)
+        .set({ deletedAt: now, updatedAt: now })
+        .where(
+          and(
+            eq(schema.menuItems.categoryId, id),
+            isNull(schema.menuItems.deletedAt),
+          ),
+        );
       await tx
         .update(schema.categories)
-        .set({ deletedAt: new Date(), updatedAt: new Date() })
+        .set({ deletedAt: now, updatedAt: now })
         .where(eq(schema.categories.id, id));
     });
 
@@ -961,7 +973,8 @@ import { notDeleted } from '../database/db.utils';
     const embedRes: any = await this.telnyxService.embedKnowledgeDocuments();
 
     // Extract the bucket_id. Telnyx API might return it under data.id, data.bucket_id, or just the bucketName
-    const bucketName = process.env.TELNYX_STORAGE_BUCKET || 'restaurant-menu';
+    // M5: Use ConfigService instead of raw process.env.
+    const bucketName = this.configService.get<string>('TELNYX_STORAGE_BUCKET', 'restaurant-menu');
     const bucketId =
       embedRes?.data?.id ||
       embedRes?.data?.bucket_id ||

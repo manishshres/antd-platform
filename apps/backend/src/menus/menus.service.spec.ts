@@ -8,6 +8,7 @@ import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { getQueueToken } from '@nestjs/bullmq';
 import { TelnyxService } from '../telnyx/telnyx.service';
 import { AnalyticsService } from '../analytics/analytics.service';
+import { ConfigService } from '@nestjs/config';
 
 describe('MenusService', () => {
   let service: MenusService;
@@ -88,6 +89,10 @@ describe('MenusService', () => {
         {
           provide: AnalyticsService,
           useValue: { recordUsage: jest.fn().mockResolvedValue(undefined) },
+        },
+        {
+          provide: ConfigService,
+          useValue: { get: jest.fn().mockImplementation((key, def) => def) },
         },
       ],
     }).compile();
