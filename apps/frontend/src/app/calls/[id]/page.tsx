@@ -20,6 +20,7 @@ import {
   Tooltip,
   Typography,
   message,
+  theme,
 } from "antd";
 import {
   ArrowLeftOutlined,
@@ -138,21 +139,38 @@ function deriveInsights(messages: ConversationMessage[], call: CallRecord) {
 }
 
 // ── Status badge ───────────────────────────────────────────────────────────────
-const STATUS_STYLE: Record<
-  string,
-  { bg: string; border: string; color: string }
-> = {
-  completed: { bg: "#f0faf0", border: "#52c41a", color: "#237804" },
-  failed: { bg: "#fff1f0", border: "#ff4d4f", color: "#a8071a" },
-  error: { bg: "#fff1f0", border: "#ff4d4f", color: "#a8071a" },
-  "in-progress": { bg: "#e6f4ff", border: "#1677ff", color: "#0958d9" },
-};
-
 function StatusBadge({ status }: { status: string }) {
+  const { token } = theme.useToken();
+  // Theme-token palette per status so the badge follows light/dark mode automatically.
+  const STATUS_STYLE: Record<
+    string,
+    { bg: string; border: string; color: string }
+  > = {
+    completed: {
+      bg: token.colorSuccessBg,
+      border: token.colorSuccess,
+      color: token.colorSuccessTextActive,
+    },
+    failed: {
+      bg: token.colorErrorBg,
+      border: token.colorError,
+      color: token.colorErrorTextActive,
+    },
+    error: {
+      bg: token.colorErrorBg,
+      border: token.colorError,
+      color: token.colorErrorTextActive,
+    },
+    "in-progress": {
+      bg: token.colorPrimaryBg,
+      border: token.colorPrimary,
+      color: token.colorPrimaryTextActive,
+    },
+  };
   const s = STATUS_STYLE[status] ?? {
-    bg: "#fafafa",
-    border: "#d9d9d9",
-    color: "#595959",
+    bg: token.colorFillQuaternary,
+    border: token.colorBorder,
+    color: token.colorTextSecondary,
   };
   return (
     <span
@@ -192,16 +210,48 @@ function AudioPlayer({
   onCopyTranscript: () => void;
 }) {
   const audioRef = useRef<HTMLAudioElement>(null);
+  const { token } = theme.useToken();
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [speed, setSpeed] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [authUrl, setAuthUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    // When url is null the component renders the "no recording" alert, so no
+    // state reset is needed here (and loading already initializes to true).
+    if (!url) return;
+    let blobUrl: string | null = null;
+    let cancelled = false;
+
+    // Fetch audio with Authorization header via api client, then create a blob URL.
+    // The <audio> element cannot set custom headers, so a direct URL with ?token= won't
+    // work against a Bearer-guarded endpoint.
+    api.get<Blob>(url, { responseType: "blob" })
+      .then((res) => {
+        if (cancelled) return;
+        blobUrl = URL.createObjectURL(res.data);
+        setAuthUrl(blobUrl);
+      })
+      .catch(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
+    };
+  }, [url]);
 
   const toggle = () => {
     const el = audioRef.current;
     if (!el) return;
-    playing ? el.pause() : el.play();
+    if (playing) {
+      el.pause();
+    } else {
+      void el.play();
+    }
   };
 
   const skip = (sec: number) => {
@@ -228,23 +278,25 @@ function AudioPlayer({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <audio
-        ref={audioRef}
-        src={url}
-        onLoadedMetadata={(e) => {
-          setDuration(e.currentTarget.duration);
-          setLoading(false);
-        }}
-        onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
-        onPlay={() => setPlaying(true)}
-        onPause={() => setPlaying(false)}
-        onEnded={() => {
-          setPlaying(false);
-          setCurrentTime(0);
-        }}
-        onWaiting={() => setLoading(true)}
-        onCanPlay={() => setLoading(false)}
-      />
+      {authUrl && (
+        <audio
+          ref={audioRef}
+          src={authUrl}
+          onLoadedMetadata={(e) => {
+            setDuration(e.currentTarget.duration);
+            setLoading(false);
+          }}
+          onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
+          onPlay={() => setPlaying(true)}
+          onPause={() => setPlaying(false)}
+          onEnded={() => {
+            setPlaying(false);
+            setCurrentTime(0);
+          }}
+          onWaiting={() => setLoading(true)}
+          onCanPlay={() => setLoading(false)}
+        />
+      )}
 
       {/* Progress */}
       <Slider
@@ -259,9 +311,7 @@ function AudioPlayer({
         tooltip={{ formatter: (v) => fmtTime(v ?? 0) }}
         disabled={loading}
         styles={{
-          track: { background: "#1677ff" },
-          rail: { },
-          handle: { },
+          track: { background: token.colorPrimary },
         }}
       />
       <div
@@ -343,6 +393,7 @@ function AudioPlayer({
 
 // ── Transcript Bubble ──────────────────────────────────────────────────────────
 function TranscriptBubble({ msg }: { msg: ConversationMessage }) {
+  const { token } = theme.useToken();
   const role = (msg.role ?? "").toLowerCase();
   const isAgent = role === "assistant" || role === "agent";
   const text = stripSSML(msg.text ?? "");
@@ -369,7 +420,7 @@ function TranscriptBubble({ msg }: { msg: ConversationMessage }) {
         icon={isAgent ? <RobotOutlined /> : <UserOutlined />}
         style={{
           flexShrink: 0,
-          background: isAgent ? "#1677ff" : "#52c41a",
+          background: isAgent ? token.colorPrimary : token.colorSuccess,
           marginTop: 4,
         }}
       />
@@ -383,18 +434,17 @@ function TranscriptBubble({ msg }: { msg: ConversationMessage }) {
       >
         <div
           style={{
-            background: isAgent ? "#f0f5ff" : "#ffffff",
-            border: `1px solid ${isAgent ? "#adc6ff" : "#e0e0e0"}`,
+            background: isAgent ? token.colorPrimaryBg : token.colorBgContainer,
+            border: `1px solid ${isAgent ? token.colorPrimaryBorder : token.colorBorderSecondary}`,
             borderRadius: isAgent ? "16px 4px 16px 16px" : "4px 16px 16px 16px",
             padding: "10px 14px",
-            boxShadow: "0 1px 2px rgba(0,0,0,0.06)",
+            boxShadow: token.boxShadowTertiary,
           }}
         >
           <Text
             style={{
               fontSize: 14,
               lineHeight: 1.65,
-              color: "#1f1f1f",
               display: "block",
             }}
           >
@@ -427,6 +477,7 @@ export default function CallDetailPage({
 }) {
   const { id } = use(params);
   const router = useRouter();
+  const { token } = theme.useToken();
   const transcriptRef = useRef<HTMLDivElement>(null);
   const [msgApi, contextHolder] = message.useMessage();
   const { selectedLocationId } = useLocation();
@@ -452,23 +503,19 @@ export default function CallDetailPage({
   }, [id, selectedLocationId]);
 
   useEffect(() => {
+    // msgLoading starts true and the transcript section only renders once the
+    // call is loaded, so no synchronous setState is needed here.
+    if (!call?.id) return;
     let cancelled = false;
-    if (call?.id) {
-      setMsgLoading(true);
-      api
-        .get<{ messages: ConversationMessage[] }>(
-          `/calls/${call.id}/messages`
-        )
-        .then(({ data }) => {
-          if (!cancelled) setMessages(data.messages || []);
-        })
-        .catch((err) => console.error("Failed to load messages", err))
-        .finally(() => {
-          if (!cancelled) setMsgLoading(false);
-        });
-    } else {
-      setMsgLoading(false);
-    }
+    api
+      .get<{ messages: ConversationMessage[] }>(`/calls/${call.id}/messages`)
+      .then(({ data }) => {
+        if (!cancelled) setMessages(data.messages || []);
+      })
+      .catch((err) => console.error("Failed to load messages", err))
+      .finally(() => {
+        if (!cancelled) setMsgLoading(false);
+      });
     return () => { cancelled = true; };
   }, [call?.id]);
 
@@ -539,7 +586,9 @@ export default function CallDetailPage({
                   marginBottom: 4,
                 }}
               >
-                <PhoneOutlined style={{ fontSize: 20, color: "#1677ff" }} />
+                <PhoneOutlined
+                  style={{ fontSize: 20, color: token.colorPrimary }}
+                />
                 <Title
                   level={2}
                   style={{ margin: 0, fontSize: 28, fontWeight: 700 }}
@@ -578,9 +627,9 @@ export default function CallDetailPage({
           column={{ xs: 2, sm: 3, md: 3 }}
           size='small'
           style={{
-            background: "#ffffff",
-            border: "1px solid #f0f0f0",
-            borderRadius: 8,
+            background: token.colorBgContainer,
+            border: `1px solid ${token.colorBorderSecondary}`,
+            borderRadius: token.borderRadiusLG,
             padding: "16px 24px",
             marginBottom: 24,
           }}
@@ -641,11 +690,11 @@ export default function CallDetailPage({
               label: "Call ID",
               children: (
                 <Text
+                  type='secondary'
                   copyable={{ text: call.id }}
                   style={{
                     fontSize: 12,
                     fontFamily: "monospace",
-                    color: "#595959",
                     whiteSpace: "nowrap",
                   }}
                 >
@@ -671,7 +720,7 @@ export default function CallDetailPage({
               {/* Recording */}
               <Card title='Recording' size='small'>
                 <AudioPlayer
-                  url={call.recordingUrl ? `/api/v1/calls/${id}/recording` : null}
+                  url={call.recordingUrl ? `/calls/${id}/recording` : null}
                   onCopyTranscript={copyTranscript}
                 />
               </Card>
@@ -681,7 +730,7 @@ export default function CallDetailPage({
                 <Card
                   title={
                     <Space>
-                      <RobotOutlined style={{ color: "#1677ff" }} />
+                      <RobotOutlined style={{ color: token.colorPrimary }} />
                       <span>AI Summary</span>
                     </Space>
                   }
@@ -699,7 +748,11 @@ export default function CallDetailPage({
                     {insights.summary.map((point, i) => (
                       <li
                         key={i}
-                        style={{ fontSize: 13, lineHeight: 1.6, color: "#444" }}
+                        style={{
+                          fontSize: 13,
+                          lineHeight: 1.6,
+                          color: token.colorText,
+                        }}
                       >
                         {point}
                       </li>
@@ -763,12 +816,14 @@ export default function CallDetailPage({
                       ].map(({ label, value }) => (
                         <tr
                           key={label}
-                          style={{ borderBottom: "1px solid #f0f0f0" }}
+                          style={{
+                            borderBottom: `1px solid ${token.colorBorderSecondary}`,
+                          }}
                         >
                           <td
                             style={{
                               padding: "7px 0",
-                              color: "#8c8c8c",
+                              color: token.colorTextTertiary,
                               width: "48%",
                             }}
                           >

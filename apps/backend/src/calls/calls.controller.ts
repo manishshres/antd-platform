@@ -132,11 +132,18 @@ export class CallsController {
   ) {
     if (!id) throw new BadRequestException('Call ID is required.');
 
-    const call = await this.callsService.getCall(id, user.organizationId);
-    if (!call.recordingUrl) {
+    try {
+      const stream = await this.callsService.getRecordingStream(
+        id,
+        user.organizationId,
+      );
+      res.setHeader('Content-Type', 'audio/wav');
+      stream.pipe(res);
+    } catch (err) {
+      if (err instanceof NotFoundException) {
+        throw err;
+      }
       throw new NotFoundException('Recording audio is not available.');
     }
-
-    res.redirect(call.recordingUrl);
   }
 }

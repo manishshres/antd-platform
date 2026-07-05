@@ -96,6 +96,18 @@ export class StorageService {
     }
   }
 
+  async getObjectStream(key: string): Promise<NodeJS.ReadableStream> {
+    if (!this.s3Client.send) {
+      throw new Error('StorageService is in mock mode');
+    }
+    const command = new GetObjectCommand({
+      Bucket: this.bucket,
+      Key: key,
+    });
+    const response = await this.s3Client.send(command);
+    return response.Body as NodeJS.ReadableStream;
+  }
+
   async deleteObject(key: string): Promise<void> {
     if (!this.s3Client.send) {
       this.logger.warn(`Mock delete for key: ${key}`);

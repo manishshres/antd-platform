@@ -151,6 +151,23 @@ export class CallsService {
     };
   }
 
+  async getRecordingStream(
+    id: string,
+    organizationId: string | null,
+  ): Promise<NodeJS.ReadableStream> {
+    if (!organizationId) throw new NotFoundException('Call not found.');
+    const r = await this.db.query.recordings.findFirst({
+      where: and(
+        eq(schema.recordings.id, id),
+        eq(schema.recordings.organizationId, organizationId),
+      ),
+    });
+    if (!r || !r.objectKey) {
+      throw new NotFoundException('Recording audio is not available.');
+    }
+    return this.storageService.getObjectStream(r.objectKey);
+  }
+
   async exportCallsCsv(organizationId: string | null): Promise<string> {
     if (!organizationId) throw new NotFoundException('Organization not found.');
 
@@ -238,15 +255,5 @@ export class CallsService {
 
     const messages = conv.messages as ConversationMessageDto[];
     return { messages, conversationId: conv.id };
-  }
-
-  // eslint-disable-next-line @typescript-eslint/require-await
-  async getRecordingStream(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    id: string,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    organizationId: string | null,
-  ): Promise<{ stream: NodeJS.ReadableStream; contentType: string }> {
-    throw new NotFoundException('Use recordingUrl directly for stream.');
   }
 }
