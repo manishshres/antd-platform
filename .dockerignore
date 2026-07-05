@@ -1,0 +1,16 @@
+node_modules
+apps/*/node_modules
+packages/*/node_modules
+.next
+apps/*/.next
+dist
+apps/*/dist
+packages/*/dist
+coverage
+.git
+.env
+.env.*
+apps/*/.env*
+postgres_data
+*.md
+playwright-report
