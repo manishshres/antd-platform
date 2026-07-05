@@ -22,6 +22,7 @@ import {
   ReloadOutlined,
   PlusOutlined,
   PrinterOutlined,
+  DownloadOutlined,
 } from "@ant-design/icons";
 import { api } from "@/lib/api";
 import PageHeader from "@/components/PageHeader";
@@ -105,6 +106,28 @@ export default function OrdersPage() {
   const { selectedLocationId } = useLocation();
   const { socket } = useSocket();
   const { token } = theme.useToken();
+
+  const exportCsv = () => {
+    const headers = ["Order ID", "Customer", "Phone", "Status", "Total", "Created"];
+    const rows = orders.map((o) => [
+      o.id,
+      o.customerName,
+      formatPhone(o.customerPhone),
+      STATUS_LABEL[o.status] || o.status,
+      formatPrice(o.totalAmount),
+      o.createdAt ? new Date(o.createdAt).toLocaleString() : "",
+    ]);
+    const csv = [headers, ...rows]
+      .map((row) => row.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `orders-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const load = useCallback(() => {
     if (!selectedLocationId) {
@@ -356,6 +379,13 @@ export default function OrdersPage() {
                 Create Mock Order
               </Button>
             </Tooltip>
+            <Button
+              icon={<DownloadOutlined />}
+              onClick={exportCsv}
+              disabled={orders.length === 0}
+            >
+              Export CSV
+            </Button>
             <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>
               Refresh
             </Button>
