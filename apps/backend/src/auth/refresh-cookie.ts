@@ -7,8 +7,13 @@ import { Request, Response } from 'express';
  */
 export const REFRESH_COOKIE_NAME = 'refresh_token';
 
-/** Cookie is scoped to the auth routes so it isn't sent on every API request. */
-const REFRESH_COOKIE_PATH = '/api/v1/auth';
+/**
+ * Cookie path is '/' so the Next.js middleware (which runs server-side and can read HttpOnly
+ * cookies) sees it on page navigations like /dashboard for its auth gate. It still reaches
+ * /api/v1/auth/refresh. Scoping it to /api/v1/auth would hide it from page requests and cause
+ * the middleware to bounce authenticated users back to /login.
+ */
+const REFRESH_COOKIE_PATH = '/';
 
 function isProd(): boolean {
   return process.env.NODE_ENV === 'production';
