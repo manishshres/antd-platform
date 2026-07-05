@@ -20,20 +20,21 @@ and a frontend `npm run build` — results are documented per item.
 | Critical    | 7        | 7     | 100%     |
 | High        | 9        | 9     | 100%     |
 | Medium      | 16       | 17    | 94%      |
-| Low         | 6        | 10    | 60%      |
+| Low         | 7        | 10    | 70%      |
 | Enhancement | 3        | 8     | 38%      |
-| **Overall** | **41**   | **51**| **80%**  |
+| **Overall** | **42**   | **51**| **82%**  |
 
-Backend items: 22/28 complete (79%) · Frontend items: 9/17 complete (53%) · Infra items: 1/6 complete (17%)
+Backend items: 23/28 complete (82%) · Frontend items: 10/17 complete (59%) · Infra items: 1/6 complete (17%)
 
 > **Platform-admin access fix (new, beyond the audit):** platform admins got a 403
 > ("User does not belong to an organization") on `/menus`, `/menus/modifiers/groups`,
-> recordings, and conversations. Root cause: those services resolved the org via
+> recordings, conversations, and orders. Root cause: those services resolved the org via
 > `getRequiredOrg(userId)`, which re-queries the DB and finds a null org for platform admins,
 > ignoring the `?orgId=` override `JwtStrategy` already put on `req.user`. Fixed by passing the
 > request user object so `getRequiredOrg(user)` returns the JWT-resolved org (also folds in H8's
-> redundant-lookup removal for those modules). Orders already special-cased platform admins;
-> billing is per-org and out of scope.
+> redundant-lookup removal for those modules). Orders' getOrders also returned every tenant's orders
+> unfiltered — now scoped too. calls/agents/documents/printers already use user.organizationId.
+> Billing is per-org and out of scope.
 
 > **Critical: 7/7 done. High: 9/9 done. Medium: 15/17.** All Critical and High audit findings
 > are fixed, verified, committed. Both apps build green; **all 105 backend tests pass** (the
@@ -446,7 +447,7 @@ path is removed. Build ✅.
 ### [x] L1 — Dead `register()` kept alive with six eslint-disables — delete (`auth.service.ts:55`) · **Status:** Completed — deleted dead register() stub (throws in controller).
 ### [x] L2 — Corrupted doc comment with stray import line (`menus.service.ts:484`) · **Status:** Completed — removed stray import inside doc comment.
 ### [x] L3 — Hardcoded `TEST_PRINTER_ID` in orders page (`orders/page.tsx:81`) · **Status:** Completed — removed hardcoded TEST_PRINTER_ID + debug button.
-### [ ] L4 — `formatPrice`/`formatPhone`/status maps duplicated across pages → `src/lib/format.ts` · **Status:** Not Started
+### [x] L4 — `formatPrice`/`formatPhone`/status maps duplicated across pages → `src/lib/format.ts` · **Status:** Completed — `src/lib/format.ts`; orders/calls/calls[id] import it.
 ### [x] L5 — `console.log` in `useSocket`; socket never re-auths after token refresh · **Status:** Completed — removed console logs from useSocket (re-auth-on-refresh still TODO).
 ### [ ] L6 — `any` types in layout/context (`rawItems: any[]`, `aiSettings?: any`) · **Status:** Not Started
 ### [ ] L7 — Hardcoded hex colors in dashboard quick actions & sidebar (violates token rule) · **Status:** Not Started
