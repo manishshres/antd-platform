@@ -5,6 +5,7 @@ import {
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
+import { CurrentUserPayload } from '../common/decorators/current-user.decorator';
 import { OnEvent } from '@nestjs/event-emitter';
 import { DRIZZLE } from '../database/database.module';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
@@ -39,18 +40,12 @@ export class OrdersService {
   ) {}
 
   async getOrders(
-    userId: string,
+    user: CurrentUserPayload,
     query: GetOrdersDto,
   ): Promise<PaginatedResponseDto<unknown>> {
-    const user = await this.db.query.users.findFirst({
-      where: eq(schema.users.id, userId),
-    });
-    const isPlatformAdmin = user?.role === 'platform_admin';
-
-    let orgId: string | undefined;
-    if (!isPlatformAdmin) {
-      orgId = await this.billingService.getRequiredOrg(userId);
-    }
+    // Resolve the org from the JWT context (a platform admin's selected org via ?orgId=). This
+    // scopes the list to that org instead of returning every tenant's orders unfiltered.
+    const orgId = await this.billingService.getRequiredOrg(user);
 
     const { offset = 0, limit = 20, locationId, status } = query;
 
@@ -82,8 +77,8 @@ export class OrdersService {
     };
   }
 
-  async getOrderById(userId: string, orderId: string) {
-    const orgId = await this.billingService.getRequiredOrg(userId);
+  async getOrderById(user: CurrentUserPayload, orderId: string) {
+    const orgId = await this.billingService.getRequiredOrg(user);
     return this.getOrderByIdForOrg(orgId, orderId);
   }
 
@@ -127,18 +122,18 @@ export class OrdersService {
   }
 
   async createOrder(
-    userId: string,
+    user: CurrentUserPayload,
     customerName: string,
     customerPhone: string,
     items: { menuItemId: string; quantity: number }[],
   ) {
-    const orgId = await this.billingService.getRequiredOrg(userId);
+    const orgId = await this.billingService.getRequiredOrg(user);
     return this.createOrderForOrg(
       orgId,
       customerName,
       customerPhone,
       items,
-      userId,
+      user.id,
     );
   }
 
@@ -379,8 +374,8 @@ export class OrdersService {
     return null;
   }
 
-  async updateOrderStatus(userId: string, orderId: string, status: string) {
-    const orgId = await this.billingService.getRequiredOrg(userId);
+  async updateOrderStatus(user: CurrentUserPayload, orderId: string, status: string) {
+    const orgId = await this.billingService.getRequiredOrg(user);
 
     const validStatuses = [
       'pending',
@@ -434,7 +429,7 @@ export class OrdersService {
 
     void this.auditService.log({
       action: 'order.status_update',
-      userId,
+      userId: user.id,
       organizationId: orgId,
       entityType: 'order',
       entityId: orderId,
@@ -442,7 +437,7 @@ export class OrdersService {
       newValue: { status },
     });
 
-    const updatedOrder = await this.getOrderById(userId, orderId);
+    const updatedOrder = await this.getOrderById(user, orderId);
     this.eventsGateway.emitToOrganization(orgId, 'order.updated', updatedOrder);
     this.eventEmitter.emit('order.updated', { orgId, updatedOrder });
 
@@ -450,18 +445,18 @@ export class OrdersService {
   }
 
   async getOrderPrintJobs(
-    userId: string,
+    user: CurrentUserPayload,
     orderId: string,
     filters?: { status?: string; jobType?: string },
   ) {
-    const orgId = await this.billingService.getRequiredOrg(userId);
+    const orgId = await this.billingService.getRequiredOrg(user);
     await this.getOrderByIdForOrg(orgId, orderId);
 
     return this.printJobsService.listOrderPrintJobs(orgId, orderId, filters);
   }
 
-  async printOrder(userId: string, orderId: string, printerId?: string) {
-    const orgId = await this.billingService.getRequiredOrg(userId);
+  async printOrder(user: CurrentUserPayload, orderId: string, printerId?: string) {
+    const orgId = await this.billingService.getRequiredOrg(user);
     const fullOrder = await this.getOrderByIdForOrg(orgId, orderId);
 
     const printPayload = {

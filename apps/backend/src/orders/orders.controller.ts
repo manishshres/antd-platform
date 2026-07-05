@@ -49,7 +49,7 @@ export class OrdersController {
     @CurrentUser() user: CurrentUserPayload,
     @Query() query: GetOrdersDto,
   ): Promise<PaginatedResponseDto<unknown>> {
-    return this.ordersService.getOrders(user.id, query);
+    return this.ordersService.getOrders(user, query);
   }
 
   @Get(':id')
@@ -63,7 +63,7 @@ export class OrdersController {
     @Param('id') id: string,
   ): Promise<unknown> {
     if (!id) throw new BadRequestException('Order ID is required.');
-    return this.ordersService.getOrderById(user.id, id);
+    return this.ordersService.getOrderById(user, id);
   }
 
   @Post()
@@ -78,7 +78,7 @@ export class OrdersController {
     @Body() dto: CreateOrderDto,
   ): Promise<unknown> {
     return this.ordersService.createOrder(
-      user.id,
+      user,
       dto.customerName,
       dto.customerPhone,
       dto.items,
@@ -99,7 +99,7 @@ export class OrdersController {
     @Body() dto: UpdateStatusDto,
   ): Promise<unknown> {
     if (!id) throw new BadRequestException('Order ID is required.');
-    return this.ordersService.updateOrderStatus(user.id, id, dto.status);
+    return this.ordersService.updateOrderStatus(user, id, dto.status);
   }
 
   @Get(':id/print-jobs')
@@ -116,7 +116,7 @@ export class OrdersController {
   ): Promise<unknown> {
     if (!id) throw new BadRequestException('Order ID is required.');
 
-    return this.ordersService.getOrderPrintJobs(user.id, id, {
+    return this.ordersService.getOrderPrintJobs(user, id, {
       status,
       jobType,
     });
@@ -135,6 +135,6 @@ export class OrdersController {
     @Body() dto: PrintOrderDto,
   ): Promise<unknown> {
     if (!id) throw new BadRequestException('Order ID is required.');
-    return this.ordersService.printOrder(user.id, id, dto.printerId);
+    return this.ordersService.printOrder(user, id, dto.printerId);
   }
 }
