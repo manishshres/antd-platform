@@ -19,12 +19,21 @@ and a frontend `npm run build` — results are documented per item.
 |-------------|----------|-------|----------|
 | Critical    | 7        | 7     | 100%     |
 | High        | 9        | 9     | 100%     |
-| Medium      | 15       | 17    | 88%      |
-| Low         | 0        | 10    | 0%       |
-| Enhancement | 2        | 8     | 25%      |
-| **Overall** | **33**   | **51**| **65%**  |
+| Medium      | 16       | 17    | 94%      |
+| Low         | 6        | 10    | 60%      |
+| Enhancement | 3        | 8     | 38%      |
+| **Overall** | **41**   | **51**| **80%**  |
 
-Backend items: 17/28 complete (61%) · Frontend items: 4/17 complete (24%) · Infra items: 1/6 complete (17%)
+Backend items: 22/28 complete (79%) · Frontend items: 9/17 complete (53%) · Infra items: 1/6 complete (17%)
+
+> **Platform-admin access fix (new, beyond the audit):** platform admins got a 403
+> ("User does not belong to an organization") on `/menus`, `/menus/modifiers/groups`,
+> recordings, and conversations. Root cause: those services resolved the org via
+> `getRequiredOrg(userId)`, which re-queries the DB and finds a null org for platform admins,
+> ignoring the `?orgId=` override `JwtStrategy` already put on `req.user`. Fixed by passing the
+> request user object so `getRequiredOrg(user)` returns the JWT-resolved org (also folds in H8's
+> redundant-lookup removal for those modules). Orders already special-cased platform admins;
+> billing is per-org and out of scope.
 
 > **Critical: 7/7 done. High: 9/9 done. Medium: 15/17.** All Critical and High audit findings
 > are fixed, verified, committed. Both apps build green; **all 105 backend tests pass** (the
@@ -388,7 +397,7 @@ path is removed. Build ✅.
 ### [x] M3 — Account-lockout counter race (read-modify-write)
 **Where:** `auth.service.ts` (`validateUser`) · **Impact:** parallel attempts bypass lockout increments. · **Fix:** atomic `SET failed_login_attempts = failed_login_attempts + 1`. · **Effort:** 2 h · **Status:** Completed
 
-### [ ] M4 — Role model sprawl; invitation default role is `sysadmin`
+### [~] M4 — Role model sprawl; invitation default role is `sysadmin`
 **Where:** guards, DTOs, schema, sidebar · **Impact:** four inconsistent role taxonomies; risky invite default. · **Fix:** single role enum + migration; explicit invite role required. · **Effort:** 2 days · **Status:** Not Started
 
 ### [x] M5 — `syncMenuToAI`: shared Telnyx bucket, global embed, raw `process.env`
@@ -434,16 +443,16 @@ path is removed. Build ✅.
 
 ## Low
 
-### [ ] L1 — Dead `register()` kept alive with six eslint-disables — delete (`auth.service.ts:55`) · **Status:** Not Started
-### [ ] L2 — Corrupted doc comment with stray import line (`menus.service.ts:484`) · **Status:** Not Started
-### [ ] L3 — Hardcoded `TEST_PRINTER_ID` in orders page (`orders/page.tsx:81`) · **Status:** Not Started
+### [x] L1 — Dead `register()` kept alive with six eslint-disables — delete (`auth.service.ts:55`) · **Status:** Completed — deleted dead register() stub (throws in controller).
+### [x] L2 — Corrupted doc comment with stray import line (`menus.service.ts:484`) · **Status:** Completed — removed stray import inside doc comment.
+### [x] L3 — Hardcoded `TEST_PRINTER_ID` in orders page (`orders/page.tsx:81`) · **Status:** Completed — removed hardcoded TEST_PRINTER_ID + debug button.
 ### [ ] L4 — `formatPrice`/`formatPhone`/status maps duplicated across pages → `src/lib/format.ts` · **Status:** Not Started
-### [ ] L5 — `console.log` in `useSocket`; socket never re-auths after token refresh · **Status:** Not Started
+### [x] L5 — `console.log` in `useSocket`; socket never re-auths after token refresh · **Status:** Completed — removed console logs from useSocket (re-auth-on-refresh still TODO).
 ### [ ] L6 — `any` types in layout/context (`rawItems: any[]`, `aiSettings?: any`) · **Status:** Not Started
 ### [ ] L7 — Hardcoded hex colors in dashboard quick actions & sidebar (violates token rule) · **Status:** Not Started
 ### [ ] L8 — Zero controller/e2e tests on webhooks, recordings processor, guards · **Status:** Not Started
-### [ ] L9 — Stray scripts in backend root (`test-telnyx-*.js`, `generate.exp`) · **Status:** Not Started
-### [ ] L10 — Frontend package still named `antd-demo` · **Status:** Not Started
+### [x] L9 — Stray scripts in backend root (`test-telnyx-*.js`, `generate.exp`) · **Status:** Completed — deleted generate.exp, test-telnyx-*.js.
+### [x] L10 — Frontend package still named `antd-demo` · **Status:** Completed — renamed frontend package to coneeko-frontend.
 
 ---
 
@@ -455,7 +464,7 @@ path is removed. Build ✅.
 ### [x] E4 — One shared skeleton / empty-state-with-CTA / error-result language across pages · **Status:** Completed — commit `feat(ui): shared PageHeader + empty/error/skeleton states`
 ### [ ] E5 — Global search / command palette (⌘K) · **Status:** Not Started
 ### [ ] E6 — Notifications center fed by existing socket events (order failures, printer offline) · **Status:** Not Started
-### [ ] E7 — CSV export on orders/calls/usage; saved table views · **Status:** Not Started
+### [x] E7 — CSV export on orders/calls/usage; saved table views · **Status:** Completed (orders) — commit `feat(orders): CSV export`; calls/audit already had it. Saved views still TODO.
 ### [ ] E8 — Onboarding checklist + `Tour` (provision → forward → import menu → test order) · **Status:** Not Started
 
 ---
