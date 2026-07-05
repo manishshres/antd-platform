@@ -69,7 +69,13 @@ describe('MenusService', () => {
       getJob: jest.fn(),
     };
 
+    const menuAiSyncQueueMock = {
+      add: jest.fn().mockResolvedValue({ id: 'ai-job-1' }),
+      getJob: jest.fn().mockResolvedValue(undefined),
+    };
+
     const telnyxServiceMock = {
+      isConfigured: jest.fn().mockReturnValue(false),
       uploadKnowledgeDocument: jest.fn().mockResolvedValue(undefined),
       embedKnowledgeDocuments: jest
         .fn()
@@ -85,6 +91,10 @@ describe('MenusService', () => {
         { provide: AuditService, useValue: auditServiceMock },
         { provide: CACHE_MANAGER, useValue: cacheManagerMock },
         { provide: getQueueToken('import-queue'), useValue: importQueueMock },
+        {
+          provide: getQueueToken('menu-ai-sync-queue'),
+          useValue: menuAiSyncQueueMock,
+        },
         { provide: TelnyxService, useValue: telnyxServiceMock },
         {
           provide: AnalyticsService,

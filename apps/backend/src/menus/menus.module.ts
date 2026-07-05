@@ -5,6 +5,7 @@ import { BillingModule } from '../billing/billing.module';
 import { CrawlerService } from './crawler.service';
 import { AiExtractorService } from './ai-extractor.service';
 import { ImportQueueProcessor } from './processors/import-queue.processor';
+import { MenuAiSyncProcessor } from './processors/menu-ai-sync.processor';
 import { TelnyxModule } from '../telnyx/telnyx.module';
 import { StorageModule } from '../storage/storage.module';
 import { PlanLimitGuard } from '../billing/guards/plan-limit.guard';
@@ -17,6 +18,7 @@ import { PlanLimitGuard } from '../billing/guards/plan-limit.guard';
     CrawlerService,
     AiExtractorService,
     ImportQueueProcessor,
+    MenuAiSyncProcessor,
     PlanLimitGuard,
   ],
   exports: [MenusService, ImportQueueProcessor],

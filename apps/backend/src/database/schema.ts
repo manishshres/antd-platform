@@ -52,6 +52,9 @@ export const locations = pgTable(
     phoneNumber: varchar('phone_number', { length: 50 }),
     telnyxPhoneNumberId: varchar('telnyx_phone_number_id', { length: 255 }),
     telnyxAssistantId: varchar('telnyx_assistant_id', { length: 255 }),
+    // When the menu was last published to this location's Telnyx AI knowledge base. Null until the
+    // first sync. Lets the UI show freshness and lets auto-sync target already-published locations.
+    menuLastSyncedAt: timestamp('menu_last_synced_at'),
     masterAgentId: varchar('master_agent_id', { length: 255 }),
     // Provisioning state
     status: varchar('status', { length: 50 }).default('draft').notNull(),

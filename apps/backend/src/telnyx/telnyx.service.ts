@@ -251,11 +251,19 @@ export class TelnyxService {
     });
   }
 
+  /** True when a Telnyx API key is configured — callers should skip AI sync when it isn't. */
+  isConfigured(): boolean {
+    return this.apiKey.length > 0;
+  }
+
   async uploadKnowledgeDocument(
     fileName: string,
     content: string,
+    bucketNameOverride?: string,
   ): Promise<void> {
-    const bucketName = this.configService.get<string>('TELNYX_STORAGE_BUCKET');
+    const bucketName =
+      bucketNameOverride ||
+      this.configService.get<string>('TELNYX_STORAGE_BUCKET');
 
     if (!bucketName) {
       throw new Error('TELNYX_STORAGE_BUCKET is not configured.');

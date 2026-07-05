@@ -16,6 +16,8 @@ export interface Location {
   phoneNumber?: string;
   status: string;
   aiSettings?: { dynamicVariables?: Record<string, string> };
+  telnyxAssistantId?: string | null;
+  menuLastSyncedAt?: string | null;
 }
 
 export interface Organization {

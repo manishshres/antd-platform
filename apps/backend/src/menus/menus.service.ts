@@ -1,9 +1,11 @@
 import {
   Injectable,
   Inject,
+  Logger,
   NotFoundException,
   ForbiddenException,
   BadRequestException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { CurrentUserPayload } from '../common/decorators/current-user.decorator';
@@ -25,12 +27,16 @@ import { AnalyticsService } from '../analytics/analytics.service';
 
 @Injectable()
 export class MenusService {
+  private readonly logger = new Logger(MenusService.name);
+
   constructor(
     @Inject(DRIZZLE)
     private readonly db: NodePgDatabase<typeof schema>,
     private readonly billingService: BillingService,
     @InjectQueue('import-queue')
     private readonly importQueue: Queue,
+    @InjectQueue('menu-ai-sync-queue')
+    private readonly menuAiSyncQueue: Queue,
     private readonly auditService: AuditService,
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
     private readonly telnyxService: TelnyxService,
@@ -229,6 +235,42 @@ export class MenusService {
       `menu:${orgId}:ver`,
       Date.now(),
       7 * 24 * 3600000,
+    );
+    // Keep the AI voice agent's menu fresh: every content change schedules a debounced re-sync of
+    // this org's already-published locations. It's fire-and-forget — a scheduling hiccup must
+    // never fail the menu edit itself.
+    await this.scheduleMenuAiSync(orgId).catch((err) =>
+      this.logger.warn(
+        `Failed to schedule AI menu sync for org ${orgId}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      ),
+    );
+  }
+
+  /**
+   * Debounced trigger for re-publishing the menu to the Telnyx AI agent. Rapid edits collapse into
+   * a single sync: each call cancels the pending delayed job (keyed per org) and re-arms the timer,
+   * so the embed only runs ~45s after edits stop — embeddings are slow/costly, so we never fire one
+   * per keystroke. Skipped entirely when Telnyx isn't configured (e.g. local dev).
+   */
+  private async scheduleMenuAiSync(orgId: string) {
+    if (!this.telnyxService.isConfigured()) return;
+    const jobId = `menu-ai-sync:${orgId}`;
+    const existing = await this.menuAiSyncQueue.getJob(jobId);
+    if (existing) {
+      // Can't remove an actively-running job; that run will pick up the latest DB state anyway.
+      await existing.remove().catch(() => undefined);
+    }
+    await this.menuAiSyncQueue.add(
+      'sync-menu-ai',
+      { orgId },
+      {
+        jobId,
+        delay: 45000,
+        removeOnComplete: true,
+        removeOnFail: 50,
+      },
     );
   }
 
@@ -932,13 +974,40 @@ export class MenusService {
     orgId: string,
     locationId?: string,
   ): Promise<{ success: boolean; message: string }> {
+    if (!this.telnyxService.isConfigured()) {
+      throw new ServiceUnavailableException(
+        'The AI voice agent is not configured for this environment.',
+      );
+    }
+
+    // Resolve the target location first — its id keys both the storage bucket and the assistant,
+    // so we need it before uploading anything.
+    const targetLocs = await this.db
+      .select({
+        id: schema.locations.id,
+        telnyxAssistantId: schema.locations.telnyxAssistantId,
+      })
+      .from(schema.locations)
+      .where(
+        locationId
+          ? eq(schema.locations.id, locationId)
+          : eq(schema.locations.organizationId, orgId),
+      )
+      .limit(1);
+
+    if (targetLocs.length === 0) {
+      throw new NotFoundException('No location found for organization.');
+    }
+
+    const loc = targetLocs[0];
+
     const pagination: PaginationDto = { offset: 0, limit: 1000 };
-    const menuData = await this.getMenuByOrg(orgId, pagination, locationId);
+    const menuData = await this.getMenuByOrg(orgId, pagination, loc.id);
 
     // Create a simplified representation of the menu for the AI to understand
     const cleanMenu = {
       organizationId: orgId,
-      locationId: locationId || 'default',
+      locationId: loc.id,
       lastUpdated: new Date().toISOString(),
       categories: (menuData.data as any[]).map((cat) => ({
         id: cat.id,
@@ -963,61 +1032,82 @@ export class MenusService {
     };
 
     const jsonString = JSON.stringify(cleanMenu, null, 2);
-    const fileName = `menu_${orgId}${locationId ? `_${locationId}` : ''}.json`;
 
-    // Upload the JSON file to Telnyx Storage Bucket
-    await this.telnyxService.uploadKnowledgeDocument(fileName, jsonString);
+    // One bucket per location keeps tenants strictly isolated: an assistant only ever retrieves its
+    // own location's menu, and each embed re-processes just this one file (fast + cheap) instead of
+    // every tenant's menu in a shared bucket. Location ids are lowercase UUIDs → DNS-safe names.
+    const bucket = `menu-${loc.id}`;
+    const fileName = 'menu.json';
 
-    // Trigger the Telnyx embedding process
-    const embedRes: any = await this.telnyxService.embedKnowledgeDocuments();
+    await this.telnyxService.uploadKnowledgeDocument(
+      fileName,
+      jsonString,
+      bucket,
+    );
 
-    // Extract the bucket_id. Telnyx API might return it under data.id, data.bucket_id, or just the bucketName
-    // M5: Use ConfigService instead of raw process.env.
-    const bucketName = this.configService.get<string>('TELNYX_STORAGE_BUCKET', 'restaurant-menu');
+    // Trigger the Telnyx embedding process for this location's bucket only.
+    const embedRes: any =
+      await this.telnyxService.embedKnowledgeDocuments(bucket);
+
+    // Telnyx may echo the bucket id under a few shapes; fall back to the bucket name (which is what
+    // the retrieval tool keys on).
     const bucketId =
       embedRes?.data?.id ||
       embedRes?.data?.bucket_id ||
       embedRes?.bucket_id ||
-      bucketName;
+      bucket;
 
-    // Find the target location to get its assistant ID
-    const targetLocs = await this.db
-      .select({
-        id: schema.locations.id,
-        telnyxAssistantId: schema.locations.telnyxAssistantId,
-      })
-      .from(schema.locations)
-      .where(
-        locationId
-          ? eq(schema.locations.id, locationId)
-          : eq(schema.locations.organizationId, orgId),
-      )
-      .limit(1);
-
-    if (targetLocs.length === 0) {
-      throw new Error('No location found for organization.');
-    }
-
-    const loc = targetLocs[0];
-
-    // Link it to the AI Assistant
+    // Link the embedded bucket to this location's AI Assistant (create it on first publish).
     const newAssistantId = await this.telnyxService.createOrUpdateMenuAssistant(
       bucketId,
       loc.telnyxAssistantId || undefined,
     );
 
-    // Save the new assistant ID if it changed
-    if (newAssistantId && newAssistantId !== loc.telnyxAssistantId) {
-      await this.db
-        .update(schema.locations)
-        .set({ telnyxAssistantId: newAssistantId })
-        .where(eq(schema.locations.id, loc.id));
-    }
+    await this.db
+      .update(schema.locations)
+      .set({
+        ...(newAssistantId && newAssistantId !== loc.telnyxAssistantId
+          ? { telnyxAssistantId: newAssistantId }
+          : {}),
+        menuLastSyncedAt: new Date(),
+      })
+      .where(eq(schema.locations.id, loc.id));
 
     return {
       success: true,
       message:
         'Menu synchronized to Telnyx AI Knowledge Base and linked to Assistant successfully.',
     };
+  }
+
+  /**
+   * Re-publish the menu for every already-published location in an org (those with an assistant).
+   * Called by the debounced auto-sync worker after menu edits. Locations that have never been
+   * published are skipped so we don't proactively create Telnyx assistants/buckets — the first
+   * publish stays an explicit manual action.
+   */
+  async syncOrgPublishedLocationsToAI(orgId: string): Promise<number> {
+    if (!this.telnyxService.isConfigured()) return 0;
+    const locs = await this.db
+      .select({
+        id: schema.locations.id,
+        telnyxAssistantId: schema.locations.telnyxAssistantId,
+      })
+      .from(schema.locations)
+      .where(
+        and(
+          eq(schema.locations.organizationId, orgId),
+          isNull(schema.locations.deletedAt),
+        ),
+      );
+
+    let synced = 0;
+    for (const l of locs) {
+      // Only refresh locations already linked to an assistant (i.e. published at least once).
+      if (!l.telnyxAssistantId) continue;
+      await this.syncMenuToAI(orgId, l.id);
+      synced += 1;
+    }
+    return synced;
   }
 }

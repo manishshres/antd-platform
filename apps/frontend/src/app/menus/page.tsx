@@ -190,7 +190,7 @@ export default function MenuEditorPage() {
   const [itemModalOpen, setItemModalOpen] = useState(false);
   const [modifierModalOpen, setModifierModalOpen] = useState(false);
 
-  const { selectedLocationId } = useLocation();
+  const { selectedLocationId, selectedLocation, refreshLocations } = useLocation();
 
   const [selectedCatId, setSelectedCatId] = useState<string | null>(null);
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
@@ -265,6 +265,8 @@ export default function MenuEditorPage() {
         `/menus/sync-ai${selectedLocationId ? `?locationId=${selectedLocationId}` : ""}`,
       );
       message.success(res.data?.message || "Menu published to the AI voice agent.");
+      // Refresh so the "last synced" hint reflects the new timestamp.
+      await refreshLocations();
     } catch (e) {
       const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
       message.error(msg || "Failed to publish menu to the AI agent.");
@@ -382,7 +384,18 @@ export default function MenuEditorPage() {
               </Button>
             )}
             {isAdmin && (
-              <Tooltip title="Publish the current menu to the AI voice agent's knowledge base. Run this after editing the menu so callers get the latest items and prices.">
+              <Tooltip
+                title={
+                  <>
+                    Publish the current menu to the AI voice agent&apos;s knowledge base so callers
+                    get the latest items and prices.
+                    <br />
+                    {selectedLocation?.menuLastSyncedAt
+                      ? `Last published: ${new Date(selectedLocation.menuLastSyncedAt).toLocaleString()}`
+                      : "Not published to the AI agent yet."}
+                  </>
+                }
+              >
                 <Button
                   icon={<RobotOutlined />}
                   onClick={handleSyncToAI}
