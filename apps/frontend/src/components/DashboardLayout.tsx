@@ -38,6 +38,20 @@ import { ConeekoLogo } from "./Logo";
 const { Sider, Header, Content, Footer } = Layout;
 const { Text } = Typography;
 
+interface NavLeaf {
+  key: string;
+  icon: React.ReactNode;
+  label: string;
+  allowed: string[];
+}
+interface NavGroup {
+  key: string;
+  label: string;
+  icon: React.ReactNode;
+  children: NavLeaf[];
+}
+type NavItem = NavLeaf | NavGroup;
+
 function SidebarMenu({
   onClick,
   collapsed,
@@ -57,7 +71,7 @@ function SidebarMenu({
   const isSysAdmin = r === "sysadmin" || isPlatformAdmin;
 
   // New grouped navigation structure
-  const rawItems: any[] = [
+  const rawItems: NavItem[] = [
     { key: "/dashboard", icon: <DashboardOutlined />, label: "Dashboard", allowed: ["platform_admin", "sysadmin", "admin", "manager", "user"] },
     { key: "/calls", icon: <RobotOutlined />, label: "AI Call Center", allowed: ["platform_admin", "sysadmin", "admin", "manager", "user"] },
     {
@@ -108,28 +122,37 @@ function SidebarMenu({
   else if (isManager) genericRole = "manager";
 
   // Filter items based on role
-  const filteredItems = rawItems
-    .map(group => {
-      if (group && 'children' in group) {
-        const children = (group.children as any[]).filter(child => child.allowed.includes(genericRole));
-        if (children.length > 0) {
-          return { ...group, children };
-        }
-        return null;
+  const filteredNav = rawItems
+    .map((item): NavItem | null => {
+      if ("children" in item) {
+        const children = item.children.filter((child) =>
+          child.allowed.includes(genericRole),
+        );
+        return children.length > 0 ? { ...item, children } : null;
       }
-      return group;
+      return item.allowed.includes(genericRole) ? item : null;
     })
-    .filter(Boolean) as MenuProps['items'];
+    .filter((item): item is NavItem => item !== null);
+
+  const filteredItems: MenuProps["items"] = filteredNav.map((item) =>
+    "children" in item
+      ? {
+          key: item.key,
+          label: item.label,
+          icon: item.icon,
+          children: item.children.map((c) => ({ key: c.key, label: c.label, icon: c.icon })),
+        }
+      : { key: item.key, label: item.label, icon: item.icon },
+  );
 
   // Find selected key
   let selectedKey = "/dashboard";
-  filteredItems?.forEach(group => {
-    if (group && 'children' in group) {
-      const children = group.children as any[];
-      const match = children.find(item => pathname.startsWith(item.key));
+  filteredNav.forEach((item) => {
+    if ("children" in item) {
+      const match = item.children.find((c) => pathname.startsWith(c.key));
       if (match) selectedKey = match.key;
-    } else if (group && group.key && typeof group.key === 'string' && pathname.startsWith(group.key)) {
-      selectedKey = group.key;
+    } else if (pathname.startsWith(item.key)) {
+      selectedKey = item.key;
     }
   });
 

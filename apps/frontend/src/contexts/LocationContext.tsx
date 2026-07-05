@@ -15,7 +15,7 @@ export interface Location {
   timezone?: string;
   phoneNumber?: string;
   status: string;
-  aiSettings?: any;
+  aiSettings?: { dynamicVariables?: Record<string, string> };
 }
 
 export interface Organization {
