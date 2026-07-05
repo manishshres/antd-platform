@@ -5,14 +5,14 @@ import {
   Table, 
   Card, 
   Typography, 
-  Space, 
   Input, 
   Button, 
   Tag, 
-  DatePicker, 
+  DatePicker,
   App,
   Row,
-  Col
+  Col,
+  theme
 } from "antd";
 import { 
   SearchOutlined, 
@@ -22,14 +22,16 @@ import {
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { api } from "@/lib/api";
+import PageHeader from "@/components/PageHeader";
 import { AuditLog, AuditLogsResponse } from "./types";
 import dayjs from "dayjs";
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 const { RangePicker } = DatePicker;
 
 export default function AuditLogsPage() {
   const { message } = App.useApp();
+  const { token } = theme.useToken();
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
@@ -158,31 +160,25 @@ export default function AuditLogsPage() {
 
   return (
     <div style={{ maxWidth: 1200, margin: "0 auto", paddingBottom: 40 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-        <div>
-          <Title level={4} style={{ margin: 0, fontWeight: 700 }}>
-            <HistoryOutlined style={{ marginRight: 8, color: "#1677ff" }} />
-            Audit Logs
-          </Title>
-          <Text type="secondary">Review system actions and changes for security and compliance.</Text>
-        </div>
-        <Space>
-          <Button 
-            icon={<DownloadOutlined />} 
-            onClick={handleExportCSV}
-          >
-            Export CSV
-          </Button>
-          <Button 
-            type="primary"
-            icon={<ReloadOutlined />} 
-            onClick={() => loadLogs(currentPage, pageSize)}
-            loading={loading}
-          >
-            Refresh
-          </Button>
-        </Space>
-      </div>
+      <PageHeader
+        title={<><HistoryOutlined style={{ marginRight: 8, color: token.colorPrimary }} />Audit Logs</>}
+        subtitle="Review system actions and changes for security and compliance."
+        actions={
+          <>
+            <Button icon={<DownloadOutlined />} onClick={handleExportCSV}>
+              Export CSV
+            </Button>
+            <Button
+              type="primary"
+              icon={<ReloadOutlined />}
+              onClick={() => loadLogs(currentPage, pageSize)}
+              loading={loading}
+            >
+              Refresh
+            </Button>
+          </>
+        }
+      />
 
       <Card style={{ marginBottom: 24 }}>
         <Row gutter={[16, 16]}>

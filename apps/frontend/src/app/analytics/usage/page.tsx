@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Card, Typography, Skeleton, Alert, Progress, Row, Col, theme } from "antd";
+import { Card, Typography, Skeleton, Progress, Row, Col, theme } from "antd";
 import { api } from "@/lib/api";
+import PageHeader from "@/components/PageHeader";
+import { ErrorState, EmptyState } from "@/components/PageStates";
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 interface LocationUsage {
   locationId: string;
@@ -67,15 +69,15 @@ export default function UsagePage() {
   }
 
   if (error) {
-    return <Alert type='error' title={error} showIcon />;
+    return <ErrorState message={error} onRetry={() => window.location.reload()} />;
   }
 
   return (
     <div>
-      <Title level={4} style={{ marginBottom: 24 }}>Tenant Usage vs Plan Limits</Title>
-      
+      <PageHeader title="Usage Analytics" subtitle="Tenant usage vs plan limits" />
+
       {data?.locations.length === 0 ? (
-        <Alert type="info" title="No usage data found for this organization." showIcon />
+        <EmptyState description="No usage data found for this organization yet." />
       ) : (
         <Row gutter={[16, 16]}>
           {data?.locations.map((loc) => {

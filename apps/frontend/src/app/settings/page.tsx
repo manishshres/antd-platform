@@ -23,6 +23,7 @@ import {
 } from "antd";
 import { PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined, KeyOutlined, ApiOutlined, GlobalOutlined, BankOutlined, SecurityScanOutlined, BuildOutlined, CreditCardOutlined, NotificationOutlined, SettingOutlined, MailOutlined, UserAddOutlined, MinusCircleOutlined, LinkOutlined, SyncOutlined, ReloadOutlined } from "@ant-design/icons";
 import { api } from "@/lib/api";
+import PageHeader from "@/components/PageHeader";
 import { useLocation, Location } from "@/contexts/LocationContext";
 import dayjs from "dayjs";
 
@@ -683,10 +684,10 @@ export default function SettingsHubPage() {
 
   return (
     <div style={{ maxWidth: 1200, margin: "0 auto" }}>
-      <div style={{ marginBottom: token.marginLG }}>
-        <Title level={2} style={{ margin: 0 }}>Settings Hub</Title>
-        <Text type="secondary">Manage your organization's configuration and developer tools.</Text>
-      </div>
+      <PageHeader
+        title="Settings Hub"
+        subtitle="Manage your organization's configuration and developer tools."
+      />
 
       <Card styles={{ body: { padding: 0 } }}>
         <Tabs

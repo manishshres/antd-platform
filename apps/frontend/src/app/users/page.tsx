@@ -31,12 +31,13 @@ import {
 } from "@ant-design/icons";
 import { api } from "@/lib/api";
 import { useLocation } from "@/contexts/LocationContext";
+import PageHeader from "@/components/PageHeader";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 
 dayjs.extend(relativeTime);
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 const { Option } = Select;
 
 interface User {
@@ -284,20 +285,17 @@ export default function UsersPage() {
 
   return (
     <div style={{ maxWidth: 1200, margin: "0 auto" }}>
-      <div style={{ marginBottom: token.marginLG, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div>
-          <Title level={2} style={{ margin: 0, display: "flex", alignItems: "center", gap: 12 }}>
-            <TeamOutlined style={{ color: token.colorPrimary }} />
-            User Management
-          </Title>
-          <Text type="secondary">Manage team members, roles, and platform access.</Text>
-        </div>
-        {!isPlatformAdmin && (
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalVisible(true)}>
-            Invite User
-          </Button>
-        )}
-      </div>
+      <PageHeader
+        title={<><TeamOutlined style={{ color: token.colorPrimary, marginRight: 12 }} />User Management</>}
+        subtitle="Manage team members, roles, and platform access."
+        actions={
+          !isPlatformAdmin && (
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalVisible(true)}>
+              Invite User
+            </Button>
+          )
+        }
+      />
 
       <Card styles={{ body: { padding: 0 } }}>
         <Tabs
