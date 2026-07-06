@@ -85,6 +85,23 @@ export class CreatePosOrderDto {
   @IsIn(['cash', 'card'])
   paymentMethod: string;
 
+  @ApiProperty({ required: false, description: 'Tip in cents' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  tipAmount?: number;
+
+  @ApiProperty({ required: false, description: 'Applied discount id' })
+  @IsOptional()
+  @IsUUID()
+  discountId?: string;
+
+  @ApiProperty({ required: false, description: 'Promo code to apply' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  promoCode?: string;
+
   @ApiProperty({ type: [PosOrderItemDto] })
   @IsArray()
   @ValidateNested({ each: true })

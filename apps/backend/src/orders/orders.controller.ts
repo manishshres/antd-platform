@@ -134,7 +134,12 @@ export class OrdersController {
     @Body() dto: PayOrderDto,
   ): Promise<unknown> {
     if (!id) throw new BadRequestException('Order ID is required.');
-    return this.ordersService.payOrder(user, id, dto.paymentMethod);
+    return this.ordersService.payOrder(
+      user,
+      id,
+      dto.paymentMethod,
+      dto.tipAmount,
+    );
   }
 
   @Patch(':id/status')

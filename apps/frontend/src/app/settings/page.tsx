@@ -21,10 +21,11 @@ import {
   Upload,
   Radio,
 } from "antd";
-import { PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined, KeyOutlined, ApiOutlined, GlobalOutlined, BankOutlined, SecurityScanOutlined, BuildOutlined, CreditCardOutlined, NotificationOutlined, SettingOutlined, MailOutlined, UserAddOutlined, MinusCircleOutlined, LinkOutlined, SyncOutlined, ReloadOutlined } from "@ant-design/icons";
+import { PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined, KeyOutlined, ApiOutlined, GlobalOutlined, BankOutlined, SecurityScanOutlined, BuildOutlined, CreditCardOutlined, NotificationOutlined, SettingOutlined, MailOutlined, UserAddOutlined, MinusCircleOutlined, LinkOutlined, SyncOutlined, ReloadOutlined, TagOutlined } from "@ant-design/icons";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import PageHeader from "@/components/PageHeader";
+import DiscountsSettings from "@/components/DiscountsSettings";
 import { useLocation, Location } from "@/contexts/LocationContext";
 import dayjs from "dayjs";
 
@@ -469,6 +470,11 @@ export default function SettingsHubPage() {
           <Table dataSource={locations} columns={locColumns} rowKey="id" loading={locLoading} />
         </div>
       ),
+    },
+    {
+      key: "discounts",
+      label: <span><TagOutlined /> Discounts</span>,
+      children: <DiscountsSettings />,
     },
     {
       key: "menu-link",

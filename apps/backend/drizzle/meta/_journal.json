@@ -43,6 +43,20 @@
       "when": 1783292364688,
       "tag": "0005_pos_favorites_tickets",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1783300360416,
+      "tag": "0006_tips_discounts",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1783300686038,
+      "tag": "0007_order_discount_id",
+      "breakpoints": true
     }
   ]
 }

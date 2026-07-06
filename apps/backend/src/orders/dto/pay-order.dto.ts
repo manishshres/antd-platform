@@ -1,4 +1,4 @@
-import { IsIn } from 'class-validator';
+import { IsIn, IsNumber, IsOptional, Min } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class PayOrderDto {
@@ -8,4 +8,10 @@ export class PayOrderDto {
   })
   @IsIn(['cash', 'card'])
   paymentMethod: string;
+
+  @ApiProperty({ required: false, description: 'Tip in cents' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  tipAmount?: number;
 }

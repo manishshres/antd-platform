@@ -4,6 +4,7 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { CurrentUserPayload } from '../common/decorators/current-user.decorator';
 import { OnEvent } from '@nestjs/event-emitter';
@@ -315,6 +316,9 @@ export class OrdersService {
       customerPhone: fullOrder.customerPhone,
       subtotal: fullOrder.subtotal ?? undefined,
       taxAmount: fullOrder.taxAmount ?? undefined,
+      tipAmount: fullOrder.tipAmount ?? undefined,
+      discountAmount: fullOrder.discountAmount ?? undefined,
+      discountName: fullOrder.discountName ?? undefined,
       totalAmount: fullOrder.totalAmount,
       orderType: fullOrder.orderType,
       specialInstructions: fullOrder.specialInstructions,
@@ -554,6 +558,65 @@ export class OrdersService {
     return { resolvedItems, subtotal };
   }
 
+  /**
+   * Resolve an applied discount by id or promo code, org-scoped and active only.
+   * Manager-only discounts are role-gated (PIN-based acting-user switching comes later).
+   * Returns null when neither identifier is provided.
+   */
+  private async resolveDiscount(
+    orgId: string,
+    user: CurrentUserPayload,
+    opts: { discountId?: string; promoCode?: string },
+  ) {
+    if (!opts.discountId && !opts.promoCode?.trim()) return null;
+
+    const conditions = [
+      eq(schema.discounts.organizationId, orgId),
+      eq(schema.discounts.active, true),
+      isNull(schema.discounts.deletedAt),
+    ];
+    if (opts.discountId) {
+      conditions.push(eq(schema.discounts.id, opts.discountId));
+    } else {
+      conditions.push(
+        eq(schema.discounts.code, opts.promoCode!.trim().toUpperCase()),
+      );
+    }
+
+    const [discount] = await this.db
+      .select()
+      .from(schema.discounts)
+      .where(and(...conditions))
+      .limit(1);
+
+    if (!discount) {
+      throw new NotFoundException(
+        opts.discountId
+          ? 'Discount not found or inactive.'
+          : `Promo code "${opts.promoCode}" not found or inactive.`,
+      );
+    }
+    if (discount.requiresManager && user.role === 'user') {
+      throw new ForbiddenException(
+        `"${discount.name}" requires manager approval.`,
+      );
+    }
+    return discount;
+  }
+
+  /** Discount amount in cents, never exceeding the subtotal. */
+  private discountAmountFor(
+    discount: { type: string; value: number } | null,
+    subtotal: number,
+  ): number {
+    if (!discount) return 0;
+    const raw =
+      discount.type === 'percent'
+        ? Math.round((subtotal * discount.value) / 100)
+        : discount.value;
+    return Math.min(subtotal, Math.max(0, raw));
+  }
+
   /** Next per-location daily ticket number ("Order #47"). Runs inside the insert transaction. */
   private async nextTicketNumber(
     tx: Pick<NodePgDatabase<typeof schema>, 'select'>,
@@ -586,6 +649,9 @@ export class OrdersService {
       orderType?: string;
       specialInstructions?: string;
       paymentMethod: string;
+      tipAmount?: number;
+      discountId?: string;
+      promoCode?: string;
       items: {
         menuItemId: string;
         quantity: number;
@@ -623,9 +689,13 @@ export class OrdersService {
       dto.items,
     );
 
-    // Tax computed server-side from the location's flat rate (basis points).
-    const taxAmount = Math.round((subtotal * location.taxRateBps) / 10000);
-    const totalAmount = subtotal + taxAmount;
+    // Discount reduces the taxable base; tax on the discounted subtotal; tip added after tax.
+    const discount = await this.resolveDiscount(orgId, user, dto);
+    const discountAmount = this.discountAmountFor(discount, subtotal);
+    const taxableBase = subtotal - discountAmount;
+    const taxAmount = Math.round((taxableBase * location.taxRateBps) / 10000);
+    const tipAmount = Math.max(0, Math.round(dto.tipAmount ?? 0));
+    const totalAmount = taxableBase + taxAmount + tipAmount;
 
     const now = new Date();
     const orderId = await this.db.transaction(async (tx) => {
@@ -640,6 +710,10 @@ export class OrdersService {
           status: 'confirmed',
           subtotal,
           taxAmount,
+          tipAmount,
+          discountAmount,
+          discountName: discount?.name ?? null,
+          discountId: discount?.id ?? null,
           totalAmount,
           orderType: dto.orderType ?? 'dine_in',
           specialInstructions: dto.specialInstructions ?? null,
@@ -671,6 +745,9 @@ export class OrdersService {
     return this.dispatchOrderSideEffects(orgId, orderId, user.id, {
       subtotal,
       taxAmount,
+      tipAmount,
+      discountAmount,
+      discountName: discount?.name ?? null,
       totalAmount,
       items: resolvedItems,
       status: 'confirmed',
@@ -692,6 +769,8 @@ export class OrdersService {
       customerName?: string;
       orderType?: string;
       specialInstructions?: string;
+      discountId?: string;
+      promoCode?: string;
       items: {
         menuItemId: string;
         quantity: number;
@@ -731,8 +810,15 @@ export class OrdersService {
         .limit(1);
       taxRateBps = loc?.taxRateBps ?? 0;
     }
-    const taxAmount = Math.round((subtotal * taxRateBps) / 10000);
-    const totalAmount = subtotal + taxAmount;
+
+    // Same tender math as createPosOrder: discount → taxable base → tax; any tip already
+    // recorded on the order is preserved (tips normally land at payment time).
+    const discount = await this.resolveDiscount(orgId, user, dto);
+    const discountAmount = this.discountAmountFor(discount, subtotal);
+    const taxableBase = subtotal - discountAmount;
+    const taxAmount = Math.round((taxableBase * taxRateBps) / 10000);
+    const existingTip = order.tipAmount ?? 0;
+    const totalAmount = taxableBase + taxAmount + existingTip;
 
     await this.db.transaction(async (tx) => {
       await tx
@@ -740,6 +826,9 @@ export class OrdersService {
         .set({
           subtotal,
           taxAmount,
+          discountAmount,
+          discountName: discount?.name ?? null,
+          discountId: discount?.id ?? null,
           totalAmount,
           ...(dto.customerName !== undefined
             ? { customerName: dto.customerName.trim() || 'Walk-in' }
@@ -832,6 +921,7 @@ export class OrdersService {
     user: CurrentUserPayload,
     orderId: string,
     paymentMethod: string,
+    tipAmount?: number,
   ) {
     const orgId = await this.billingService.getRequiredOrg(user);
     const order = await this.getOrderByIdForOrg(orgId, orderId);
@@ -842,10 +932,17 @@ export class OrdersService {
       throw new BadRequestException('Cancelled orders cannot be paid.');
     }
 
+    // Tip is decided at payment time: swap any previously recorded tip for the new one.
+    const newTip = Math.max(0, Math.round(tipAmount ?? order.tipAmount ?? 0));
+    const totalAmount =
+      order.totalAmount - (order.tipAmount ?? 0) + newTip;
+
     await this.db
       .update(schema.orders)
       .set({
         paymentMethod,
+        tipAmount: newTip,
+        totalAmount,
         paidAt: new Date(),
         status: order.status === 'pending' ? 'confirmed' : order.status,
         updatedAt: new Date(),
@@ -1003,6 +1100,9 @@ export class OrdersService {
       customerPhone: fullOrder.customerPhone,
       subtotal: fullOrder.subtotal ?? undefined,
       taxAmount: fullOrder.taxAmount ?? undefined,
+      tipAmount: fullOrder.tipAmount ?? undefined,
+      discountAmount: fullOrder.discountAmount ?? undefined,
+      discountName: fullOrder.discountName ?? undefined,
       totalAmount: fullOrder.totalAmount,
       items: fullOrder.items.map((item) => ({
         menuItemName: item.menuItemName,

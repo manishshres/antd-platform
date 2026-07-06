@@ -3,6 +3,7 @@ import {
   IsIn,
   IsOptional,
   IsString,
+  IsUUID,
   MaxLength,
   ValidateNested,
 } from 'class-validator';
@@ -27,6 +28,20 @@ export class UpdateOrderItemsDto {
   @IsString()
   @MaxLength(1000)
   specialInstructions?: string;
+
+  @ApiProperty({
+    required: false,
+    description: 'Discount to apply; omit both fields to clear the discount',
+  })
+  @IsOptional()
+  @IsUUID()
+  discountId?: string;
+
+  @ApiProperty({ required: false, description: 'Promo code to apply' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  promoCode?: string;
 
   @ApiProperty({ type: [PosOrderItemDto] })
   @IsArray()

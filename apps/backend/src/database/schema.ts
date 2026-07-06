@@ -363,6 +363,36 @@ export const menuItemToModifiers = pgTable(
   (t) => [primaryKey({ columns: [t.menuItemId, t.modifierId] })],
 );
 
+export const discounts = pgTable(
+  'discounts',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    organizationId: uuid('organization_id')
+      .references(() => organizations.id, { onDelete: 'cascade' })
+      .notNull(),
+    locationId: uuid('location_id').references(() => locations.id, {
+      onDelete: 'cascade',
+    }),
+    name: varchar('name', { length: 255 }).notNull(),
+    // Optional promo code customers/cashiers can type ("LUNCH10"). Null = button-only discount.
+    code: varchar('code', { length: 50 }),
+    type: varchar('type', { length: 10 }).notNull(), // 'percent' | 'fixed'
+    // percent: whole percent (10 = 10%); fixed: cents off the subtotal.
+    value: integer('value').notNull(),
+    // Requires a manager/admin role to apply (e.g. "Manager Discount", "Employee Meal").
+    requiresManager: boolean('requires_manager').default(false).notNull(),
+    active: boolean('active').default(true).notNull(),
+    deletedAt: timestamp('deleted_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (t) => [
+    index('idx_discounts_organization_id').on(t.organizationId),
+    check('discounts_type_check', sql`${t.type} IN ('percent', 'fixed')`),
+    check('discounts_value_check', sql`${t.value} >= 0`),
+  ],
+);
+
 export const orders = pgTable(
   'orders',
   {
@@ -381,6 +411,15 @@ export const orders = pgTable(
     // single source of truth for what was charged.
     subtotal: integer('subtotal'),
     taxAmount: integer('tax_amount'),
+    // Tender extras (cents). Discount reduces the taxable base; tip is added after tax.
+    // discountName snapshots the applied discount so receipts survive later edits;
+    // discountId lets the register rehydrate the selection when re-editing an unpaid order.
+    tipAmount: integer('tip_amount'),
+    discountAmount: integer('discount_amount'),
+    discountName: varchar('discount_name', { length: 255 }),
+    discountId: uuid('discount_id').references(() => discounts.id, {
+      onDelete: 'set null',
+    }),
     // Fulfilment type (e.g. 'pickup', 'delivery', 'dine_in') and free-form kitchen notes captured
     // from the AI order webhook. Kept nullable/permissive so a novel value never drops an order.
     orderType: varchar('order_type', { length: 50 }),

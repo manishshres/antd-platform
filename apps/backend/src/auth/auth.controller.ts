@@ -117,14 +117,21 @@ export class AuthController {
     // Prefer the HttpOnly cookie; fall back to the body for non-browser / legacy clients (H2).
     const refreshToken = readRefreshCookie(req) ?? bodyToken;
     if (!refreshToken) {
+      clearRefreshCookie(res);
       throw new UnauthorizedException('Refresh token is required.');
     }
-    const result = await this.authService.refresh(refreshToken);
 
-    // Rotate the cookie to the new refresh token (default TTL; rememberMe isn't known here).
-    setRefreshCookie(res, result.refresh_token, REFRESH_TTL_DEFAULT * 1000);
+    try {
+      const result = await this.authService.refresh(refreshToken);
 
-    return result;
+      // Rotate the cookie to the new refresh token (default TTL; rememberMe isn't known here).
+      setRefreshCookie(res, result.refresh_token, REFRESH_TTL_DEFAULT * 1000);
+
+      return result;
+    } catch (error) {
+      clearRefreshCookie(res);
+      throw error;
+    }
   }
 
   @Public()

@@ -39,6 +39,7 @@ import { PublicApiModule } from './public-api/public-api.module';
 
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ConversationsModule } from './conversations/conversations.module';
+import { DiscountsModule } from './discounts/discounts.module';
 import { CacheModule } from '@nestjs/cache-manager';
 import { AuditLogsModule } from './audit-logs/audit-logs.module';
 import * as redisStore from 'cache-manager-ioredis';
@@ -125,6 +126,7 @@ import { RolesGuard } from './auth/guards/roles.guard';
     ApiKeysModule,
     PublicApiModule,
     ConversationsModule,
+    DiscountsModule,
     AuditLogsModule,
   ],
   controllers: [AppController],

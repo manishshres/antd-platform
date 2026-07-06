@@ -10,6 +10,7 @@ import {
   Divider,
   Empty,
   Input,
+  InputNumber,
   Modal,
   Radio,
   Segmented,
@@ -33,6 +34,7 @@ import {
   SearchOutlined,
   ShoppingCartOutlined,
   StarFilled,
+  TagOutlined,
 } from "@ant-design/icons";
 import { api } from "@/lib/api";
 import { useLocation } from "@/contexts/LocationContext";
@@ -91,6 +93,15 @@ interface CartLine {
   notes?: string;
 }
 
+interface Discount {
+  id: string;
+  name: string;
+  code?: string | null;
+  type: string; // 'percent' | 'fixed'
+  value: number; // percent (10 = 10%) or cents
+  requiresManager: boolean;
+}
+
 /** Shape of the order returned by GET /orders/:id (fields the register needs). */
 interface ExistingOrder {
   id: string;
@@ -101,6 +112,8 @@ interface ExistingOrder {
   paidAt?: string | null;
   orderType?: string | null;
   specialInstructions?: string | null;
+  discountId?: string | null;
+  tipAmount?: number | null;
   items: {
     menuItemId: string;
     menuItemName: string;
@@ -129,7 +142,9 @@ function PosRegister() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const editOrderId = searchParams.get("orderId");
-  const { selectedLocationId, selectedLocation } = useLocation();
+  const { selectedLocationId, selectedLocation, userRole } = useLocation();
+  // Manager-only discounts are role-gated until PIN-based user switching lands.
+  const canApplyManagerDiscounts = userRole !== "user";
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
@@ -143,6 +158,17 @@ function PosRegister() {
   const [orderNotes, setOrderNotes] = useState("");
   const [charging, setCharging] = useState<"cash" | "card" | null>(null);
   const [saving, setSaving] = useState(false);
+
+  // Tender extras: discounts (fetched once) and tip selection.
+  const [discounts, setDiscounts] = useState<Discount[]>([]);
+  const [appliedDiscountId, setAppliedDiscountId] = useState<string | null>(
+    null,
+  );
+  const [discountModalOpen, setDiscountModalOpen] = useState(false);
+  const [promoInput, setPromoInput] = useState("");
+  // Tip: percent of the discounted subtotal, or -1 for a custom dollar amount.
+  const [tipPct, setTipPct] = useState<number>(0);
+  const [customTip, setCustomTip] = useState<number>(0); // dollars
 
   // Loaded existing order (AI voice handoff / edit mode)
   const [editingOrder, setEditingOrder] = useState<ExistingOrder | null>(null);
@@ -180,6 +206,21 @@ function PosRegister() {
     };
   }, [selectedLocationId]);
 
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get<Discount[]>("/discounts")
+      .then(({ data }) => {
+        if (!cancelled) setDiscounts(data ?? []);
+      })
+      .catch(() => {
+        // Discounts are optional — the register works without them.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Hydrate the register from an existing order (?orderId=...) — the AI voice handoff.
   useEffect(() => {
     // No sync state reset needed when orderId is absent: every navigation back
@@ -201,6 +242,11 @@ function PosRegister() {
         setCustomerName(data.customerName === "Walk-in" ? "" : data.customerName);
         setOrderType(data.orderType ?? "dine_in");
         setOrderNotes(data.specialInstructions ?? "");
+        setAppliedDiscountId(data.discountId ?? null);
+        if (data.tipAmount) {
+          setTipPct(-1);
+          setCustomTip(data.tipAmount / 100);
+        }
         setCart(
           data.items.map((item, idx) => {
             const options: CartOption[] = (item.modifiers ?? []).map((m) => ({
@@ -259,9 +305,25 @@ function PosRegister() {
     [cart],
   );
   // Mirror of the server-side calculation — the backend recomputes and is authoritative.
+  // Discount reduces the taxable base; tip (on the discounted subtotal) is added after tax.
+  const appliedDiscount =
+    discounts.find((d) => d.id === appliedDiscountId) ?? null;
+  const discountAmount = appliedDiscount
+    ? Math.min(
+        subtotal,
+        appliedDiscount.type === "percent"
+          ? Math.round((subtotal * appliedDiscount.value) / 100)
+          : appliedDiscount.value,
+      )
+    : 0;
+  const taxableBase = subtotal - discountAmount;
   const taxRateBps = selectedLocation?.taxRateBps ?? 0;
-  const taxAmount = Math.round((subtotal * taxRateBps) / 10000);
-  const total = subtotal + taxAmount;
+  const taxAmount = Math.round((taxableBase * taxRateBps) / 10000);
+  const tipAmount =
+    tipPct === -1
+      ? Math.max(0, Math.round(customTip * 100))
+      : Math.round((taxableBase * tipPct) / 100);
+  const total = taxableBase + taxAmount + tipAmount;
 
   // Category pill strip: hidden scrollbar, arrow buttons + drag/touch scrolling.
   const pillsRef = useRef<HTMLDivElement>(null);
@@ -276,6 +338,10 @@ function PosRegister() {
     setOrderNotes("");
     setOrderType("dine_in");
     setEditingOrder(null);
+    setAppliedDiscountId(null);
+    setTipPct(0);
+    setCustomTip(0);
+    setPromoInput("");
   };
 
   const buildLine = (
@@ -405,6 +471,24 @@ function PosRegister() {
     );
   };
 
+  const applyPromo = () => {
+    const code = promoInput.trim().toUpperCase();
+    if (!code) return;
+    const match = discounts.find((d) => d.code?.toUpperCase() === code);
+    if (!match) {
+      message.error(`Promo code "${code}" not found.`);
+      return;
+    }
+    if (match.requiresManager && !canApplyManagerDiscounts) {
+      message.warning(`"${match.name}" requires a manager to apply.`);
+      return;
+    }
+    setAppliedDiscountId(match.id);
+    setPromoInput("");
+    setDiscountModalOpen(false);
+    message.success(`${match.name} applied.`);
+  };
+
   const cartPayloadItems = () =>
     cart.map((l) => ({
       menuItemId: l.menuItemId,
@@ -421,6 +505,7 @@ function PosRegister() {
         customerName: customerName.trim() || undefined,
         orderType,
         specialInstructions: orderNotes.trim() || undefined,
+        discountId: appliedDiscountId ?? undefined,
         items: cartPayloadItems(),
       });
       message.success(
@@ -447,11 +532,12 @@ function PosRegister() {
           customerName: customerName.trim() || undefined,
           orderType,
           specialInstructions: orderNotes.trim() || undefined,
+          discountId: appliedDiscountId ?? undefined,
           items: cartPayloadItems(),
         });
         const res = await api.post<typeof paid>(
           `/orders/${editingOrder.id}/pay`,
-          { paymentMethod: method },
+          { paymentMethod: method, tipAmount },
         );
         paid = res.data;
       } else {
@@ -461,6 +547,8 @@ function PosRegister() {
           paymentMethod: method,
           customerName: customerName.trim() || undefined,
           specialInstructions: orderNotes.trim() || undefined,
+          discountId: appliedDiscountId ?? undefined,
+          tipAmount,
           items: cartPayloadItems(),
         });
         paid = res.data;
@@ -923,6 +1011,71 @@ function PosRegister() {
             aria-label="Order instructions"
             style={{ marginBottom: token.marginXS }}
           />
+          {/* Discount */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: 4,
+            }}
+          >
+            {appliedDiscount ? (
+              <>
+                <Tag
+                  color="green"
+                  closable
+                  onClose={() => setAppliedDiscountId(null)}
+                  style={{ margin: 0 }}
+                >
+                  {appliedDiscount.name}
+                </Tag>
+                <Text type="success">-{fmtMoney(discountAmount)}</Text>
+              </>
+            ) : (
+              <Button
+                size="small"
+                type="dashed"
+                icon={<TagOutlined />}
+                onClick={() => setDiscountModalOpen(true)}
+                aria-label="Add discount"
+                disabled={cart.length === 0}
+              >
+                Add discount
+              </Button>
+            )}
+          </div>
+
+          {/* Tip */}
+          <div style={{ marginBottom: 6 }}>
+            <Segmented
+              block
+              size="small"
+              value={tipPct}
+              onChange={(v) => setTipPct(v as number)}
+              options={[
+                { label: "No tip", value: 0 },
+                { label: "10%", value: 10 },
+                { label: "15%", value: 15 },
+                { label: "20%", value: 20 },
+                { label: "Custom", value: -1 },
+              ]}
+            />
+            {tipPct === -1 && (
+              <InputNumber
+                size="small"
+                min={0}
+                step={0.25}
+                precision={2}
+                prefix="$"
+                value={customTip}
+                onChange={(v) => setCustomTip(v ?? 0)}
+                aria-label="Custom tip amount"
+                style={{ width: "100%", marginTop: 4 }}
+              />
+            )}
+          </div>
+
           <div
             style={{
               display: "flex",
@@ -933,11 +1086,23 @@ function PosRegister() {
             <Text type="secondary">Subtotal</Text>
             <Text type="secondary">{fmtMoney(subtotal)}</Text>
           </div>
+          {discountAmount > 0 && (
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                marginBottom: 2,
+              }}
+            >
+              <Text type="secondary">Discount</Text>
+              <Text type="success">-{fmtMoney(discountAmount)}</Text>
+            </div>
+          )}
           <div
             style={{
               display: "flex",
               justifyContent: "space-between",
-              marginBottom: 4,
+              marginBottom: 2,
             }}
           >
             <Text type="secondary">
@@ -945,6 +1110,18 @@ function PosRegister() {
             </Text>
             <Text type="secondary">{fmtMoney(taxAmount)}</Text>
           </div>
+          {tipAmount > 0 && (
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                marginBottom: 2,
+              }}
+            >
+              <Text type="secondary">Tip</Text>
+              <Text type="secondary">{fmtMoney(tipAmount)}</Text>
+            </div>
+          )}
           <div
             style={{
               display: "flex",
@@ -1061,6 +1238,71 @@ function PosRegister() {
           maxLength={500}
           aria-label="Kitchen note"
         />
+      </Modal>
+
+      {/* Discount picker */}
+      <Modal
+        open={discountModalOpen}
+        title="Apply Discount"
+        onCancel={() => setDiscountModalOpen(false)}
+        footer={null}
+        destroyOnHidden
+      >
+        <Space.Compact block style={{ marginBottom: token.margin }}>
+          <Input
+            placeholder="Promo code"
+            value={promoInput}
+            onChange={(e) => setPromoInput(e.target.value)}
+            onPressEnter={() => applyPromo()}
+            aria-label="Promo code"
+          />
+          <Button type="primary" onClick={() => applyPromo()}>
+            Apply
+          </Button>
+        </Space.Compact>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {discounts.length === 0 && (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description="No discounts configured. Add them in Store Settings."
+            />
+          )}
+          {discounts.map((d) => {
+            const locked = d.requiresManager && !canApplyManagerDiscounts;
+            return (
+              <Button
+                key={d.id}
+                block
+                disabled={locked}
+                onClick={() => {
+                  setAppliedDiscountId(d.id);
+                  setDiscountModalOpen(false);
+                }}
+                aria-label={`Apply ${d.name}`}
+                style={{
+                  height: 44,
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                }}
+              >
+                <span>
+                  {d.name}
+                  {d.requiresManager && (
+                    <Tag color="orange" style={{ marginLeft: 8 }}>
+                      manager
+                    </Tag>
+                  )}
+                </span>
+                <Text type="secondary">
+                  {d.type === "percent"
+                    ? `${d.value}% off`
+                    : `${fmtMoney(d.value)} off`}
+                </Text>
+              </Button>
+            );
+          })}
+        </div>
       </Modal>
     </div>
   );
