@@ -35,15 +35,10 @@ export function middleware(request: NextRequest) {
     }
   }
 
-  // Prevent authenticated users from visiting the login/register pages
-  if (pathname === '/login' || pathname === '/register') {
-    const hasRefreshToken = request.cookies.has('refresh_token');
-    if (hasRefreshToken) {
-      const url = request.nextUrl.clone();
-      url.pathname = '/dashboard';
-      return NextResponse.redirect(url);
-    }
-  }
+  // NOTE: do NOT bounce /login → /dashboard based on cookie presence. The refresh_token
+  // cookie is HttpOnly, so the client can't remove it when the session dies server-side
+  // (rotated/revoked token) — bouncing here created an infinite /login ↔ /dashboard loop.
+  // The login page itself redirects users who still hold a valid access token.
 
   return NextResponse.next();
 }

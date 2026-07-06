@@ -101,6 +101,14 @@ api.interceptors.response.use(
         processQueue(refreshError, null);
         localStorage.removeItem("access_token");
         localStorage.removeItem("refresh_token");
+        // The refresh_token cookie is HttpOnly — JS can't remove it. Ask the backend to
+        // clear it (best-effort) so the middleware doesn't keep treating this dead
+        // session as authenticated and bounce /login back to /dashboard forever.
+        try {
+          await axios.post(`${baseURL}/auth/logout`, {}, { withCredentials: true });
+        } catch {
+          // Ignore — worst case the stale cookie expires on its own.
+        }
         if (!window.location.pathname.includes("/login") && !window.location.pathname.includes("/register")) {
           window.location.href = "/login";
         }
