@@ -267,7 +267,7 @@ export default function OrdersPage() {
       dataIndex: "ticketNumber",
       width: 90,
       render: (v: number | null | undefined, record: Order) => (
-        <Space size={4} direction='vertical'>
+        <Space size={4} orientation='vertical'>
           <Text strong>{v != null ? `#${v}` : `#${record.id.slice(0, 6)}`}</Text>
           {record.source === "pos" ? (
             <Tag style={{ margin: 0 }}>POS</Tag>

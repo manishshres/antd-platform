@@ -43,7 +43,7 @@ body {
 
 /* Cart: fluid on tablets, fixed cap on desktop */
 .pos-cart {
-  width: clamp(300px, 34vw, 400px);
+  width: clamp(280px, 28vw, 360px);
   flex-shrink: 0;
 }
 
