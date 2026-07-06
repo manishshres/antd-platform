@@ -17,3 +17,50 @@ body {
 .pos-pill-strip::-webkit-scrollbar {
   display: none; /* WebKit */
 }
+
+/* ── POS register: iPad-first responsive layout ─────────────────────────────
+   Layout/sizing lives here (media queries aren't expressible inline);
+   colors stay in the component via theme tokens. */
+.pos-register {
+  display: flex;
+  align-items: stretch;
+  overflow: hidden;
+  min-height: 420px;
+  height: 70vh;
+  height: 70dvh; /* stays correct when the iPad Safari toolbar collapses */
+}
+
+/* Item tiles wrap automatically; capped at 6 per row on large screens */
+.pos-item-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+}
+@media (min-width: 1500px) {
+  .pos-item-grid {
+    grid-template-columns: repeat(6, 1fr);
+  }
+}
+
+/* Cart: fluid on tablets, fixed cap on desktop */
+.pos-cart {
+  width: clamp(300px, 34vw, 400px);
+  flex-shrink: 0;
+}
+
+/* Native-app touch feel */
+.pos-tile {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.pos-tile:active {
+  transform: scale(0.97) !important;
+}
+.pos-scroll {
+  overscroll-behavior: contain; /* no page rubber-banding through panels */
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+.pos-register button {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}

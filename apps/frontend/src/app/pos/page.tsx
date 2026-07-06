@@ -618,18 +618,9 @@ function PosRegister() {
         />
       )}
 
-      <div
-        style={{
-          display: "flex",
-          gap: token.marginSM,
-          alignItems: "stretch",
-          // Lock the register to 70% of the viewport: the page never scrolls,
-          // the item grid and cart scroll independently.
-          height: "70vh",
-          minHeight: 420,
-          overflow: "hidden",
-        }}
-      >
+      {/* Height, wrapping, and touch behavior live in globals.css (.pos-*) so they
+          can respond to iPad/tablet breakpoints; colors stay tokenized inline. */}
+      <div className="pos-register" style={{ gap: token.marginSM }}>
         {/* Items area: search + category pills on top, grid below */}
         <div
           style={{
@@ -669,7 +660,7 @@ function PosRegister() {
               />
               <div
                 ref={pillsRef}
-                className="pos-pill-strip"
+                className="pos-pill-strip pos-scroll"
                 role="tablist"
                 aria-label="Menu categories"
                 onPointerDown={(e) => {
@@ -734,7 +725,10 @@ function PosRegister() {
           )}
 
           {/* Item grid */}
-          <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+          <div
+            className="pos-scroll"
+            style={{ flex: 1, minHeight: 0, overflowY: "auto" }}
+          >
             {visibleItems.length === 0 ? (
               <Empty
                 description={
@@ -745,16 +739,13 @@ function PosRegister() {
               />
             ) : (
               <div
-                style={{
-                  display: "grid",
-                  // Fixed 6 tiles per row so muscle memory holds across categories.
-                  gridTemplateColumns: "repeat(6, 1fr)",
-                  gap: token.marginSM,
-                }}
+                className="pos-item-grid"
+                style={{ gap: token.marginSM }}
               >
                 {visibleItems.map((item) => (
                   <div
                     key={item.id}
+                    className="pos-tile"
                     onClick={() => handleItemTap(item)}
                     role="button"
                     tabIndex={0}
@@ -853,11 +844,10 @@ function PosRegister() {
           </div>
         </div>
 
-        {/* Cart panel */}
+        {/* Cart panel — width is fluid on tablets (globals.css .pos-cart) */}
         <div
+          className="pos-cart"
           style={{
-            width: 400,
-            flexShrink: 0,
             display: "flex",
             flexDirection: "column",
             background: token.colorBgContainer,
@@ -913,7 +903,10 @@ function PosRegister() {
             style={{ marginBottom: token.marginXS }}
           />
 
-          <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+          <div
+            className="pos-scroll"
+            style={{ flex: 1, minHeight: 0, overflowY: "auto" }}
+          >
             {cart.length === 0 ? (
               <Empty
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
