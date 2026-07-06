@@ -77,9 +77,15 @@ These explain *why* the system is shaped this way. They are settled.
   a PIN switches the *acting user* for attribution and role checks (planned).
 - **AD-8 Idempotency for offline.** `clientOrderId` unique per device on order
   create (planned with offline mode).
-- **AD-9 Print timing is a location policy.** Receipts always print at payment.
-  Kitchen tickets print at save by default, or at payment when the location sets
-  `holdUnpaidKitchen` (delivery / pay-on-return workflows).
+- **AD-9 Printing is an event matrix, not feature flags.** Each document type
+  (kitchen ticket, customer receipt) declares which order events trigger it —
+  **Save** (creation), **Update** (unpaid edit), **Paid** — plus a copy count.
+  Stored per location as `printSettings.{kitchen,receipt}.{onSave,onUpdate,onPaid,copies}`.
+  Defaults: kitchen on Save+Update; receipt on Paid. Every workflow (fire
+  immediately, hold-until-paid delivery, receipt-on-save, silent) is a row
+  configuration — no special cases. Extensible with future events (Ready,
+  Cancelled). A document prints at most once when multiple events coincide
+  (e.g. a POS order created already-paid = Save + Paid).
 
 ## 5. Order & Payment Lifecycle
 

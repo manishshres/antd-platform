@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge, Button, Dropdown, Empty, List, Tag, Typography, theme } from "antd";
+import { Badge, Button, Dropdown, Empty, Tag, Typography, theme } from "antd";
 import {
   BellOutlined,
   ShoppingOutlined,
@@ -76,40 +76,37 @@ export default function NotificationsBell() {
             style={{ padding: `${token.paddingLG}px 0` }}
           />
         ) : (
-          <List
-            dataSource={notifications}
-            renderItem={(n) => (
-              <List.Item
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            {notifications.map((n, i) => (
+              <div
+                key={n.id}
                 onClick={() => n.href && router.push(n.href)}
                 style={{
-                  padding: "10px 16px",
+                  display: "flex",
+                  gap: 12,
+                  padding: "12px 16px",
                   cursor: n.href ? "pointer" : "default",
                   background: n.read ? "transparent" : token.colorPrimaryBg,
+                  borderBottom: i < notifications.length - 1 ? `1px solid ${token.colorBorderSecondary}` : "none",
                 }}
               >
-                <List.Item.Meta
-                  avatar={
-                    <span style={{ color: token.colorPrimary, fontSize: 18 }}>
-                      {ICON[n.type]}
-                    </span>
-                  }
-                  title={
-                    <span style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                      <Text style={{ fontSize: 13 }}>{n.title}</Text>
-                      <Text type="secondary" style={{ fontSize: 11, whiteSpace: "nowrap" }}>
-                        {timeAgo(n.createdAt)}
-                      </Text>
-                    </span>
-                  }
-                  description={
-                    <Text type="secondary" style={{ fontSize: 12 }}>
-                      {n.description}
+                <div style={{ color: token.colorPrimary, fontSize: 18, marginTop: 2 }}>
+                  {ICON[n.type]}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 4 }}>
+                    <Text style={{ fontSize: 13 }} ellipsis>{n.title}</Text>
+                    <Text type="secondary" style={{ fontSize: 11, whiteSpace: "nowrap" }}>
+                      {timeAgo(n.createdAt)}
                     </Text>
-                  }
-                />
-              </List.Item>
-            )}
-          />
+                  </div>
+                  <Text type="secondary" style={{ fontSize: 12, display: "block", lineHeight: 1.4 }}>
+                    {n.description}
+                  </Text>
+                </div>
+              </div>
+            ))}
+          </div>
         )}
       </div>
     </div>

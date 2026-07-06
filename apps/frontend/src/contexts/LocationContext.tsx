@@ -20,13 +20,12 @@ export interface Location {
     menuBucket?: string;
   };
   taxRateBps?: number;
-  printSettings?: {
-    kitchenEnabled?: boolean;
-    kitchenCopies?: number;
-    receiptEnabled?: boolean;
-    receiptCopies?: number;
-    holdUnpaidKitchen?: boolean;
-  };
+  /**
+   * Printing event matrix per document type ({ kitchen, receipt } each with
+   * onSave/onUpdate/onPaid/copies). Older rows may still carry the legacy
+   * kitchenEnabled/holdUnpaidKitchen keys — consumers normalize.
+   */
+  printSettings?: Record<string, unknown>;
   telnyxAssistantId?: string | null;
   menuLastSyncedAt?: string | null;
 }

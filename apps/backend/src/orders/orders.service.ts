@@ -308,68 +308,13 @@ export class OrdersService {
   ) {
     const fullOrder = await this.getOrderByIdForOrg(orgId, orderId);
 
-    // Format print job payload
-    const printPayload = {
-      orderId: fullOrder.id,
-      ticketNumber: fullOrder.ticketNumber ?? undefined,
-      customerName: fullOrder.customerName,
-      customerPhone: fullOrder.customerPhone,
-      subtotal: fullOrder.subtotal ?? undefined,
-      taxAmount: fullOrder.taxAmount ?? undefined,
-      tipAmount: fullOrder.tipAmount ?? undefined,
-      discountAmount: fullOrder.discountAmount ?? undefined,
-      discountName: fullOrder.discountName ?? undefined,
-      totalAmount: fullOrder.totalAmount,
-      orderType: fullOrder.orderType,
-      specialInstructions: fullOrder.specialInstructions,
-      items: fullOrder.items.map((item) => ({
-        menuItemName: item.menuItemName,
-        quantity: item.quantity,
-        price: item.price,
-        modifiers: item.modifiers ?? undefined,
-        notes: item.notes ?? undefined,
-      })),
-      createdAt: fullOrder.createdAt,
-    };
-
-    // Create print job history records and enqueue print jobs, honoring the location's
-    // print settings (kitchen/receipt enable + copies).
-    try {
-      const printPlan = await this.getPrintPlan(fullOrder.locationId);
-      for (const jobType of ['kitchen', 'receipt'] as const) {
-        const cfg = printPlan[jobType];
-        if (!cfg.enabled) continue;
-        // Unpaid (pay-later) orders get their receipt at payment time, not now.
-        if (jobType === 'receipt' && !fullOrder.paidAt) continue;
-        // Optionally hold the kitchen ticket too until the order is paid
-        // (delivery orders / customers returning later).
-        if (
-          jobType === 'kitchen' &&
-          !fullOrder.paidAt &&
-          printPlan.holdUnpaidKitchen
-        )
-          continue;
-        for (let copy = 0; copy < cfg.copies; copy++) {
-          const job = await this.printJobsService.createPrintJob({
-            organizationId: orgId,
-            orderId: fullOrder.id,
-            jobType,
-            payload: printPayload,
-          });
-          await this.printQueue.add('print-job', {
-            orgId,
-            type: jobType,
-            payload: printPayload,
-            printJobId: job.id,
-          });
-        }
-      }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      this.logger.error(
-        `Failed to enqueue print jobs for order ${orderId}: ${message}`,
-      );
-    }
+    // Creation is the 'save' event; an order created already-paid (POS charge)
+    // fires 'paid' too — each document still prints at most once.
+    await this.printForEvents(
+      orgId,
+      fullOrder,
+      fullOrder.paidAt ? ['save', 'paid'] : ['save'],
+    );
 
     void this.auditService.log({
       action: 'order.create',
@@ -565,35 +510,131 @@ export class OrdersService {
    * Per-location printing behavior with safe defaults: both ticket types enabled,
    * one copy each; copies clamped to 1–5.
    */
+  /**
+   * Per-location printing policy as an event matrix: each document type (kitchen
+   * ticket, customer receipt) declares which order events trigger it — save
+   * (creation), update (unpaid edit), paid — plus a copy count (1–5).
+   * Legacy enable/hold settings are normalized into the matrix.
+   */
   private async getPrintPlan(locationId: string | null | undefined) {
     const clampCopies = (v: unknown) =>
       Math.min(5, Math.max(1, Math.round(Number(v)) || 1));
-    if (!locationId) {
-      return {
-        kitchen: { enabled: true, copies: 1 },
-        receipt: { enabled: true, copies: 1 },
-        holdUnpaidKitchen: false,
-      };
-    }
+    // Defaults: kitchen fires on save + update; receipt only at payment.
+    const defaults = {
+      kitchen: { onSave: true, onUpdate: true, onPaid: false, copies: 1 },
+      receipt: { onSave: false, onUpdate: false, onPaid: true, copies: 1 },
+    };
+    if (!locationId) return defaults;
+
     const [loc] = await this.db
       .select({ printSettings: schema.locations.printSettings })
       .from(schema.locations)
       .where(eq(schema.locations.id, locationId))
       .limit(1);
     const s = (loc?.printSettings ?? {}) as Record<string, unknown>;
-    return {
-      kitchen: {
-        enabled: s.kitchenEnabled !== false,
-        copies: clampCopies(s.kitchenCopies),
-      },
-      receipt: {
-        enabled: s.receiptEnabled !== false,
-        copies: clampCopies(s.receiptCopies),
-      },
-      // When true, unpaid orders (saved carts, AI phone orders for later pickup)
-      // hold ALL tickets until payment — kitchen fires at pay time instead.
-      holdUnpaidKitchen: s.holdUnpaidKitchen === true,
+
+    const matrix = (
+      doc: 'kitchen' | 'receipt',
+    ): { onSave: boolean; onUpdate: boolean; onPaid: boolean; copies: number } => {
+      const m = s[doc] as Record<string, unknown> | undefined;
+      if (m && typeof m === 'object') {
+        return {
+          onSave: m.onSave === true,
+          onUpdate: m.onUpdate === true,
+          onPaid: m.onPaid === true,
+          copies: clampCopies(m.copies),
+        };
+      }
+      // Legacy shape: kitchenEnabled/receiptEnabled + copies + holdUnpaidKitchen.
+      const enabled = s[`${doc}Enabled`] !== false;
+      const copies = clampCopies(s[`${doc}Copies`]);
+      if (doc === 'kitchen') {
+        const hold = s.holdUnpaidKitchen === true;
+        return {
+          onSave: enabled && !hold,
+          onUpdate: enabled && !hold,
+          onPaid: enabled && hold,
+          copies,
+        };
+      }
+      return { onSave: false, onUpdate: false, onPaid: enabled, copies };
     };
+
+    return { kitchen: matrix('kitchen'), receipt: matrix('receipt') };
+  }
+
+  /** Build the printable representation of an order for either document type. */
+  private buildPrintPayload(
+    fullOrder: Awaited<ReturnType<OrdersService['getOrderByIdForOrg']>>,
+    opts: { updated?: boolean } = {},
+  ) {
+    return {
+      orderId: fullOrder.id,
+      ticketNumber: fullOrder.ticketNumber ?? undefined,
+      updated: opts.updated || undefined,
+      customerName: fullOrder.customerName,
+      customerPhone: fullOrder.customerPhone,
+      subtotal: fullOrder.subtotal ?? undefined,
+      taxAmount: fullOrder.taxAmount ?? undefined,
+      tipAmount: fullOrder.tipAmount ?? undefined,
+      discountAmount: fullOrder.discountAmount ?? undefined,
+      discountName: fullOrder.discountName ?? undefined,
+      totalAmount: fullOrder.totalAmount,
+      orderType: fullOrder.orderType,
+      specialInstructions: fullOrder.specialInstructions,
+      items: fullOrder.items.map((item) => ({
+        menuItemName: item.menuItemName,
+        quantity: item.quantity,
+        price: item.price,
+        modifiers: item.modifiers ?? undefined,
+        notes: item.notes ?? undefined,
+      })),
+      createdAt: fullOrder.createdAt,
+    };
+  }
+
+  /**
+   * Enqueue every document whose matrix row is checked for any of the given
+   * events. A document prints at most once per call even when several of its
+   * events fire together (e.g. a POS order created already-paid = save + paid).
+   */
+  private async printForEvents(
+    orgId: string,
+    fullOrder: Awaited<ReturnType<OrdersService['getOrderByIdForOrg']>>,
+    events: ('save' | 'update' | 'paid')[],
+    opts: { updated?: boolean } = {},
+  ) {
+    try {
+      const plan = await this.getPrintPlan(fullOrder.locationId);
+      const payload = this.buildPrintPayload(fullOrder, opts);
+      for (const jobType of ['kitchen', 'receipt'] as const) {
+        const cfg = plan[jobType];
+        const triggered =
+          (events.includes('save') && cfg.onSave) ||
+          (events.includes('update') && cfg.onUpdate) ||
+          (events.includes('paid') && cfg.onPaid);
+        if (!triggered) continue;
+        for (let copy = 0; copy < cfg.copies; copy++) {
+          const job = await this.printJobsService.createPrintJob({
+            organizationId: orgId,
+            orderId: fullOrder.id,
+            jobType,
+            payload,
+          });
+          await this.printQueue.add('print-job', {
+            orgId,
+            type: jobType,
+            payload,
+            printJobId: job.id,
+          });
+        }
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      this.logger.error(
+        `Failed to enqueue print jobs for order ${fullOrder.id}: ${msg}`,
+      );
+    }
   }
 
   /**
@@ -897,53 +938,9 @@ export class OrdersService {
 
     const fullOrder = await this.getOrderByIdForOrg(orgId, orderId);
 
-    // Fire a corrected kitchen ticket so the line knows the order changed.
-    try {
-      const printPayload = {
-        orderId: fullOrder.id,
-        ticketNumber: fullOrder.ticketNumber ?? undefined,
-        updated: true,
-        customerName: fullOrder.customerName,
-        customerPhone: fullOrder.customerPhone,
-        subtotal: fullOrder.subtotal ?? undefined,
-        taxAmount: fullOrder.taxAmount ?? undefined,
-        totalAmount: fullOrder.totalAmount,
-        orderType: fullOrder.orderType,
-        specialInstructions: fullOrder.specialInstructions,
-        items: fullOrder.items.map((item) => ({
-          menuItemName: item.menuItemName,
-          quantity: item.quantity,
-          price: item.price,
-          modifiers: item.modifiers ?? undefined,
-          notes: item.notes ?? undefined,
-        })),
-        createdAt: fullOrder.createdAt,
-      };
-      const printPlan = await this.getPrintPlan(fullOrder.locationId);
-      // Orders being edited are unpaid by definition — if tickets are held until
-      // payment, the corrected ticket waits too (it fires with everything at pay).
-      if (printPlan.kitchen.enabled && !printPlan.holdUnpaidKitchen) {
-        for (let copy = 0; copy < printPlan.kitchen.copies; copy++) {
-          const kitchenPrintJob = await this.printJobsService.createPrintJob({
-            organizationId: orgId,
-            orderId: fullOrder.id,
-            jobType: 'kitchen',
-            payload: printPayload,
-          });
-          await this.printQueue.add('print-job', {
-            orgId,
-            type: 'kitchen',
-            payload: printPayload,
-            printJobId: kitchenPrintJob.id,
-          });
-        }
-      }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      this.logger.error(
-        `Failed to enqueue updated kitchen ticket for order ${orderId}: ${message}`,
-      );
-    }
+    // 'update' event — documents whose matrix row has On Update checked print a
+    // corrected copy (payload marked updated).
+    await this.printForEvents(orgId, fullOrder, ['update'], { updated: true });
 
     void this.auditService.log({
       action: 'order.items.update',
@@ -997,72 +994,9 @@ export class OrdersService {
 
     const fullOrder = await this.getOrderByIdForOrg(orgId, orderId);
 
-    // The receipt fires at payment time (pay-later orders skipped it at creation),
-    // and so does the kitchen ticket when the location holds tickets until paid.
-    try {
-      const printPlan = await this.getPrintPlan(fullOrder.locationId);
-      if (printPlan.receipt.enabled || printPlan.holdUnpaidKitchen) {
-        const printPayload = {
-          orderId: fullOrder.id,
-          ticketNumber: fullOrder.ticketNumber ?? undefined,
-          customerName: fullOrder.customerName,
-          customerPhone: fullOrder.customerPhone,
-          subtotal: fullOrder.subtotal ?? undefined,
-          taxAmount: fullOrder.taxAmount ?? undefined,
-          tipAmount: fullOrder.tipAmount ?? undefined,
-          discountAmount: fullOrder.discountAmount ?? undefined,
-          discountName: fullOrder.discountName ?? undefined,
-          totalAmount: fullOrder.totalAmount,
-          orderType: fullOrder.orderType,
-          specialInstructions: fullOrder.specialInstructions,
-          items: fullOrder.items.map((item) => ({
-            menuItemName: item.menuItemName,
-            quantity: item.quantity,
-            price: item.price,
-            modifiers: item.modifiers ?? undefined,
-            notes: item.notes ?? undefined,
-          })),
-          createdAt: fullOrder.createdAt,
-        };
-        if (printPlan.holdUnpaidKitchen && printPlan.kitchen.enabled) {
-          for (let copy = 0; copy < printPlan.kitchen.copies; copy++) {
-            const job = await this.printJobsService.createPrintJob({
-              organizationId: orgId,
-              orderId: fullOrder.id,
-              jobType: 'kitchen',
-              payload: printPayload,
-            });
-            await this.printQueue.add('print-job', {
-              orgId,
-              type: 'kitchen',
-              payload: printPayload,
-              printJobId: job.id,
-            });
-          }
-        }
-        if (printPlan.receipt.enabled) {
-          for (let copy = 0; copy < printPlan.receipt.copies; copy++) {
-            const job = await this.printJobsService.createPrintJob({
-              organizationId: orgId,
-              orderId: fullOrder.id,
-              jobType: 'receipt',
-              payload: printPayload,
-            });
-            await this.printQueue.add('print-job', {
-              orgId,
-              type: 'receipt',
-              payload: printPayload,
-              printJobId: job.id,
-            });
-          }
-        }
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
-      this.logger.error(
-        `Failed to enqueue tickets for paid order ${orderId}: ${msg}`,
-      );
-    }
+    // 'paid' event — typically the receipt, plus the kitchen ticket for
+    // locations that hold tickets until payment.
+    await this.printForEvents(orgId, fullOrder, ['paid']);
 
     void this.auditService.log({
       action: 'order.paid',
