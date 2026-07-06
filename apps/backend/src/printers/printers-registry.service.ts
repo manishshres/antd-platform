@@ -166,40 +166,32 @@ export class PrintersRegistryService {
   }
 
   /**
-   * Sends a restart command to the printer via its MQTT control topic.
-   * Control topic: `restaurant/{orgId}/printer/{printerId}/control`
+   * Resets the printer. These devices consume raw ESC/POS bytes on their print topic —
+   * a JSON payload there is not a command (it gets ignored, or printed as garbage text).
+   * ESC @ (1B 40, "initialize printer") is the standard reset: it clears the buffer and
+   * restores default state, which recovers most hangs. A true firmware reboot is not part
+   * of ESC/POS; vendor-specific control channels can be layered in per model later.
    */
   async restartPrinter(id: string, organizationId: string) {
     const printer = await this.verifyOwnership(id, organizationId);
 
-    const controlTopic = `restaurant/${organizationId}/printer/${id}/control`;
+    const resetBytes = Buffer.from([0x1b, 0x40]); // ESC @
+    const published = printer.topic
+      ? await this.mqttService.publish(printer.topic, resetBytes)
+      : false;
 
-    // HSPOS Cloud Printers often expect a JSON payload for reboot on their main or control topic
-    const restartPayload = {
+    // Also notify the platform control topic in case the device firmware listens there.
+    const controlTopic = `restaurant/${organizationId}/printer/${id}/control`;
+    await this.mqttService.publish(controlTopic, {
       command: 'reboot',
-      cmd: 'reboot',
-      action: 'restart',
       printerId: id,
       ts: new Date().toISOString(),
-    };
+    });
 
-    const topicsToPublish = [controlTopic];
-    if (printer.topic) {
-      topicsToPublish.push(printer.topic);
-      topicsToPublish.push(`${printer.topic}/control`);
-      topicsToPublish.push(`${printer.topic}/request`);
-    }
-
-    let anyPublished = false;
-    for (const topic of topicsToPublish) {
-      const published = await this.mqttService.publish(topic, restartPayload);
-      if (published) anyPublished = true;
-      this.logger.log(
-        `Restart command sent to printer ${id} via topic ${topic} (published: ${published}).`,
-      );
-    }
-
-    return { sent: anyPublished, topics: topicsToPublish };
+    this.logger.log(
+      `Reset (ESC @) sent to printer ${id} via topic ${printer.topic} (published: ${published}).`,
+    );
+    return { sent: published, topic: printer.topic };
   }
 
   /**

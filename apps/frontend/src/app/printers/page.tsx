@@ -292,13 +292,12 @@ export default function PrintersPage() {
       title: "MQTT Topic",
       dataIndex: "topic",
       key: "topic",
-      render: (v: string) => <Text code>{v}</Text>,
-    },
-    {
-      title: "IP Address",
-      dataIndex: "ipAddress",
-      key: "ipAddress",
-      render: (v: string | null) => v || "—",
+      // Topics are long and mostly identical — show the tail; full value on hover.
+      render: (v: string) => (
+        <Tooltip title={v}>
+          <Text code>…{v.slice(-6)}</Text>
+        </Tooltip>
+      ),
     },
     {
       title: "Last Check-in",

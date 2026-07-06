@@ -81,7 +81,6 @@ export default function PrinterDetailPage() {
   const router = useRouter();
   const { token } = theme.useToken();
   const { message } = App.useApp();
-  const [form] = Form.useForm();
 
   const [printer, setPrinter] = useState<Printer | null>(null);
   const [loading, setLoading] = useState(true);
@@ -96,17 +95,7 @@ export default function PrinterDetailPage() {
     api
       .get<Printer>(`/printers/${id}`)
       .then(({ data }) => {
-        if (cancelled) return;
-        setPrinter(data);
-        form.setFieldsValue({
-          name: data.name,
-          topic: data.topic,
-          type: data.type,
-          locationName: data.locationName,
-          model: data.model,
-          ipAddress: data.ipAddress,
-          notes: data.notes,
-        });
+        if (!cancelled) setPrinter(data);
       })
       .catch(() => {
         if (!cancelled) setError("Failed to load the printer.");
@@ -128,7 +117,7 @@ export default function PrinterDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [id, form]);
+  }, [id]);
 
   const handleSave = async (values: Record<string, unknown>) => {
     setSaving(true);
@@ -170,11 +159,18 @@ export default function PrinterDetailPage() {
     {
       title: "Order",
       dataIndex: "orderId",
-      render: (v: string) => (
-        <Text copyable={{ text: v }} style={{ fontFamily: "monospace", fontSize: 12 }}>
-          {v.slice(0, 8)}
-        </Text>
-      ),
+      // Test prints and restart commands have no order attached.
+      render: (v: string | null) =>
+        v ? (
+          <Text
+            copyable={{ text: v }}
+            style={{ fontFamily: "monospace", fontSize: 12 }}
+          >
+            {v.slice(0, 8)}
+          </Text>
+        ) : (
+          <Text type="secondary">—</Text>
+        ),
     },
     { title: "Type", dataIndex: "jobType" },
     {
@@ -254,7 +250,21 @@ export default function PrinterDetailPage() {
       <Row gutter={[token.marginSM, token.marginSM]}>
         <Col xs={24} lg={10}>
           <Card title="Configuration" size="small">
-            <Form form={form} layout="vertical" onFinish={handleSave}>
+            {/* The form only mounts once the printer is loaded, so initialValues
+                are complete — no detached useForm instance (avoids the antd warning). */}
+            <Form
+              layout="vertical"
+              onFinish={handleSave}
+              initialValues={{
+                name: printer.name,
+                topic: printer.topic,
+                type: printer.type,
+                locationName: printer.locationName,
+                model: printer.model,
+                ipAddress: printer.ipAddress,
+                notes: printer.notes,
+              }}
+            >
               <Form.Item
                 name="name"
                 label="Printer Name"
