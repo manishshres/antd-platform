@@ -332,35 +332,28 @@ export class OrdersService {
       createdAt: fullOrder.createdAt,
     };
 
-    // Create print job history records and enqueue print jobs
+    // Create print job history records and enqueue print jobs, honoring the location's
+    // print settings (kitchen/receipt enable + copies).
     try {
-      const kitchenPrintJob = await this.printJobsService.createPrintJob({
-        organizationId: orgId,
-        orderId: fullOrder.id,
-        jobType: 'kitchen',
-        payload: printPayload,
-      });
-
-      const receiptPrintJob = await this.printJobsService.createPrintJob({
-        organizationId: orgId,
-        orderId: fullOrder.id,
-        jobType: 'receipt',
-        payload: printPayload,
-      });
-
-      await this.printQueue.add('print-job', {
-        orgId,
-        type: 'kitchen',
-        payload: printPayload,
-        printJobId: kitchenPrintJob.id,
-      });
-
-      await this.printQueue.add('print-job', {
-        orgId,
-        type: 'receipt',
-        payload: printPayload,
-        printJobId: receiptPrintJob.id,
-      });
+      const printPlan = await this.getPrintPlan(fullOrder.locationId);
+      for (const jobType of ['kitchen', 'receipt'] as const) {
+        const cfg = printPlan[jobType];
+        if (!cfg.enabled) continue;
+        for (let copy = 0; copy < cfg.copies; copy++) {
+          const job = await this.printJobsService.createPrintJob({
+            organizationId: orgId,
+            orderId: fullOrder.id,
+            jobType,
+            payload: printPayload,
+          });
+          await this.printQueue.add('print-job', {
+            orgId,
+            type: jobType,
+            payload: printPayload,
+            printJobId: job.id,
+          });
+        }
+      }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unknown error';
       this.logger.error(
@@ -556,6 +549,37 @@ export class OrdersService {
     });
 
     return { resolvedItems, subtotal };
+  }
+
+  /**
+   * Per-location printing behavior with safe defaults: both ticket types enabled,
+   * one copy each; copies clamped to 1–5.
+   */
+  private async getPrintPlan(locationId: string | null | undefined) {
+    const clampCopies = (v: unknown) =>
+      Math.min(5, Math.max(1, Math.round(Number(v)) || 1));
+    if (!locationId) {
+      return {
+        kitchen: { enabled: true, copies: 1 },
+        receipt: { enabled: true, copies: 1 },
+      };
+    }
+    const [loc] = await this.db
+      .select({ printSettings: schema.locations.printSettings })
+      .from(schema.locations)
+      .where(eq(schema.locations.id, locationId))
+      .limit(1);
+    const s = (loc?.printSettings ?? {}) as Record<string, unknown>;
+    return {
+      kitchen: {
+        enabled: s.kitchenEnabled !== false,
+        copies: clampCopies(s.kitchenCopies),
+      },
+      receipt: {
+        enabled: s.receiptEnabled !== false,
+        copies: clampCopies(s.receiptCopies),
+      },
+    };
   }
 
   /**
@@ -880,18 +904,23 @@ export class OrdersService {
         })),
         createdAt: fullOrder.createdAt,
       };
-      const kitchenPrintJob = await this.printJobsService.createPrintJob({
-        organizationId: orgId,
-        orderId: fullOrder.id,
-        jobType: 'kitchen',
-        payload: printPayload,
-      });
-      await this.printQueue.add('print-job', {
-        orgId,
-        type: 'kitchen',
-        payload: printPayload,
-        printJobId: kitchenPrintJob.id,
-      });
+      const printPlan = await this.getPrintPlan(fullOrder.locationId);
+      if (printPlan.kitchen.enabled) {
+        for (let copy = 0; copy < printPlan.kitchen.copies; copy++) {
+          const kitchenPrintJob = await this.printJobsService.createPrintJob({
+            organizationId: orgId,
+            orderId: fullOrder.id,
+            jobType: 'kitchen',
+            payload: printPayload,
+          });
+          await this.printQueue.add('print-job', {
+            orgId,
+            type: 'kitchen',
+            payload: printPayload,
+            printJobId: kitchenPrintJob.id,
+          });
+        }
+      }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unknown error';
       this.logger.error(

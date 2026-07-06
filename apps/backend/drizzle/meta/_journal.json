@@ -57,6 +57,13 @@
       "when": 1783300686038,
       "tag": "0007_order_discount_id",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1783301432875,
+      "tag": "0008_print_settings",
+      "breakpoints": true
     }
   ]
 }

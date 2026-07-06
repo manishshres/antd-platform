@@ -20,6 +20,12 @@ export interface Location {
     menuBucket?: string;
   };
   taxRateBps?: number;
+  printSettings?: {
+    kitchenEnabled?: boolean;
+    kitchenCopies?: number;
+    receiptEnabled?: boolean;
+    receiptCopies?: number;
+  };
   telnyxAssistantId?: string | null;
   menuLastSyncedAt?: string | null;
 }

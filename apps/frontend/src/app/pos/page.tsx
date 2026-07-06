@@ -774,34 +774,55 @@ function PosRegister() {
                       display: "flex",
                       flexDirection: "column",
                       justifyContent: "space-between",
-                      transition: "border-color 0.15s, box-shadow 0.15s",
+                      overflow: "hidden",
+                      transition:
+                        "border-color 0.15s, box-shadow 0.15s, transform 0.15s",
                     }}
                     onMouseEnter={(e) => {
                       if (!item.isAvailable) return;
                       e.currentTarget.style.borderColor = token.colorPrimary;
-                      e.currentTarget.style.boxShadow =
-                        token.boxShadowTertiary;
+                      e.currentTarget.style.boxShadow = token.boxShadowSecondary;
+                      e.currentTarget.style.transform = "translateY(-2px)";
                     }}
                     onMouseLeave={(e) => {
                       e.currentTarget.style.borderColor =
                         token.colorBorderSecondary;
                       e.currentTarget.style.boxShadow = "none";
+                      e.currentTarget.style.transform = "none";
                     }}
                   >
-                    <Space size={4} align="start">
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "flex-start",
+                        gap: 4,
+                        minWidth: 0,
+                      }}
+                    >
                       {item.isFavorite && (
                         <StarFilled
-                          style={{ color: token.colorWarning, fontSize: 12 }}
+                          style={{
+                            color: token.colorWarning,
+                            fontSize: 12,
+                            flexShrink: 0,
+                            marginTop: 4,
+                          }}
                         />
                       )}
+                      {/* Two-line clamp keeps long names inside the tile */}
                       <Text
                         strong
-                        style={{ fontSize: 14, lineHeight: 1.35 }}
+                        style={{
+                          fontSize: 14,
+                          lineHeight: 1.35,
+                          flex: 1,
+                          minWidth: 0,
+                        }}
                         ellipsis={{ tooltip: item.name }}
                       >
                         {item.name}
                       </Text>
-                    </Space>
+                    </div>
                     <div
                       style={{
                         display: "flex",

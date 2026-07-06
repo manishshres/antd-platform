@@ -2,6 +2,7 @@ import {
   IsString,
   IsNotEmpty,
   IsOptional,
+  IsObject,
   MaxLength,
   IsInt,
   Min,
@@ -67,4 +68,12 @@ export class CreateLocationDto {
   @Min(0)
   @Max(10000)
   taxRateBps?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Printing behavior: { kitchenEnabled, kitchenCopies, receiptEnabled, receiptCopies }',
+  })
+  @IsOptional()
+  @IsObject()
+  printSettings?: Record<string, unknown>;
 }

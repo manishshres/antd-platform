@@ -58,6 +58,9 @@ export const locations = pgTable(
     // Sales tax rate in basis points (825 = 8.25%). Single flat rate per location for now;
     // a tax_rates table replaces this when per-item/channel rules are needed (see POS plan).
     taxRateBps: integer('tax_rate_bps').default(0).notNull(),
+    // Per-location printing behavior: { kitchenEnabled, kitchenCopies, receiptEnabled,
+    // receiptCopies }. Null = defaults (both enabled, 1 copy each).
+    printSettings: jsonb('print_settings'),
     // Telnyx provisioning (per-location)
     phoneNumber: varchar('phone_number', { length: 50 }),
     telnyxPhoneNumberId: varchar('telnyx_phone_number_id', { length: 255 }),

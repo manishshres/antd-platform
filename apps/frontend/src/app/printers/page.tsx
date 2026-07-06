@@ -33,6 +33,7 @@ import {
 } from "@ant-design/icons";
 import { api } from "@/lib/api";
 import PageHeader from "@/components/PageHeader";
+import PrintSettingsCard from "@/components/PrintSettingsCard";
 import { useLocation } from "@/contexts/LocationContext";
 
 const { Title, Text } = Typography;
@@ -487,6 +488,11 @@ export default function PrintersPage() {
                 />
               </Card>
             )
+          },
+          {
+            key: "print-settings",
+            label: "Print Settings",
+            children: <PrintSettingsCard />,
           },
           {
             key: "dlq",
