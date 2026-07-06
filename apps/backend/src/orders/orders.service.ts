@@ -10,7 +10,7 @@ import { OnEvent } from '@nestjs/event-emitter';
 import { DRIZZLE } from '../database/database.module';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../database/schema';
-import { eq, and, inArray, count, isNull, desc } from 'drizzle-orm';
+import { eq, and, inArray, count, isNull, desc, gte, sql } from 'drizzle-orm';
 import { BillingService } from '../billing/billing.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { GetOrdersDto } from './dto/get-orders.dto';
@@ -249,6 +249,9 @@ export class OrdersService {
 
     // Insert order and items within a transaction
     const orderId = await this.db.transaction(async (tx) => {
+      const ticketNumber = resolvedLocationId
+        ? await this.nextTicketNumber(tx, resolvedLocationId)
+        : null;
       const newOrders = await tx
         .insert(schema.orders)
         .values({
@@ -262,6 +265,8 @@ export class OrdersService {
           totalAmount,
           orderType: orderType ?? null,
           specialInstructions: specialInstructions ?? null,
+          source: 'ai_phone',
+          ticketNumber,
         })
         .returning();
 
@@ -305,6 +310,7 @@ export class OrdersService {
     // Format print job payload
     const printPayload = {
       orderId: fullOrder.id,
+      ticketNumber: fullOrder.ticketNumber ?? undefined,
       customerName: fullOrder.customerName,
       customerPhone: fullOrder.customerPhone,
       subtotal: fullOrder.subtotal ?? undefined,
@@ -396,50 +402,22 @@ export class OrdersService {
    * and records how the order was paid ('cash' | 'card' — detailed payment processing is a later
    * phase). POS orders are paid up front, so they enter the pipeline as 'confirmed'.
    */
-  async createPosOrder(
-    user: CurrentUserPayload,
-    dto: {
-      locationId: string;
-      customerName?: string;
-      customerPhone?: string;
-      orderType?: string;
-      specialInstructions?: string;
-      paymentMethod: string;
-      items: {
-        menuItemId: string;
-        quantity: number;
-        optionIds?: string[];
-        notes?: string;
-      }[];
-    },
+  /**
+   * Price a POS cart server-side: base item prices and modifier option adjustments come from
+   * the DB (org-scoped, available, non-deleted), option→item attachment is validated, and
+   * required modifier groups are enforced. Snapshots include the optionId so an order can be
+   * re-opened and edited in the register later.
+   */
+  private async priceCartItems(
+    orgId: string,
+    items: {
+      menuItemId: string;
+      quantity: number;
+      optionIds?: string[];
+      notes?: string;
+    }[],
   ) {
-    const orgId = await this.billingService.getRequiredOrg(user);
-    if (dto.items.length === 0) {
-      throw new BadRequestException('Order must contain at least one item.');
-    }
-
-    // Validate the location belongs to this org and pick up its tax rate.
-    const [location] = await this.db
-      .select({
-        id: schema.locations.id,
-        taxRateBps: schema.locations.taxRateBps,
-      })
-      .from(schema.locations)
-      .where(
-        and(
-          eq(schema.locations.id, dto.locationId),
-          eq(schema.locations.organizationId, orgId),
-          isNull(schema.locations.deletedAt),
-        ),
-      )
-      .limit(1);
-    if (!location) {
-      throw new NotFoundException('Location not found in your organization.');
-    }
-
-    // Resolve menu items scoped to the org, available and non-deleted only (same guard as the
-    // AI-webhook path — items from other tenants must never price into an order).
-    const itemIds = [...new Set(dto.items.map((i) => i.menuItemId))];
+    const itemIds = [...new Set(items.map((i) => i.menuItemId))];
     const dbItems = await this.db
       .select({
         id: schema.menuItems.id,
@@ -462,9 +440,7 @@ export class OrdersService {
     const dbItemsMap = new Map(dbItems.map((i) => [i.id, i]));
 
     // Resolve every selected modifier option in one batch, org-scoped through its group.
-    const allOptionIds = [
-      ...new Set(dto.items.flatMap((i) => i.optionIds ?? [])),
-    ];
+    const allOptionIds = [...new Set(items.flatMap((i) => i.optionIds ?? []))];
     const optionRows = allOptionIds.length
       ? await this.db
           .select({
@@ -520,7 +496,7 @@ export class OrdersService {
     }
 
     let subtotal = 0;
-    const resolvedItems = dto.items.map((line) => {
+    const resolvedItems = items.map((line) => {
       const menuItem = dbItemsMap.get(line.menuItemId);
       if (!menuItem) {
         throw new NotFoundException(
@@ -546,6 +522,7 @@ export class OrdersService {
         }
         selectedGroupIds.add(opt.modifierId);
         return {
+          optionId: opt.id,
           modifier: opt.modifierName,
           option: opt.name,
           priceAdjustment: opt.priceAdjustment,
@@ -574,12 +551,85 @@ export class OrdersService {
       };
     });
 
+    return { resolvedItems, subtotal };
+  }
+
+  /** Next per-location daily ticket number ("Order #47"). Runs inside the insert transaction. */
+  private async nextTicketNumber(
+    tx: Pick<NodePgDatabase<typeof schema>, 'select'>,
+    locationId: string,
+  ): Promise<number> {
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const [row] = await tx
+      .select({
+        max: sql<number>`coalesce(max(${schema.orders.ticketNumber}), 0)`.mapWith(
+          Number,
+        ),
+      })
+      .from(schema.orders)
+      .where(
+        and(
+          eq(schema.orders.locationId, locationId),
+          gte(schema.orders.createdAt, startOfDay),
+        ),
+      );
+    return (row?.max ?? 0) + 1;
+  }
+
+  async createPosOrder(
+    user: CurrentUserPayload,
+    dto: {
+      locationId: string;
+      customerName?: string;
+      customerPhone?: string;
+      orderType?: string;
+      specialInstructions?: string;
+      paymentMethod: string;
+      items: {
+        menuItemId: string;
+        quantity: number;
+        optionIds?: string[];
+        notes?: string;
+      }[];
+    },
+  ) {
+    const orgId = await this.billingService.getRequiredOrg(user);
+    if (dto.items.length === 0) {
+      throw new BadRequestException('Order must contain at least one item.');
+    }
+
+    // Validate the location belongs to this org and pick up its tax rate.
+    const [location] = await this.db
+      .select({
+        id: schema.locations.id,
+        taxRateBps: schema.locations.taxRateBps,
+      })
+      .from(schema.locations)
+      .where(
+        and(
+          eq(schema.locations.id, dto.locationId),
+          eq(schema.locations.organizationId, orgId),
+          isNull(schema.locations.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (!location) {
+      throw new NotFoundException('Location not found in your organization.');
+    }
+
+    const { resolvedItems, subtotal } = await this.priceCartItems(
+      orgId,
+      dto.items,
+    );
+
     // Tax computed server-side from the location's flat rate (basis points).
     const taxAmount = Math.round((subtotal * location.taxRateBps) / 10000);
     const totalAmount = subtotal + taxAmount;
 
     const now = new Date();
     const orderId = await this.db.transaction(async (tx) => {
+      const ticketNumber = await this.nextTicketNumber(tx, dto.locationId);
       const [order] = await tx
         .insert(schema.orders)
         .values({
@@ -596,6 +646,7 @@ export class OrdersService {
           source: 'pos',
           paymentMethod: dto.paymentMethod,
           paidAt: now,
+          ticketNumber,
         })
         .returning();
 
@@ -626,6 +677,194 @@ export class OrdersService {
       source: 'pos',
       paymentMethod: dto.paymentMethod,
     });
+  }
+
+  /**
+   * Replace the items (and optionally customer/type/notes) of an order that has not been paid
+   * yet — the AI-voice → POS handoff: phone orders arrive unpaid, the cashier opens them in the
+   * register, adjusts, and takes payment. Re-prices everything server-side and fires a corrected
+   * kitchen ticket marked "UPDATED".
+   */
+  async updateOrderItems(
+    user: CurrentUserPayload,
+    orderId: string,
+    dto: {
+      customerName?: string;
+      orderType?: string;
+      specialInstructions?: string;
+      items: {
+        menuItemId: string;
+        quantity: number;
+        optionIds?: string[];
+        notes?: string;
+      }[];
+    },
+  ) {
+    const orgId = await this.billingService.getRequiredOrg(user);
+    if (dto.items.length === 0) {
+      throw new BadRequestException('Order must contain at least one item.');
+    }
+
+    const order = await this.getOrderByIdForOrg(orgId, orderId);
+    if (order.paidAt) {
+      throw new BadRequestException(
+        'Paid orders cannot be edited. Use a refund/void instead.',
+      );
+    }
+    if (!['pending', 'confirmed'].includes(order.status)) {
+      throw new BadRequestException(
+        `Orders in status "${order.status}" can no longer be edited.`,
+      );
+    }
+
+    const { resolvedItems, subtotal } = await this.priceCartItems(
+      orgId,
+      dto.items,
+    );
+
+    let taxRateBps = 0;
+    if (order.locationId) {
+      const [loc] = await this.db
+        .select({ taxRateBps: schema.locations.taxRateBps })
+        .from(schema.locations)
+        .where(eq(schema.locations.id, order.locationId))
+        .limit(1);
+      taxRateBps = loc?.taxRateBps ?? 0;
+    }
+    const taxAmount = Math.round((subtotal * taxRateBps) / 10000);
+    const totalAmount = subtotal + taxAmount;
+
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(schema.orders)
+        .set({
+          subtotal,
+          taxAmount,
+          totalAmount,
+          ...(dto.customerName !== undefined
+            ? { customerName: dto.customerName.trim() || 'Walk-in' }
+            : {}),
+          ...(dto.orderType !== undefined ? { orderType: dto.orderType } : {}),
+          ...(dto.specialInstructions !== undefined
+            ? { specialInstructions: dto.specialInstructions || null }
+            : {}),
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.orders.id, orderId));
+
+      await tx
+        .delete(schema.orderItems)
+        .where(eq(schema.orderItems.orderId, orderId));
+      await tx.insert(schema.orderItems).values(
+        resolvedItems.map((item) => ({
+          orderId,
+          menuItemId: item.menuItemId,
+          quantity: item.quantity,
+          price: item.price,
+          modifiers: item.modifiers,
+          notes: item.notes,
+        })),
+      );
+    });
+
+    const fullOrder = await this.getOrderByIdForOrg(orgId, orderId);
+
+    // Fire a corrected kitchen ticket so the line knows the order changed.
+    try {
+      const printPayload = {
+        orderId: fullOrder.id,
+        ticketNumber: fullOrder.ticketNumber ?? undefined,
+        updated: true,
+        customerName: fullOrder.customerName,
+        customerPhone: fullOrder.customerPhone,
+        subtotal: fullOrder.subtotal ?? undefined,
+        taxAmount: fullOrder.taxAmount ?? undefined,
+        totalAmount: fullOrder.totalAmount,
+        orderType: fullOrder.orderType,
+        specialInstructions: fullOrder.specialInstructions,
+        items: fullOrder.items.map((item) => ({
+          menuItemName: item.menuItemName,
+          quantity: item.quantity,
+          price: item.price,
+          modifiers: item.modifiers ?? undefined,
+          notes: item.notes ?? undefined,
+        })),
+        createdAt: fullOrder.createdAt,
+      };
+      const kitchenPrintJob = await this.printJobsService.createPrintJob({
+        organizationId: orgId,
+        orderId: fullOrder.id,
+        jobType: 'kitchen',
+        payload: printPayload,
+      });
+      await this.printQueue.add('print-job', {
+        orgId,
+        type: 'kitchen',
+        payload: printPayload,
+        printJobId: kitchenPrintJob.id,
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      this.logger.error(
+        `Failed to enqueue updated kitchen ticket for order ${orderId}: ${message}`,
+      );
+    }
+
+    void this.auditService.log({
+      action: 'order.items.update',
+      userId: user.id,
+      organizationId: orgId,
+      entityType: 'order',
+      entityId: orderId,
+      previousValue: { totalAmount: order.totalAmount, items: order.items },
+      newValue: { subtotal, taxAmount, totalAmount, items: resolvedItems },
+    });
+
+    this.eventsGateway.emitToOrganization(orgId, 'order.updated', fullOrder);
+    return fullOrder;
+  }
+
+  /**
+   * Record payment on an unpaid order (cash | card — detailed payment processing lands later)
+   * and move a pending order into the kitchen pipeline.
+   */
+  async payOrder(
+    user: CurrentUserPayload,
+    orderId: string,
+    paymentMethod: string,
+  ) {
+    const orgId = await this.billingService.getRequiredOrg(user);
+    const order = await this.getOrderByIdForOrg(orgId, orderId);
+    if (order.paidAt) {
+      throw new BadRequestException('This order has already been paid.');
+    }
+    if (order.status === 'cancelled') {
+      throw new BadRequestException('Cancelled orders cannot be paid.');
+    }
+
+    await this.db
+      .update(schema.orders)
+      .set({
+        paymentMethod,
+        paidAt: new Date(),
+        status: order.status === 'pending' ? 'confirmed' : order.status,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.orders.id, orderId));
+
+    const fullOrder = await this.getOrderByIdForOrg(orgId, orderId);
+
+    void this.auditService.log({
+      action: 'order.paid',
+      userId: user.id,
+      organizationId: orgId,
+      entityType: 'order',
+      entityId: orderId,
+      newValue: { paymentMethod, totalAmount: fullOrder.totalAmount },
+    });
+
+    this.eventsGateway.emitToOrganization(orgId, 'order.updated', fullOrder);
+    return fullOrder;
   }
 
   /**

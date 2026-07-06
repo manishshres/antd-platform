@@ -31,6 +31,8 @@ import {
   FolderAddOutlined,
   ReloadOutlined,
   UndoOutlined,
+  StarFilled,
+  StarOutlined,
   MinusCircleOutlined,
   EditOutlined,
   SyncOutlined,
@@ -82,6 +84,7 @@ interface MenuItem {
   price: number;
   categoryId: string;
   isAvailable: boolean;
+  isFavorite?: boolean;
   imageUrl?: string;
   sortOrder: number;
   deletedAt?: string | null;
@@ -105,9 +108,10 @@ interface SortableMenuItemProps {
   onDelete: (id: string, name: string) => void;
   onRestore: (id: string) => void;
   onToggleAvailability: (item: MenuItem) => void;
+  onToggleFavorite: (item: MenuItem) => void;
 }
 
-function SortableMenuItem({ item, isAdmin, onEdit, onDelete, onRestore, onToggleAvailability }: SortableMenuItemProps) {
+function SortableMenuItem({ item, isAdmin, onEdit, onDelete, onRestore, onToggleAvailability, onToggleFavorite }: SortableMenuItemProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: item.id });
   const { token } = theme.useToken();
@@ -154,6 +158,15 @@ function SortableMenuItem({ item, isAdmin, onEdit, onDelete, onRestore, onToggle
           </Text>
           {isAdmin && (
             <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+              <Tooltip title={item.isFavorite ? 'Remove from POS favorites' : 'Pin to POS favorites'}>
+                <Button
+                  size="small"
+                  type="text"
+                  aria-label={item.isFavorite ? `Unpin ${item.name} from favorites` : `Pin ${item.name} to favorites`}
+                  icon={item.isFavorite ? <StarFilled style={{ color: token.colorWarning }} /> : <StarOutlined />}
+                  onClick={(e) => { e.stopPropagation(); onToggleFavorite(item); }}
+                />
+              </Tooltip>
               <Tooltip title={item.isAvailable ? 'Mark unavailable' : 'Mark available'}>
                 <Switch size="small" checked={item.isAvailable} onChange={() => onToggleAvailability(item)} onClick={(_, e) => e.stopPropagation()} />
               </Tooltip>
@@ -342,6 +355,10 @@ export default function MenuEditorPage() {
     try { await api.patch(`/menus/items/${item.id}`, { isAvailable: !item.isAvailable }); load(); } catch { message.error("Failed to update availability."); }
   };
 
+  const handleToggleFavorite = async (item: MenuItem) => {
+    try { await api.patch(`/menus/items/${item.id}`, { isFavorite: !item.isFavorite }); load(); } catch { message.error("Failed to update favorite."); }
+  };
+
   const openEditModal = (item: MenuItem) => {
     setSelectedCatId(item.categoryId); setEditingItem(item);
     itemForm.setFieldsValue({ name: item.name, description: item.description, price: item.price / 100, imageUrl: item.imageUrl, isAvailable: item.isAvailable, modifierIds: item.modifiers?.map(m => m.id) || [] });
@@ -507,7 +524,7 @@ export default function MenuEditorPage() {
                 <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(e) => handleDragEnd(e, selectedItems, selectedCat.id)}>
                   <SortableContext items={selectedItems.map(i => i.id)} strategy={verticalListSortingStrategy}>
                     {selectedItems.map(item => (
-                      <SortableMenuItem key={item.id} item={item} isAdmin={isAdmin} onEdit={openEditModal} onDelete={handleDeleteItem} onRestore={handleRestoreItem} onToggleAvailability={handleToggleAvailability} />
+                      <SortableMenuItem key={item.id} item={item} isAdmin={isAdmin} onEdit={openEditModal} onDelete={handleDeleteItem} onRestore={handleRestoreItem} onToggleAvailability={handleToggleAvailability} onToggleFavorite={handleToggleFavorite} />
                     ))}
                   </SortableContext>
                 </DndContext>

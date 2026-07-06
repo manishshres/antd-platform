@@ -743,6 +743,7 @@ export class MenusService {
       categoryId?: string;
       imageUrl?: string;
       isAvailable?: boolean;
+      isFavorite?: boolean;
       sortOrder?: number;
       availabilitySchedule?: unknown;
     },

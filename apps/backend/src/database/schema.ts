@@ -301,6 +301,8 @@ export const menuItems = pgTable(
       onDelete: 'cascade',
     }),
     isAvailable: boolean('is_available').default(true).notNull(),
+    // Pinned to the POS ⭐ Favorites strip — most restaurants ring up the same 20-30 items.
+    isFavorite: boolean('is_favorite').default(false).notNull(),
     imageUrl: varchar('image_url', { length: 1024 }),
     sortOrder: integer('sort_order').default(0).notNull(),
     availabilitySchedule: jsonb('availability_schedule'), // e.g. [{ day: 1, startTime: '09:00', endTime: '17:00' }]
@@ -389,6 +391,8 @@ export const orders = pgTable(
     source: varchar('source', { length: 20 }),
     paymentMethod: varchar('payment_method', { length: 20 }),
     paidAt: timestamp('paid_at'),
+    // Human-friendly per-location daily sequence ("Order #47") for tickets and callouts.
+    ticketNumber: integer('ticket_number'),
     deletedAt: timestamp('deleted_at'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),

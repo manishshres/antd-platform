@@ -149,6 +149,14 @@ describe('OrdersService', () => {
       jest
         .spyOn(service, 'getOrderByIdForOrg')
         .mockResolvedValueOnce(mockOrder as any);
+      // The daily ticket sequence runs its own select inside the transaction; the chained
+      // mockDb can't distinguish that terminal .where() from the earlier chained ones.
+      jest
+        .spyOn(
+          service as unknown as { nextTicketNumber: () => Promise<number> },
+          'nextTicketNumber',
+        )
+        .mockResolvedValueOnce(1);
 
       const result = await service.createOrderForOrg(
         'org-id',

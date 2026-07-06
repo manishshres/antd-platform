@@ -32,6 +32,11 @@ export class UpdateItemDto {
   @IsBoolean()
   isAvailable?: boolean;
 
+  @ApiPropertyOptional({ description: 'Pin to the POS Favorites strip' })
+  @IsOptional()
+  @IsBoolean()
+  isFavorite?: boolean;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsNumber()

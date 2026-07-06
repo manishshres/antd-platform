@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Patch,
   Param,
   Body,
@@ -20,6 +21,8 @@ import {
 import { OrdersService } from './orders.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { CreatePosOrderDto } from './dto/create-pos-order.dto';
+import { UpdateOrderItemsDto } from './dto/update-order-items.dto';
+import { PayOrderDto } from './dto/pay-order.dto';
 import { UpdateStatusDto } from './dto/update-status.dto';
 import { PrintOrderDto } from './dto/print-order.dto';
 import { GetOrdersDto } from './dto/get-orders.dto';
@@ -98,6 +101,40 @@ export class OrdersController {
     @Body() dto: CreatePosOrderDto,
   ): Promise<unknown> {
     return this.ordersService.createPosOrder(user, dto);
+  }
+
+  @Put(':id/items')
+  @Roles('user', 'manager', 'admin', 'sysadmin')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Replace the items of an unpaid order (POS edit / AI handoff)',
+  })
+  @ApiResponse({ status: 200, description: 'Order updated and re-priced.' })
+  @ApiResponse({ status: 400, description: 'Order already paid or closed.' })
+  @ApiResponse({ status: 404, description: 'Order not found.' })
+  async updateOrderItems(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('id') id: string,
+    @Body() dto: UpdateOrderItemsDto,
+  ): Promise<unknown> {
+    if (!id) throw new BadRequestException('Order ID is required.');
+    return this.ordersService.updateOrderItems(user, id, dto);
+  }
+
+  @Post(':id/pay')
+  @Roles('user', 'manager', 'admin', 'sysadmin')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Record payment (cash or card) on an unpaid order' })
+  @ApiResponse({ status: 200, description: 'Order marked as paid.' })
+  @ApiResponse({ status: 400, description: 'Order already paid or cancelled.' })
+  @ApiResponse({ status: 404, description: 'Order not found.' })
+  async payOrder(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('id') id: string,
+    @Body() dto: PayOrderDto,
+  ): Promise<unknown> {
+    if (!id) throw new BadRequestException('Order ID is required.');
+    return this.ordersService.payOrder(user, id, dto.paymentMethod);
   }
 
   @Patch(':id/status')

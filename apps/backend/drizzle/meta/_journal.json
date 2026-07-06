@@ -36,6 +36,13 @@
       "when": 1783289591597,
       "tag": "0004_tax",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1783292364688,
+      "tag": "0005_pos_favorites_tickets",
+      "breakpoints": true
     }
   ]
 }

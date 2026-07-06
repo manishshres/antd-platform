@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Table,
   Tag,
@@ -14,12 +15,14 @@ import {
   Divider,
   Input,
   Select,
+  Tooltip,
   theme,
   App,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import {
   PrinterOutlined,
+  ShopOutlined,
 } from "@ant-design/icons";
 import { api } from "@/lib/api";
 import PageHeader from "@/components/PageHeader";
@@ -40,10 +43,14 @@ interface OrderItem {
 
 interface Order {
   id: string;
+  ticketNumber?: number | null;
   customerName: string;
   customerPhone: string;
   status: string; // 'pending', 'preparing', 'ready', 'completed', 'cancelled'
   totalAmount: number; // in cents
+  source?: string | null;
+  paymentMethod?: string | null;
+  paidAt?: string | null;
   createdAt: string;
   items?: OrderItem[];
 }
@@ -74,6 +81,7 @@ interface PaginatedOrders {
 
 export default function OrdersPage() {
   const { message, notification } = App.useApp();
+  const router = useRouter();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -255,6 +263,23 @@ export default function OrdersPage() {
 
   const columns: ColumnsType<Order> = [
     {
+      title: "Order",
+      dataIndex: "ticketNumber",
+      width: 90,
+      render: (v: number | null | undefined, record: Order) => (
+        <Space size={4} direction='vertical'>
+          <Text strong>{v != null ? `#${v}` : `#${record.id.slice(0, 6)}`}</Text>
+          {record.source === "pos" ? (
+            <Tag style={{ margin: 0 }}>POS</Tag>
+          ) : record.source === "ai_phone" ? (
+            <Tag color='blue' style={{ margin: 0 }}>
+              AI
+            </Tag>
+          ) : null}
+        </Space>
+      ),
+    },
+    {
       title: "Customer",
       dataIndex: "customerName",
       render: (v: string, record: Order) => (
@@ -303,9 +328,26 @@ export default function OrdersPage() {
       key: "action",
       align: "center",
       render: (_: unknown, record: Order) => (
-        <Button size='small' onClick={() => viewOrder(record)}>
-          Details
-        </Button>
+        <Space size={4}>
+          <Button size='small' onClick={() => viewOrder(record)}>
+            Details
+          </Button>
+          {!record.paidAt &&
+            ["pending", "confirmed"].includes(record.status) && (
+              <Tooltip title='Open this unpaid order in the register to edit items and take payment'>
+                <Button
+                  size='small'
+                  type='primary'
+                  ghost
+                  icon={<ShopOutlined />}
+                  aria-label={`Open order in POS`}
+                  onClick={() => router.push(`/pos?orderId=${record.id}`)}
+                >
+                  Open in POS
+                </Button>
+              </Tooltip>
+            )}
+        </Space>
       ),
     },
   ];
