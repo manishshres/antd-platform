@@ -18,6 +18,7 @@ import {
   Skeleton,
   Space,
   Tag,
+  Tooltip,
   Typography,
   theme,
 } from "antd";
@@ -190,6 +191,9 @@ function PosRegister() {
   const [tenderOpen, setTenderOpen] = useState(false);
   const [showCustomer, setShowCustomer] = useState(false);
   const [showNote, setShowNote] = useState(false);
+  // Tender payment step: choose method, or the cash-tendered/change screen.
+  const [payStep, setPayStep] = useState<"select" | "cash">("select");
+  const [cashReceived, setCashReceived] = useState<number | null>(null); // dollars
 
   // Unpaid orders (AI phone orders awaiting in-store payment, held orders, ...)
   const [openOrders, setOpenOrders] = useState<OpenOrderRow[]>([]);
@@ -397,6 +401,8 @@ function PosRegister() {
     setTenderOpen(false);
     setShowCustomer(false);
     setShowNote(false);
+    setPayStep("select");
+    setCashReceived(null);
   };
 
   const buildLine = (
@@ -552,26 +558,49 @@ function PosRegister() {
       notes: l.notes,
     }));
 
-  const saveChanges = async () => {
-    if (!editingOrder || cart.length === 0) return;
+  /**
+   * Save without paying: new carts become unpaid orders (kitchen fires, receipt
+   * waits), edited orders get their changes persisted. Either way the register
+   * clears and the order waits in Open Orders until it's charged.
+   */
+  const saveOrder = async () => {
+    if (!selectedLocationId || cart.length === 0) return;
     setSaving(true);
     try {
-      await api.put(`/orders/${editingOrder.id}/items`, {
-        customerName: customerName.trim() || undefined,
-        orderType,
-        specialInstructions: orderNotes.trim() || undefined,
-        discountId: appliedDiscountId ?? undefined,
-        items: cartPayloadItems(),
-      });
-      message.success(
-        `Order ${orderLabel(editingOrder)} updated — corrected ticket sent to kitchen.`,
-        5,
-      );
+      if (editingOrder) {
+        await api.put(`/orders/${editingOrder.id}/items`, {
+          customerName: customerName.trim() || undefined,
+          orderType,
+          specialInstructions: orderNotes.trim() || undefined,
+          discountId: appliedDiscountId ?? undefined,
+          items: cartPayloadItems(),
+        });
+        message.success(
+          `Order ${orderLabel(editingOrder)} updated — corrected ticket sent to kitchen.`,
+          5,
+        );
+      } else {
+        const res = await api.post<{ ticketNumber?: number | null; id: string }>(
+          "/orders/pos",
+          {
+            locationId: selectedLocationId,
+            orderType,
+            customerName: customerName.trim() || undefined,
+            specialInstructions: orderNotes.trim() || undefined,
+            discountId: appliedDiscountId ?? undefined,
+            items: cartPayloadItems(),
+          },
+        );
+        message.success(
+          `Order ${orderLabel(res.data)} saved — kitchen ticket sent. Charge it later from Open Orders.`,
+          5,
+        );
+      }
       resetRegister();
       loadOpenOrders();
-      router.replace("/pos");
+      if (editingOrder) router.replace("/pos");
     } catch {
-      message.error("Failed to update the order.");
+      message.error("Failed to save the order.");
     } finally {
       setSaving(false);
     }
@@ -1161,29 +1190,33 @@ function PosRegister() {
               </Text>
             </div>
           )}
-          {editingOrder && (
+          <div style={{ display: "flex", gap: 8 }}>
             <Button
+              type="primary"
               size="large"
-              icon={<SaveOutlined />}
-              disabled={cart.length === 0 || charging !== null}
-              loading={saving}
-              onClick={saveChanges}
-              aria-label="Save order changes"
-              style={{ marginBottom: token.marginXS }}
+              disabled={cart.length === 0 || saving}
+              onClick={() => {
+                setPayStep("select");
+                setCashReceived(null);
+                setTenderOpen(true);
+              }}
+              aria-label={`Charge ${fmtMoney(total)}`}
+              style={{ flex: 1, height: 60, fontSize: 18, fontWeight: 600 }}
             >
-              Save Changes (kitchen re-fires)
+              Charge {cart.length > 0 ? fmtMoney(total) : ""}
             </Button>
-          )}
-          <Button
-            type="primary"
-            size="large"
-            disabled={cart.length === 0 || saving}
-            onClick={() => setTenderOpen(true)}
-            aria-label={`Charge ${fmtMoney(total)}`}
-            style={{ height: 60, fontSize: 18, fontWeight: 600 }}
-          >
-            Charge {cart.length > 0 ? fmtMoney(total) : ""}
-          </Button>
+            <Tooltip title="Save for later — pay from Open Orders">
+              <Button
+                size="large"
+                icon={<SaveOutlined />}
+                disabled={cart.length === 0 || charging !== null}
+                loading={saving}
+                onClick={saveOrder}
+                aria-label="Save order without payment"
+                style={{ height: 60, width: 64 }}
+              />
+            </Tooltip>
+          </div>
         </div>
       </div>
 
@@ -1343,32 +1376,120 @@ function PosRegister() {
 
         <Divider style={{ margin: "12px 0" }} />
 
-        <Space.Compact block>
-          <Button
-            type="primary"
-            size="large"
-            icon={<DollarOutlined />}
-            disabled={charging !== null}
-            loading={charging === "cash"}
-            onClick={() => charge("cash")}
-            aria-label="Pay with cash"
-            style={{ flex: 1, height: 60, fontSize: 16 }}
-          >
-            Cash
-          </Button>
-          <Button
-            type="primary"
-            size="large"
-            icon={<CreditCardOutlined />}
-            disabled={charging !== null}
-            loading={charging === "card"}
-            onClick={() => charge("card")}
-            aria-label="Pay with card"
-            style={{ flex: 1, height: 60, fontSize: 16 }}
-          >
-            Card
-          </Button>
-        </Space.Compact>
+        {payStep === "select" ? (
+          <Space.Compact block>
+            <Button
+              type="primary"
+              size="large"
+              icon={<DollarOutlined />}
+              disabled={charging !== null}
+              onClick={() => {
+                setCashReceived(null);
+                setPayStep("cash");
+              }}
+              aria-label="Pay with cash"
+              style={{ flex: 1, height: 60, fontSize: 16 }}
+            >
+              Cash
+            </Button>
+            <Button
+              type="primary"
+              size="large"
+              icon={<CreditCardOutlined />}
+              disabled={charging !== null}
+              loading={charging === "card"}
+              onClick={() => charge("card")}
+              aria-label="Pay with card"
+              style={{ flex: 1, height: 60, fontSize: 16 }}
+            >
+              Card
+            </Button>
+          </Space.Compact>
+        ) : (
+          <>
+            {/* Cash tendered → change due */}
+            <Text strong style={{ display: "block", marginBottom: 6 }}>
+              Cash received
+            </Text>
+            <Space wrap style={{ marginBottom: 8 }}>
+              <Button onClick={() => setCashReceived(total / 100)}>
+                Exact {fmtMoney(total)}
+              </Button>
+              {[20, 50, 100]
+                .filter((bill) => bill * 100 >= total)
+                .map((bill) => (
+                  <Button key={bill} onClick={() => setCashReceived(bill)}>
+                    ${bill}
+                  </Button>
+                ))}
+            </Space>
+            <InputNumber
+              min={0}
+              step={1}
+              precision={2}
+              prefix="$"
+              value={cashReceived}
+              onChange={(v) => setCashReceived(v)}
+              placeholder="Amount from customer"
+              aria-label="Cash received"
+              size="large"
+              style={{ width: "100%", marginBottom: 8 }}
+            />
+            {cashReceived != null && (
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  padding: "8px 12px",
+                  borderRadius: token.borderRadiusLG,
+                  background:
+                    Math.round(cashReceived * 100) >= total
+                      ? token.colorSuccessBg
+                      : token.colorErrorBg,
+                  marginBottom: 12,
+                }}
+              >
+                <Text strong>
+                  {Math.round(cashReceived * 100) >= total
+                    ? "Change due"
+                    : "Still owed"}
+                </Text>
+                <Text
+                  strong
+                  style={{ fontSize: 18, fontVariantNumeric: "tabular-nums" }}
+                >
+                  {fmtMoney(Math.abs(Math.round(cashReceived * 100) - total))}
+                </Text>
+              </div>
+            )}
+            <Space.Compact block>
+              <Button
+                size="large"
+                onClick={() => setPayStep("select")}
+                aria-label="Back to payment methods"
+                style={{ height: 56 }}
+              >
+                Back
+              </Button>
+              <Button
+                type="primary"
+                size="large"
+                icon={<DollarOutlined />}
+                disabled={
+                  charging !== null ||
+                  cashReceived == null ||
+                  Math.round(cashReceived * 100) < total
+                }
+                loading={charging === "cash"}
+                onClick={() => charge("cash")}
+                aria-label="Complete cash payment"
+                style={{ flex: 1, height: 56, fontSize: 16 }}
+              >
+                Complete Cash Payment
+              </Button>
+            </Space.Compact>
+          </>
+        )}
       </Modal>
 
       {/* Modifier picker */}

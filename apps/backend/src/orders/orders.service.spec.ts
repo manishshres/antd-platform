@@ -169,8 +169,12 @@ describe('OrdersService', () => {
       expect(result).toBeDefined();
       expect(result.id).toBe('order-1');
       expect(mockDb.transaction).toHaveBeenCalled();
-      expect(mockPrintJobsService.createPrintJob).toHaveBeenCalledTimes(2); // kitchen + receipt
-      expect(mockPrintQueue.add).toHaveBeenCalledTimes(2);
+      // Unpaid orders fire the kitchen ticket only — the receipt prints at payment time.
+      expect(mockPrintJobsService.createPrintJob).toHaveBeenCalledTimes(1);
+      expect(mockPrintJobsService.createPrintJob).toHaveBeenCalledWith(
+        expect.objectContaining({ jobType: 'kitchen' }),
+      );
+      expect(mockPrintQueue.add).toHaveBeenCalledTimes(1);
       expect(mockAuditService.log).toHaveBeenCalled();
       expect(mockAnalyticsService.recordUsage).toHaveBeenCalled();
       expect(mockEventsGateway.emitToOrganization).toHaveBeenCalledWith(

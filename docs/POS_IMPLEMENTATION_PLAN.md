@@ -203,6 +203,31 @@ The under-30-seconds features, all buildable on current schema:
 5. **Ticket numbers**: per-location daily sequence stored on orders, shown as "Order #47"
    in the POS header, cart, tickets, and order board.
 
+## Tender flow v2 (2026-07-05) — shipped & next
+
+Shipped: Save-without-paying (unpaid order, kitchen fires, receipt deferred to payment),
+single Charge button → tender modal (tip, discount), cash-tendered / change-due calculator,
+Open Orders drawer for settling AI phone orders at the counter.
+
+### Split payments — design (next round)
+
+Needs the `payments` table from Phase 1 (one order → many payments) rather than the
+single `paymentMethod` column:
+
+```
+payments   id, orgId, locationId, orderId, method('cash'|'card'), amount, tipAmount,
+           cashReceived, changeGiven, createdBy, createdAt
+```
+
+- `POST /orders/:id/payments { method, amount, cashReceived? }` — records a partial
+  payment; order flips to paid when `sum(payments.amount) >= totalAmount`.
+  `orders.paymentMethod` becomes 'split' when methods differ.
+- Tender modal gains a third button: **Split** → choose "Split evenly (N ways)" or
+  "Custom amount"; shows remaining balance after each partial payment and loops the
+  cash/card step until the balance hits zero.
+- Cash-drawer reporting (Phase 3) reads `payments`, not orders, so cashReceived /
+  changeGiven persist per payment.
+
 ## Risks / open questions
 
 - **Tax complexity** (inclusive vs exclusive, per-item overrides, delivery-channel rules) — start with a single default rate per location, model `tax_rates` so per-item mapping can be added without migration pain.

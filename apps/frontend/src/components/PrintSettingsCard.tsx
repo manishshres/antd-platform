@@ -33,6 +33,7 @@ export default function PrintSettingsCard() {
   const [kitchenCopies, setKitchenCopies] = useState(1);
   const [receiptEnabled, setReceiptEnabled] = useState(true);
   const [receiptCopies, setReceiptCopies] = useState(1);
+  const [holdUnpaidKitchen, setHoldUnpaidKitchen] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -42,6 +43,7 @@ export default function PrintSettingsCard() {
       setKitchenCopies(s?.kitchenCopies ?? 1);
       setReceiptEnabled(s?.receiptEnabled !== false);
       setReceiptCopies(s?.receiptCopies ?? 1);
+      setHoldUnpaidKitchen(s?.holdUnpaidKitchen === true);
     });
   }, [selectedLocation]);
 
@@ -60,6 +62,7 @@ export default function PrintSettingsCard() {
           kitchenCopies,
           receiptEnabled,
           receiptCopies,
+          holdUnpaidKitchen,
         },
       });
       await refreshLocations();
@@ -144,10 +147,35 @@ export default function PrintSettingsCard() {
         kitchenCopies,
         setKitchenCopies,
       )}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: token.margin,
+          padding: "0 0 12px",
+        }}
+      >
+        <div>
+          <Text strong style={{ display: "block" }}>
+            Hold tickets until paid
+          </Text>
+          <Text type="secondary" style={{ fontSize: 13 }}>
+            Orders saved without payment (incl. AI phone orders) print their
+            kitchen ticket only when the customer pays — for delivery orders or
+            customers returning later. Off = kitchen fires immediately.
+          </Text>
+        </div>
+        <Switch
+          checked={holdUnpaidKitchen}
+          onChange={setHoldUnpaidKitchen}
+          aria-label="Hold tickets until paid"
+        />
+      </div>
       <Divider style={{ margin: 0 }} />
       {row(
         "Customer receipts",
-        "Receipt with totals, tax, tip, and discount printed at order time.",
+        "Receipt with totals, tax, tip, and discount printed when the order is paid.",
         receiptEnabled,
         setReceiptEnabled,
         receiptCopies,

@@ -25,6 +25,7 @@ export interface Location {
     kitchenCopies?: number;
     receiptEnabled?: boolean;
     receiptCopies?: number;
+    holdUnpaidKitchen?: boolean;
   };
   telnyxAssistantId?: string | null;
   menuLastSyncedAt?: string | null;

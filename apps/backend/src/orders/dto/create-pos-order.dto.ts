@@ -79,11 +79,15 @@ export class CreatePosOrderDto {
   specialInstructions?: string;
 
   @ApiProperty({
+    required: false,
     example: 'cash',
-    description: 'How the order was paid (detailed processing comes later)',
+    description:
+      'How the order was paid. Omit to save the order unpaid (dine-in / pay-later): ' +
+      'the kitchen ticket still fires and payment is recorded later via /orders/:id/pay.',
   })
+  @IsOptional()
   @IsIn(['cash', 'card'])
-  paymentMethod: string;
+  paymentMethod?: string;
 
   @ApiProperty({ required: false, description: 'Tip in cents' })
   @IsOptional()
