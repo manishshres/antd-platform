@@ -8,6 +8,7 @@ import {
   Badge,
   Button,
   Divider,
+  Drawer,
   Empty,
   Input,
   InputNumber,
@@ -21,6 +22,7 @@ import {
   theme,
 } from "antd";
 import {
+  ClockCircleOutlined,
   CopyOutlined,
   CreditCardOutlined,
   DeleteOutlined,
@@ -103,6 +105,19 @@ interface Discount {
   requiresManager: boolean;
 }
 
+/** Row in the Open Orders drawer — unpaid orders waiting to be settled/edited. */
+interface OpenOrderRow {
+  id: string;
+  ticketNumber?: number | null;
+  customerName: string;
+  customerPhone: string;
+  status: string;
+  source?: string | null;
+  paidAt?: string | null;
+  totalAmount: number;
+  createdAt: string;
+}
+
 /** Shape of the order returned by GET /orders/:id (fields the register needs). */
 interface ExistingOrder {
   id: string;
@@ -176,6 +191,10 @@ function PosRegister() {
   const [showCustomer, setShowCustomer] = useState(false);
   const [showNote, setShowNote] = useState(false);
 
+  // Unpaid orders (AI phone orders awaiting in-store payment, held orders, ...)
+  const [openOrders, setOpenOrders] = useState<OpenOrderRow[]>([]);
+  const [ordersDrawerOpen, setOrdersDrawerOpen] = useState(false);
+
   // Loaded existing order (AI voice handoff / edit mode)
   const [editingOrder, setEditingOrder] = useState<ExistingOrder | null>(null);
 
@@ -210,6 +229,33 @@ function PosRegister() {
     return () => {
       cancelled = true;
     };
+  }, [selectedLocationId]);
+
+  const loadOpenOrders = () => {
+    if (!selectedLocationId) return;
+    api
+      .get<{ data: OpenOrderRow[] }>(
+        `/orders?locationId=${selectedLocationId}&limit=50`,
+      )
+      .then(({ data }) => {
+        const rows = (data.data ?? []).filter(
+          (o) => !o.paidAt && ["pending", "confirmed"].includes(o.status),
+        );
+        setOpenOrders(rows);
+      })
+      .catch(() => {
+        // Non-critical — the badge just stays stale.
+      });
+  };
+
+  useEffect(() => {
+    if (!selectedLocationId) return;
+    loadOpenOrders();
+    // Refresh the open-orders badge when a new order lands (AI phone orders
+    // arrive via the realtime channel elsewhere; polling keeps this simple).
+    const timer = setInterval(loadOpenOrders, 30000);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedLocationId]);
 
   useEffect(() => {
@@ -522,6 +568,7 @@ function PosRegister() {
         5,
       );
       resetRegister();
+      loadOpenOrders();
       router.replace("/pos");
     } catch {
       message.error("Failed to update the order.");
@@ -567,6 +614,7 @@ function PosRegister() {
         5,
       );
       resetRegister();
+      loadOpenOrders();
       if (editingOrder) router.replace("/pos");
     } catch {
       message.error("Failed to place the order. Nothing was charged.");
@@ -640,16 +688,29 @@ function PosRegister() {
             gap: token.marginSM,
           }}
         >
-          <Input
-            allowClear
-            size="large"
-            prefix={<SearchOutlined />}
-            placeholder="Search menu..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            aria-label="Search menu"
-            style={{ flexShrink: 0 }}
-          />
+          <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+            <Input
+              allowClear
+              prefix={<SearchOutlined />}
+              placeholder="Search menu..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              aria-label="Search menu"
+              style={{ flex: 1, maxWidth: 420 }}
+            />
+            <Badge count={openOrders.length} size="small" offset={[-4, 2]}>
+              <Button
+                icon={<ClockCircleOutlined />}
+                onClick={() => {
+                  loadOpenOrders();
+                  setOrdersDrawerOpen(true);
+                }}
+                aria-label="View open orders"
+              >
+                Open Orders
+              </Button>
+            </Badge>
+          </div>
 
           {/* Category pills — hidden scrollbar; arrows + drag/touch to scroll */}
           {!searchQuery && (
@@ -1125,6 +1186,83 @@ function PosRegister() {
           </Button>
         </div>
       </div>
+
+      {/* Open orders — unpaid tickets (AI phone orders awaiting payment, holds) */}
+      <Drawer
+        title={`Open Orders (${openOrders.length})`}
+        placement="right"
+        open={ordersDrawerOpen}
+        onClose={() => setOrdersDrawerOpen(false)}
+      >
+        {openOrders.length === 0 ? (
+          <Empty description="No unpaid orders. New AI phone orders appear here." />
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {openOrders.map((o) => (
+              <div
+                key={o.id}
+                role="button"
+                tabIndex={0}
+                aria-label={`Open order ${orderLabel(o)}`}
+                onClick={() => {
+                  setOrdersDrawerOpen(false);
+                  router.push(`/pos?orderId=${o.id}`);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    setOrdersDrawerOpen(false);
+                    router.push(`/pos?orderId=${o.id}`);
+                  }
+                }}
+                style={{
+                  border: `1px solid ${token.colorBorderSecondary}`,
+                  borderRadius: token.borderRadiusLG,
+                  padding: token.paddingSM,
+                  cursor: "pointer",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                  }}
+                >
+                  <Space size={6}>
+                    <Text strong>{orderLabel(o)}</Text>
+                    {o.source === "ai_phone" ? (
+                      <Tag color="blue" style={{ margin: 0 }}>
+                        AI Phone
+                      </Tag>
+                    ) : (
+                      <Tag style={{ margin: 0 }}>POS</Tag>
+                    )}
+                  </Space>
+                  <Text strong>{fmtMoney(o.totalAmount)}</Text>
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    marginTop: 4,
+                  }}
+                >
+                  <Text type="secondary" style={{ fontSize: 13 }}>
+                    {o.customerName}
+                    {o.customerPhone ? ` · ${o.customerPhone}` : ""}
+                  </Text>
+                  <Text type="secondary" style={{ fontSize: 13 }}>
+                    {new Date(o.createdAt).toLocaleTimeString([], {
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })}
+                  </Text>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Drawer>
 
       {/* Tender step — total, tip, discount, then payment (Square/Toast flow) */}
       <Modal
