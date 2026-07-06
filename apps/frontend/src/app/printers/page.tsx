@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Table,
   Tag,
@@ -66,6 +67,7 @@ interface PrintJob {
 export default function PrintersPage() {
   const { message, modal } = App.useApp();
   const { token } = theme.useToken();
+  const router = useRouter();
   
   // State
   const [printers, setPrinters] = useState<Printer[]>([]);
@@ -271,7 +273,13 @@ export default function PrintersPage() {
       key: "name_info",
       render: (_, record) => (
         <div>
-          <Text style={{ fontWeight: 600, fontSize: 15 }}>{record.name}</Text>
+          <Typography.Link
+            style={{ fontWeight: 600, fontSize: 15 }}
+            onClick={() => router.push(`/printers/${record.id}`)}
+            aria-label={`Open ${record.name} details`}
+          >
+            {record.name}
+          </Typography.Link>
           <div style={{ marginTop: 2, display: "flex", gap: 6, flexWrap: "wrap" }}>
             <Tag color="blue">{record.type.toUpperCase()}</Tag>
             {record.model && <Tag color="default">{record.model}</Tag>}
@@ -334,11 +342,12 @@ export default function PrintersPage() {
               onClick={() => handleViewQueue(record)}
             />
           </Tooltip>
-          <Tooltip title="Edit Config">
+          <Tooltip title="Details & Config">
             <Button
               type="text"
               icon={<EditOutlined />}
-              onClick={() => handleOpenModal(record)}
+              aria-label={`Open ${record.name} details`}
+              onClick={() => router.push(`/printers/${record.id}`)}
             />
           </Tooltip>
           <Tooltip title="Delete Printer">

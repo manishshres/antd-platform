@@ -747,7 +747,8 @@ function PosRegister() {
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
+                  // Fixed 6 tiles per row so muscle memory holds across categories.
+                  gridTemplateColumns: "repeat(6, 1fr)",
                   gap: token.marginSM,
                 }}
               >
@@ -770,7 +771,7 @@ function PosRegister() {
                       border: `1px solid ${token.colorBorderSecondary}`,
                       borderRadius: token.borderRadiusLG,
                       padding: token.paddingSM,
-                      minHeight: 104,
+                      minHeight: 128,
                       display: "flex",
                       flexDirection: "column",
                       justifyContent: "space-between",
@@ -809,7 +810,7 @@ function PosRegister() {
                           }}
                         />
                       )}
-                      {/* Two-line clamp keeps long names inside the tile */}
+                      {/* Full name always visible — wraps to the next line */}
                       <Text
                         strong
                         style={{
@@ -817,8 +818,8 @@ function PosRegister() {
                           lineHeight: 1.35,
                           flex: 1,
                           minWidth: 0,
+                          overflowWrap: "break-word",
                         }}
-                        ellipsis={{ tooltip: item.name }}
                       >
                         {item.name}
                       </Text>
@@ -855,7 +856,7 @@ function PosRegister() {
         {/* Cart panel */}
         <div
           style={{
-            width: 340,
+            width: 400,
             flexShrink: 0,
             display: "flex",
             flexDirection: "column",
