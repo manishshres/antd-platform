@@ -534,27 +534,16 @@ export default function DashboardLayout({
     return false;
   });
   const [initialized, setInitialized] = useState(false);
-  const router = useRouter();
-  const pathname = usePathname();
-  const isAuthPage = 
-    pathname === "/login" || 
-    pathname === "/register" || 
-    pathname === "/forgot-password" || 
-    pathname === "/reset-password" || 
-    pathname === "/verify-email" || 
-    pathname === "/invite" ||
-    pathname === "/invitations/accept";
 
+  // Mount flag: render the shell only after hydration (avoids a theme/localStorage
+  // mismatch flash). Route protection lives in middleware.ts + the api 401 handler —
+  // the old localStorage token check here caused a redirect loop with a stale
+  // HttpOnly refresh cookie (spinner forever while /login bounced back).
   useEffect(() => {
     Promise.resolve().then(() => {
-      const token = localStorage.getItem("access_token");
-      if (!token && !isAuthPage) {
-        router.push("/login");
-      } else {
-        setInitialized(true);
-      }
+      setInitialized(true);
     });
-  }, [isAuthPage, router]);
+  }, []);
 
   const toggleTheme = () => {
     const next = !isDarkMode;

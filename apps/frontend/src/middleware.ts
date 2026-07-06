@@ -4,6 +4,7 @@ import type { NextRequest } from 'next/server';
 // Add paths that require authentication here
 const protectedPaths = [
   '/dashboard',
+  '/pos',
   '/orders',
   '/menus',
   '/printers',
@@ -13,6 +14,12 @@ const protectedPaths = [
   '/settings',
   '/profile',
   '/calls',
+  '/conversations',
+  '/recordings',
+  '/assistant',
+  '/billing',
+  '/documentation',
+  '/provisioning',
   '/platform-admin',
   '/admin',
 ];
