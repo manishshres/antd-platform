@@ -35,6 +35,7 @@ import {
   ShoppingCartOutlined,
   StarFilled,
   TagOutlined,
+  UserOutlined,
 } from "@ant-design/icons";
 import { api } from "@/lib/api";
 import { useLocation } from "@/contexts/LocationContext";
@@ -169,6 +170,11 @@ function PosRegister() {
   // Tip: percent of the discounted subtotal, or -1 for a custom dollar amount.
   const [tipPct, setTipPct] = useState<number>(0);
   const [customTip, setCustomTip] = useState<number>(0); // dollars
+  // Tender step (Square/Toast pattern): tip + discount + payment live in a
+  // dedicated modal opened by the big Charge button, keeping the cart clean.
+  const [tenderOpen, setTenderOpen] = useState(false);
+  const [showCustomer, setShowCustomer] = useState(false);
+  const [showNote, setShowNote] = useState(false);
 
   // Loaded existing order (AI voice handoff / edit mode)
   const [editingOrder, setEditingOrder] = useState<ExistingOrder | null>(null);
@@ -342,6 +348,9 @@ function PosRegister() {
     setTipPct(0);
     setCustomTip(0);
     setPromoInput("");
+    setTenderOpen(false);
+    setShowCustomer(false);
+    setShowNote(false);
   };
 
   const buildLine = (
@@ -762,10 +771,11 @@ function PosRegister() {
                       border: `1px solid ${token.colorBorderSecondary}`,
                       borderRadius: token.borderRadiusLG,
                       padding: token.paddingSM,
-                      minHeight: 128,
+                      minHeight: 92,
                       display: "flex",
                       flexDirection: "column",
-                      justifyContent: "space-between",
+                      justifyContent: "flex-start",
+                      gap: 6,
                       overflow: "hidden",
                       transition:
                         "border-color 0.15s, box-shadow 0.15s, transform 0.15s",
@@ -820,7 +830,7 @@ function PosRegister() {
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "space-between",
-                        marginTop: 8,
+                        marginTop: "auto",
                       }}
                     >
                       <Text
@@ -895,13 +905,18 @@ function PosRegister() {
             ]}
             style={{ marginBottom: token.marginXS }}
           />
-          <Input
-            placeholder="Customer name (optional)"
-            value={customerName}
-            onChange={(e) => setCustomerName(e.target.value)}
-            aria-label="Customer name"
-            style={{ marginBottom: token.marginXS }}
-          />
+          {/* Customer + note are one-tap reveals — hidden until needed (Square pattern) */}
+          {showCustomer || customerName ? (
+            <Input
+              placeholder="Customer name"
+              value={customerName}
+              autoFocus={showCustomer && !customerName}
+              onChange={(e) => setCustomerName(e.target.value)}
+              aria-label="Customer name"
+              allowClear
+              style={{ marginBottom: token.marginXS }}
+            />
+          ) : null}
 
           <div
             className="pos-scroll"
@@ -1017,91 +1032,56 @@ function PosRegister() {
           </div>
 
           <Divider style={{ margin: "8px 0" }} />
-          <Input.TextArea
-            rows={2}
-            placeholder="Order instructions (optional) — e.g. allergy, rush"
-            value={orderNotes}
-            onChange={(e) => setOrderNotes(e.target.value)}
-            maxLength={1000}
-            aria-label="Order instructions"
-            style={{ marginBottom: token.marginXS }}
-          />
-          {/* Discount */}
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: 4,
-            }}
-          >
-            {appliedDiscount ? (
-              <>
-                <Tag
-                  color="green"
-                  closable
-                  onClose={() => setAppliedDiscountId(null)}
-                  style={{ margin: 0 }}
-                >
-                  {appliedDiscount.name}
-                </Tag>
-                <Text type="success">-{fmtMoney(discountAmount)}</Text>
-              </>
-            ) : (
+
+          {/* Quick reveals — kept out of the way until needed */}
+          <Space size={4} style={{ marginBottom: token.marginXS }}>
+            {!showCustomer && !customerName && (
               <Button
                 size="small"
-                type="dashed"
-                icon={<TagOutlined />}
-                onClick={() => setDiscountModalOpen(true)}
-                aria-label="Add discount"
-                disabled={cart.length === 0}
+                type="text"
+                icon={<UserOutlined />}
+                onClick={() => setShowCustomer(true)}
+                aria-label="Add customer name"
               >
-                Add discount
+                Customer
               </Button>
             )}
-          </div>
-
-          {/* Tip */}
-          <div style={{ marginBottom: 6 }}>
-            <Segmented
-              block
-              size="small"
-              value={tipPct}
-              onChange={(v) => setTipPct(v as number)}
-              options={[
-                { label: "No tip", value: 0 },
-                { label: "10%", value: 10 },
-                { label: "15%", value: 15 },
-                { label: "20%", value: 20 },
-                { label: "Custom", value: -1 },
-              ]}
-            />
-            {tipPct === -1 && (
-              <InputNumber
+            {!showNote && !orderNotes && (
+              <Button
                 size="small"
-                min={0}
-                step={0.25}
-                precision={2}
-                prefix="$"
-                value={customTip}
-                onChange={(v) => setCustomTip(v ?? 0)}
-                aria-label="Custom tip amount"
-                style={{ width: "100%", marginTop: 4 }}
-              />
+                type="text"
+                icon={<EditOutlined />}
+                onClick={() => setShowNote(true)}
+                aria-label="Add order note"
+              >
+                Note
+              </Button>
             )}
-          </div>
+            {appliedDiscount && (
+              <Tag
+                color="green"
+                closable
+                onClose={() => setAppliedDiscountId(null)}
+                style={{ margin: 0 }}
+              >
+                {appliedDiscount.name} −{fmtMoney(discountAmount)}
+              </Tag>
+            )}
+          </Space>
+          {(showNote || orderNotes) && (
+            <Input.TextArea
+              rows={2}
+              placeholder="Order note — e.g. allergy, rush"
+              value={orderNotes}
+              autoFocus={showNote && !orderNotes}
+              onChange={(e) => setOrderNotes(e.target.value)}
+              maxLength={1000}
+              aria-label="Order instructions"
+              style={{ marginBottom: token.marginXS }}
+            />
+          )}
 
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              marginBottom: 2,
-            }}
-          >
-            <Text type="secondary">Subtotal</Text>
-            <Text type="secondary">{fmtMoney(subtotal)}</Text>
-          </div>
-          {discountAmount > 0 && (
+          {cart.length > 0 && (
             <div
               style={{
                 display: "flex",
@@ -1109,48 +1089,17 @@ function PosRegister() {
                 marginBottom: 2,
               }}
             >
-              <Text type="secondary">Discount</Text>
-              <Text type="success">-{fmtMoney(discountAmount)}</Text>
+              <Text type="secondary" style={{ fontSize: 13 }}>
+                Subtotal{" "}
+                {taxRateBps > 0 &&
+                  `· Tax ${(taxRateBps / 100).toFixed(2)}%`}
+                {tipAmount > 0 && ` · Tip ${fmtMoney(tipAmount)}`}
+              </Text>
+              <Text type="secondary" style={{ fontSize: 13 }}>
+                {fmtMoney(subtotal)}
+              </Text>
             </div>
           )}
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              marginBottom: 2,
-            }}
-          >
-            <Text type="secondary">
-              Tax{taxRateBps > 0 ? ` (${(taxRateBps / 100).toFixed(2)}%)` : ""}
-            </Text>
-            <Text type="secondary">{fmtMoney(taxAmount)}</Text>
-          </div>
-          {tipAmount > 0 && (
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                marginBottom: 2,
-              }}
-            >
-              <Text type="secondary">Tip</Text>
-              <Text type="secondary">{fmtMoney(tipAmount)}</Text>
-            </div>
-          )}
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              marginBottom: token.marginXS,
-            }}
-          >
-            <Title level={5} style={{ margin: 0 }}>
-              Total
-            </Title>
-            <Title level={5} style={{ margin: 0 }}>
-              {fmtMoney(total)}
-            </Title>
-          </div>
           {editingOrder && (
             <Button
               size="large"
@@ -1164,34 +1113,125 @@ function PosRegister() {
               Save Changes (kitchen re-fires)
             </Button>
           )}
-          <Space.Compact block>
-            <Button
-              type="primary"
-              size="large"
-              icon={<DollarOutlined />}
-              disabled={cart.length === 0 || charging !== null || saving}
-              loading={charging === "cash"}
-              onClick={() => charge("cash")}
-              aria-label="Charge cash"
-              style={{ flex: 1, height: 56 }}
-            >
-              Cash
-            </Button>
-            <Button
-              type="primary"
-              size="large"
-              icon={<CreditCardOutlined />}
-              disabled={cart.length === 0 || charging !== null || saving}
-              loading={charging === "card"}
-              onClick={() => charge("card")}
-              aria-label="Charge card"
-              style={{ flex: 1, height: 56 }}
-            >
-              Card
-            </Button>
-          </Space.Compact>
+          <Button
+            type="primary"
+            size="large"
+            disabled={cart.length === 0 || saving}
+            onClick={() => setTenderOpen(true)}
+            aria-label={`Charge ${fmtMoney(total)}`}
+            style={{ height: 60, fontSize: 18, fontWeight: 600 }}
+          >
+            Charge {cart.length > 0 ? fmtMoney(total) : ""}
+          </Button>
         </div>
       </div>
+
+      {/* Tender step — total, tip, discount, then payment (Square/Toast flow) */}
+      <Modal
+        open={tenderOpen}
+        title={null}
+        onCancel={() => setTenderOpen(false)}
+        footer={null}
+        destroyOnHidden
+        width={420}
+      >
+        <div style={{ textAlign: "center", padding: "8px 0 4px" }}>
+          <Text type="secondary">
+            {editingOrder ? `Order ${orderLabel(editingOrder)}` : "Total due"}
+          </Text>
+          <Title level={1} style={{ margin: "0 0 4px", fontVariantNumeric: "tabular-nums" }}>
+            {fmtMoney(total)}
+          </Title>
+          <Text type="secondary" style={{ fontSize: 13 }}>
+            Subtotal {fmtMoney(subtotal)}
+            {discountAmount > 0 && ` − discount ${fmtMoney(discountAmount)}`}
+            {" + tax "}
+            {fmtMoney(taxAmount)}
+            {tipAmount > 0 && ` + tip ${fmtMoney(tipAmount)}`}
+          </Text>
+        </div>
+
+        <Divider style={{ margin: "12px 0" }} />
+
+        <Text strong style={{ display: "block", marginBottom: 6 }}>
+          Tip
+        </Text>
+        <Segmented
+          block
+          value={tipPct}
+          onChange={(v) => setTipPct(v as number)}
+          options={[
+            { label: "None", value: 0 },
+            { label: "10%", value: 10 },
+            { label: "15%", value: 15 },
+            { label: "20%", value: 20 },
+            { label: "Custom", value: -1 },
+          ]}
+        />
+        {tipPct === -1 && (
+          <InputNumber
+            min={0}
+            step={0.25}
+            precision={2}
+            prefix="$"
+            value={customTip}
+            onChange={(v) => setCustomTip(v ?? 0)}
+            aria-label="Custom tip amount"
+            style={{ width: "100%", marginTop: 8 }}
+          />
+        )}
+
+        <div style={{ marginTop: 12 }}>
+          {appliedDiscount ? (
+            <Tag
+              color="green"
+              closable
+              onClose={() => setAppliedDiscountId(null)}
+            >
+              {appliedDiscount.name} −{fmtMoney(discountAmount)}
+            </Tag>
+          ) : (
+            <Button
+              size="small"
+              type="dashed"
+              icon={<TagOutlined />}
+              onClick={() => setDiscountModalOpen(true)}
+              aria-label="Add discount"
+            >
+              Add discount
+            </Button>
+          )}
+        </div>
+
+        <Divider style={{ margin: "12px 0" }} />
+
+        <Space.Compact block>
+          <Button
+            type="primary"
+            size="large"
+            icon={<DollarOutlined />}
+            disabled={charging !== null}
+            loading={charging === "cash"}
+            onClick={() => charge("cash")}
+            aria-label="Pay with cash"
+            style={{ flex: 1, height: 60, fontSize: 16 }}
+          >
+            Cash
+          </Button>
+          <Button
+            type="primary"
+            size="large"
+            icon={<CreditCardOutlined />}
+            disabled={charging !== null}
+            loading={charging === "card"}
+            onClick={() => charge("card")}
+            aria-label="Pay with card"
+            style={{ flex: 1, height: 60, fontSize: 16 }}
+          >
+            Card
+          </Button>
+        </Space.Compact>
+      </Modal>
 
       {/* Modifier picker */}
       <Modal
