@@ -17,9 +17,8 @@ math is computed exclusively server-side. Printing, realtime updates, auth, and
 multi-tenancy reuse existing platform infrastructure.
 
 Counter-service MVP is **shipped** (register, tender flow, tips, discounts, cash
-handling, AI-order handoff, print controls). The next milestones are the payments
-table (split payments, cash-drawer reporting), manager PIN with voids/refunds, and
-customer profiles.
+handling, split payments, AI-order handoff, print controls). The next milestones
+are manager PIN with voids/refunds, customer profiles, and drawer management.
 
 ## 2. Guiding Principles
 
@@ -154,8 +153,8 @@ Planned: LockScreen (PIN), KDS route (/kds), Floor plan, Customers drawer
 - `discounts` table: org-scoped, `name`, optional `code`, `type percent|fixed`,
   `value`, `requires_manager`, `active`, soft delete
 
-**Planned: `payments` table** — the single definition; everything else references
-this section:
+**`payments` table (shipped, migration 0009)** — the single definition; everything
+else references this section:
 
 ```
 payments
@@ -219,12 +218,16 @@ Re-prices everything; fires corrected kitchen ticket (unless held).
 // response 200 — full order; receipt (and held kitchen ticket) print now
 ```
 
-### Planned: POST /orders/:id/payments (split)
+### POST /orders/:id/payments (split — shipped)
 
 ```json
+// request (amount omitted = pay full remaining; tipAmount rides on any payment)
 { "method": "cash", "amount": 1000, "cashReceived": 2000 }
-// → { "applied": 1000, "changeGiven": 1000, "remaining": 1220, "paid": false }
+// → { "applied": 1000, "changeGiven": 1000, "remaining": 1220, "paid": false, "order": {…} }
 ```
+
+Item edits are rejected once any payment exists (re-pricing below money already
+taken). Orders with mixed payment methods report `paymentMethod: "split"`.
 
 ### GET /discounts · POST /discounts · PATCH/DELETE /discounts/:id
 List active (staff) or all (`?all=true`); manage requires manager+.
@@ -243,7 +246,7 @@ List active (staff) or all (`?all=true`); manage requires manager+.
 | P1 | Favorites | **Shipped** |
 | P1 | Ticket numbers | **Shipped** |
 | P1 | PWA / iPad standalone | **Shipped** |
-| P1 | Payments table + split payments | Planned — next |
+| P1 | Payments table + split payments | **Shipped** |
 | P1 | Manager PIN + voids/refunds | Planned — next |
 | P1 | Multi-select modifiers, quantity limits | Planned |
 | P2 | Customer profiles + one-tap reorder | Planned |
@@ -260,7 +263,7 @@ List active (staff) or all (`?all=true`); manage requires manager+.
 ```
 Totals engine ✓ → Cash POS ✓ → Printing ✓ → AI order editing ✓
                                    ↓
-                    Payments table → Split payments → Drawer management
+                    Payments table ✓ → Split payments ✓ → Drawer management
                                    ↓
                     Manager PIN → Voids/refunds
                                    ↓

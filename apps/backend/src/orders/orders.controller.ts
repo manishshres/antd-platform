@@ -23,6 +23,7 @@ import { CreateOrderDto } from './dto/create-order.dto';
 import { CreatePosOrderDto } from './dto/create-pos-order.dto';
 import { UpdateOrderItemsDto } from './dto/update-order-items.dto';
 import { PayOrderDto } from './dto/pay-order.dto';
+import { RecordPaymentDto } from './dto/record-payment.dto';
 import { UpdateStatusDto } from './dto/update-status.dto';
 import { PrintOrderDto } from './dto/print-order.dto';
 import { GetOrdersDto } from './dto/get-orders.dto';
@@ -140,6 +141,27 @@ export class OrdersController {
       dto.paymentMethod,
       dto.tipAmount,
     );
+  }
+
+  @Post(':id/payments')
+  @Roles('user', 'manager', 'admin', 'sysadmin')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Record a partial payment (split checks) against an unpaid order',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Payment recorded; returns applied/changeGiven/remaining/paid.',
+  })
+  @ApiResponse({ status: 400, description: 'Order paid, cancelled, or invalid amount.' })
+  @ApiResponse({ status: 404, description: 'Order not found.' })
+  async recordPayment(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('id') id: string,
+    @Body() dto: RecordPaymentDto,
+  ): Promise<unknown> {
+    if (!id) throw new BadRequestException('Order ID is required.');
+    return this.ordersService.recordPayment(user, id, dto);
   }
 
   @Patch(':id/status')

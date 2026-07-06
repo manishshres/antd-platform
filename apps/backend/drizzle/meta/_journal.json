@@ -64,6 +64,13 @@
       "when": 1783301432875,
       "tag": "0008_print_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1783346536613,
+      "tag": "0009_payments",
+      "breakpoints": true
     }
   ]
 }

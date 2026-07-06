@@ -472,6 +472,45 @@ export const orderItems = pgTable(
   (t) => [index('idx_order_items_order_id').on(t.orderId)],
 );
 
+/**
+ * Partial payments against an order (split checks, cash handling). An order is
+ * paid when sum(amount) >= orders.totalAmount; orders.paymentMethod becomes
+ * 'split' when methods differ. Drawer reporting (Phase 3) reads this table.
+ */
+export const payments = pgTable(
+  'payments',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    organizationId: uuid('organization_id')
+      .references(() => organizations.id, { onDelete: 'cascade' })
+      .notNull(),
+    locationId: uuid('location_id').references(() => locations.id, {
+      onDelete: 'cascade',
+    }),
+    orderId: uuid('order_id')
+      .references(() => orders.id, { onDelete: 'cascade' })
+      .notNull(),
+    method: varchar('method', { length: 10 }).notNull(), // 'cash' | 'card'
+    /** Cents applied toward the order total. */
+    amount: integer('amount').notNull(),
+    /** Tip carried by this payment (added to the order total when recorded). */
+    tipAmount: integer('tip_amount').default(0).notNull(),
+    /** Cash only: what the customer handed over / what was returned. */
+    cashReceived: integer('cash_received'),
+    changeGiven: integer('change_given'),
+    createdBy: uuid('created_by').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (t) => [
+    index('idx_payments_order_id').on(t.orderId),
+    index('idx_payments_organization_id').on(t.organizationId),
+    check('payments_method_check', sql`${t.method} IN ('cash', 'card')`),
+    check('payments_amount_check', sql`${t.amount} > 0`),
+  ],
+);
+
 export const printJobs = pgTable(
   'print_jobs',
   {

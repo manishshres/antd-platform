@@ -875,6 +875,13 @@ export class OrdersService {
         `Orders in status "${order.status}" can no longer be edited.`,
       );
     }
+    // Re-pricing could push the total below money already taken — lock items
+    // once any partial payment exists.
+    if ((await this.paidSumFor(orderId)) > 0) {
+      throw new BadRequestException(
+        'Orders with recorded payments cannot be edited.',
+      );
+    }
 
     const { resolvedItems, subtotal } = await this.priceCartItems(
       orgId,
@@ -960,11 +967,36 @@ export class OrdersService {
    * Record payment on an unpaid order (cash | card — detailed payment processing lands later)
    * and move a pending order into the kitchen pipeline.
    */
-  async payOrder(
+  /** Sum of payments already recorded against an order (cents). */
+  private async paidSumFor(orderId: string): Promise<number> {
+    const [row] = await this.db
+      .select({
+        sum: sql<number>`coalesce(sum(${schema.payments.amount}), 0)`.mapWith(
+          Number,
+        ),
+      })
+      .from(schema.payments)
+      .where(eq(schema.payments.orderId, orderId));
+    return row?.sum ?? 0;
+  }
+
+  /**
+   * Record a (possibly partial) payment against an unpaid order — the split-check
+   * primitive. The order flips to paid when recorded payments cover the total;
+   * `paymentMethod` becomes 'split' when methods differ. A tip on a payment is
+   * added to the order total at that moment. Cash payments persist what the
+   * customer handed over and the change returned.
+   */
+  async recordPayment(
     user: CurrentUserPayload,
     orderId: string,
-    paymentMethod: string,
-    tipAmount?: number,
+    dto: {
+      method: string;
+      /** Cents to apply; omit to pay the full remaining balance. */
+      amount?: number;
+      cashReceived?: number;
+      tipAmount?: number;
+    },
   ) {
     const orgId = await this.billingService.getRequiredOrg(user);
     const order = await this.getOrderByIdForOrg(orgId, orderId);
@@ -975,39 +1007,120 @@ export class OrdersService {
       throw new BadRequestException('Cancelled orders cannot be paid.');
     }
 
-    // Tip is decided at payment time: swap any previously recorded tip for the new one.
-    const newTip = Math.max(0, Math.round(tipAmount ?? order.tipAmount ?? 0));
-    const totalAmount =
-      order.totalAmount - (order.tipAmount ?? 0) + newTip;
+    const priorPaid = await this.paidSumFor(orderId);
+    const tip = Math.max(0, Math.round(dto.tipAmount ?? 0));
+    const newTotal = order.totalAmount + tip;
+    const remainingBefore = newTotal - priorPaid;
+    if (remainingBefore <= 0) {
+      throw new BadRequestException('This order has no remaining balance.');
+    }
 
-    await this.db
-      .update(schema.orders)
-      .set({
-        paymentMethod,
-        tipAmount: newTip,
-        totalAmount,
-        paidAt: new Date(),
-        status: order.status === 'pending' ? 'confirmed' : order.status,
-        updatedAt: new Date(),
-      })
-      .where(eq(schema.orders.id, orderId));
+    const requested =
+      dto.amount != null ? Math.round(dto.amount) : remainingBefore;
+    if (requested <= 0) {
+      throw new BadRequestException('Payment amount must be positive.');
+    }
+    const applied = Math.min(requested, remainingBefore);
+
+    let cashReceived: number | null = null;
+    let changeGiven: number | null = null;
+    if (dto.method === 'cash' && dto.cashReceived != null) {
+      cashReceived = Math.round(dto.cashReceived);
+      if (cashReceived < applied) {
+        throw new BadRequestException(
+          'Cash received is less than the payment amount.',
+        );
+      }
+      changeGiven = cashReceived - applied;
+    }
+
+    const coversTotal = priorPaid + applied >= newTotal;
+
+    await this.db.transaction(async (tx) => {
+      await tx.insert(schema.payments).values({
+        organizationId: orgId,
+        locationId: order.locationId,
+        orderId,
+        method: dto.method,
+        amount: applied,
+        tipAmount: tip,
+        cashReceived,
+        changeGiven,
+        createdBy: user.id,
+      });
+
+      // Which single method (or 'split') describes the order so far?
+      const methodRows = await tx
+        .selectDistinct({ method: schema.payments.method })
+        .from(schema.payments)
+        .where(eq(schema.payments.orderId, orderId));
+      const summaryMethod =
+        methodRows.length > 1 ? 'split' : (methodRows[0]?.method ?? dto.method);
+
+      await tx
+        .update(schema.orders)
+        .set({
+          tipAmount: (order.tipAmount ?? 0) + tip,
+          totalAmount: newTotal,
+          paymentMethod: summaryMethod,
+          ...(coversTotal
+            ? {
+                paidAt: new Date(),
+                status: order.status === 'pending' ? 'confirmed' : order.status,
+              }
+            : {}),
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.orders.id, orderId));
+    });
 
     const fullOrder = await this.getOrderByIdForOrg(orgId, orderId);
 
-    // 'paid' event — typically the receipt, plus the kitchen ticket for
-    // locations that hold tickets until payment.
-    await this.printForEvents(orgId, fullOrder, ['paid']);
+    if (coversTotal) {
+      await this.printForEvents(orgId, fullOrder, ['paid']);
+    }
 
     void this.auditService.log({
-      action: 'order.paid',
+      action: 'order.payment.recorded',
       userId: user.id,
       organizationId: orgId,
       entityType: 'order',
       entityId: orderId,
-      newValue: { paymentMethod, totalAmount: fullOrder.totalAmount },
+      newValue: {
+        method: dto.method,
+        applied,
+        tipAmount: tip,
+        cashReceived,
+        changeGiven,
+        paid: coversTotal,
+      },
     });
-
     this.eventsGateway.emitToOrganization(orgId, 'order.updated', fullOrder);
+
+    return {
+      applied,
+      changeGiven,
+      remaining: newTotal - priorPaid - applied,
+      paid: coversTotal,
+      order: fullOrder,
+    };
+  }
+
+  /**
+   * Record full payment on an unpaid order (the simple non-split flow) — a thin
+   * wrapper over recordPayment that pays the entire remaining balance.
+   */
+  async payOrder(
+    user: CurrentUserPayload,
+    orderId: string,
+    paymentMethod: string,
+    tipAmount?: number,
+  ) {
+    // recordPayment handles printing, audit, and realtime events.
+    const { order: fullOrder } = await this.recordPayment(user, orderId, {
+      method: paymentMethod,
+      tipAmount,
+    });
     return fullOrder;
   }
 
