@@ -279,6 +279,19 @@ export class TelnyxService {
     return this.apiKey.length > 0;
   }
 
+  /**
+   * Regional Cloud Storage endpoint. The bare telnyxcloudstorage.com domain 301s
+   * bucket operations to an internal Telnyx host that is not publicly resolvable,
+   * so requests must target the bucket's region directly (S3-style).
+   */
+  private get storageBaseUrl(): string {
+    const region = this.configService.get<string>(
+      'TELNYX_STORAGE_REGION',
+      'us-east-1',
+    );
+    return `https://${region}.telnyxcloudstorage.com`;
+  }
+
   async uploadKnowledgeDocument(
     fileName: string,
     content: string,
@@ -292,18 +305,22 @@ export class TelnyxService {
       throw new Error('TELNYX_STORAGE_BUCKET is not configured.');
     }
 
-    // Step 1: Ensure bucket exists (ignores error if it already exists)
-    await fetch(`https://telnyxcloudstorage.com/${bucketName}`, {
+    // Step 1: Ensure bucket exists (409 = already exists, which is fine)
+    const createRes = await fetch(`${this.storageBaseUrl}/${bucketName}`, {
       method: 'PUT',
       headers: { Authorization: `Bearer ${this.apiKey}` },
-    }).catch((e) =>
+    }).catch((e: Error) => {
+      this.logger.warn(`Bucket creation request failed: ${e.message}`);
+      return null;
+    });
+    if (createRes && !createRes.ok && createRes.status !== 409) {
       this.logger.warn(
-        `Bucket creation check failed (might already exist): ${e.message}`,
-      ),
-    );
+        `Bucket creation for "${bucketName}" returned ${createRes.status} — continuing to upload.`,
+      );
+    }
 
     // Step 2: Upload file
-    const uploadUrl = `https://telnyxcloudstorage.com/${bucketName}/${fileName}`;
+    const uploadUrl = `${this.storageBaseUrl}/${bucketName}/${fileName}`;
     const res = await fetch(uploadUrl, {
       method: 'PUT',
       headers: {
@@ -354,53 +371,82 @@ export class TelnyxService {
     bucketId: string,
     assistantId?: string,
   ): Promise<string> {
+    if (assistantId) {
+      // Existing assistant: NEVER resend the full config — that would overwrite the
+      // operator's custom instructions and replace all tools (order webhooks, transfer,
+      // hangup) with a bare retrieval tool. Only the retrieval bucket link is managed here.
+      try {
+        const existingRes = (await this.fetchJson(
+          `/ai/assistants/${encodeURIComponent(assistantId)}`,
+        )) as Record<string, any>;
+        const assistant = existingRes?.data ?? existingRes;
+        const tools: Record<string, any>[] = Array.isArray(assistant?.tools)
+          ? assistant.tools
+          : [];
+        const retrieval = tools.find((t) => t?.type === 'retrieval');
+        const bucketIds: string[] = retrieval?.retrieval?.bucket_ids ?? [];
+
+        if (bucketIds.includes(bucketId)) {
+          return assistantId; // already linked — nothing to change
+        }
+
+        // Send only the retrieval tool: Telnyx merges tool updates, and resubmitting
+        // the shared webhook tools trips its unique-name validation.
+        await this.fetchJson(
+          `/ai/assistants/${encodeURIComponent(assistantId)}`,
+          {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              tools: [
+                {
+                  type: 'retrieval',
+                  retrieval: {
+                    bucket_ids: [bucketId],
+                    max_num_results:
+                      retrieval?.retrieval?.max_num_results ?? 5,
+                  },
+                },
+              ],
+            }),
+          },
+        );
+        return assistantId;
+      } catch (e: unknown) {
+        // Do NOT fall through to create — replacing the location's assistant with a
+        // generic one loses the operator's configuration. Keep the existing link and
+        // surface the problem in the logs instead.
+        const msg = e instanceof Error ? e.message : String(e);
+        this.logger.warn(
+          `Could not relink assistant ${assistantId} retrieval to bucket "${bucketId}": ${msg}. ` +
+            'Assistant left unchanged — update the retrieval bucket in the Telnyx portal if needed.',
+        );
+        return assistantId;
+      }
+    }
+
+    // First publish for this location: create a starter assistant. Operators
+    // customize instructions/tools afterwards; later syncs never overwrite them.
     const assistantName = this.configService.get<string>(
       'TELNYX_AI_ASSISTANT_NAME',
       'Restaurant Voice Agent',
     );
-
-    const assistantConfig = {
-      name: assistantName,
-      model: 'meta-llama/Meta-Llama-3.1-8B-Instruct',
-      description: 'Assistant with custom knowledge base for restaurant menu',
-      instructions:
-        'You are a helpful restaurant voice assistant. Answer questions and help customers using the provided knowledge base.',
-      tools: [
-        {
-          type: 'retrieval',
-          retrieval: {
-            bucket_ids: [bucketId],
-            max_num_results: 5,
-          },
-        },
-      ],
-    };
-
-    if (assistantId) {
-      try {
-        const updateRes = (await this.fetchJson(
-          `/ai/assistants/${encodeURIComponent(assistantId)}`,
-          {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(assistantConfig),
-          },
-        )) as any;
-        return updateRes?.data?.id || assistantId;
-      } catch (e) {
-        // If it fails (e.g. 404), fall through to create
-        console.warn(
-          `Failed to update assistant ${assistantId}, creating new one.`,
-          e,
-        );
-      }
-    }
-
-    // Create new
     const createRes = (await this.fetchJson('/ai/assistants', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(assistantConfig),
+      body: JSON.stringify({
+        name: assistantName,
+        model: 'meta-llama/Meta-Llama-3.1-8B-Instruct',
+        description: 'Assistant with custom knowledge base for restaurant menu',
+        instructions:
+          'You are a helpful restaurant voice assistant. Answer questions and help customers using the provided knowledge base.',
+        tools: [
+          {
+            type: 'retrieval',
+            retrieval: { bucket_ids: [bucketId], max_num_results: 5 },
+          },
+        ],
+      }),
     })) as any;
 
     return createRes?.data?.id;
