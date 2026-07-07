@@ -1,5 +1,6 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
+import { DRIZZLE } from '../database/database.module';
 import * as schema from '../database/schema';
 import { eq, and } from 'drizzle-orm';
 import { CreateFloorPlanDto } from './dto/create-floor-plan.dto';
@@ -8,7 +9,7 @@ import { CreateTableDto } from './dto/create-table.dto';
 @Injectable()
 export class TablesService {
   constructor(
-    @Inject('DB') private readonly db: NodePgDatabase<typeof schema>,
+    @Inject(DRIZZLE) private readonly db: NodePgDatabase<typeof schema>,
   ) {}
 
   async createFloorPlan(orgId: string, dto: CreateFloorPlanDto) {
