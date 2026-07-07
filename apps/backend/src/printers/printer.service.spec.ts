@@ -53,8 +53,11 @@ describe('PrinterService', () => {
       expect(mockMqttService.publish).toHaveBeenCalled();
       const args = (mockMqttService.publish.mock.calls as any)[0];
       // Arg 0 is topic, Arg 1 is buffer
-      // The first publish is always to the base topic
-      expect(args[0]).toBe('restaurant/org-123/receipt/print');
+      // With a resolvable printer topic, we publish ONLY to it — never also to
+      // the broadcast topic. Devices subscribe to both; a dual publish makes the
+      // printer print once and Discard the duplicate, failing the job.
+      expect(args[0]).toBe('restaurant/org-123/receipt/printer-123');
+      expect(mockMqttService.publish).toHaveBeenCalledTimes(1);
       expect(Buffer.isBuffer(args[1])).toBe(true);
     });
 

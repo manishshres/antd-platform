@@ -641,17 +641,15 @@ export class OrdersService {
           (events.includes('paid') && cfg.onPaid);
         if (!triggered) continue;
         for (let copy = 0; copy < cfg.copies; copy++) {
-          const job = await this.printJobsService.createPrintJob({
+          // createPrintJob records history AND enqueues on the print queue
+          // (deduped by jobId) — adding to the queue again here caused every
+          // ticket to be published twice; the printer printed the first copy
+          // and reported Discard for the duplicate.
+          await this.printJobsService.createPrintJob({
             organizationId: orgId,
             orderId: fullOrder.id,
             jobType,
             payload,
-          });
-          await this.printQueue.add('print-job', {
-            orgId,
-            type: jobType,
-            payload,
-            printJobId: job.id,
           });
         }
       }
@@ -1335,22 +1333,8 @@ export class OrdersService {
       payload: printPayload,
     });
 
-    const kitchenJob = await this.printQueue.add('print-job', {
-      orgId,
-      type: 'kitchen',
-      payload: printPayload,
-      printerId,
-      printJobId: kitchenPrintJob.id,
-    });
-
-    const receiptJob = await this.printQueue.add('print-job', {
-      orgId,
-      type: 'receipt',
-      payload: printPayload,
-      printerId,
-      printJobId: receiptPrintJob.id,
-    });
-
+    // createPrintJob already enqueued both (deduped by jobId) — no second add,
+    // which used to double-deliver every ticket to the printer.
     this.logger.log(
       `Queued print jobs for order ${fullOrder.id}: kitchen=${kitchenPrintJob.id}, receipt=${receiptPrintJob.id}`,
     );
@@ -1358,8 +1342,8 @@ export class OrdersService {
     return {
       success: true,
       message: 'Print jobs enqueued successfully.',
-      kitchenJobId: kitchenJob.id,
-      receiptJobId: receiptJob.id,
+      kitchenJobId: kitchenPrintJob.id,
+      receiptJobId: receiptPrintJob.id,
     };
   }
 

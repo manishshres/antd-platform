@@ -270,15 +270,18 @@ export class PrinterService {
     printerTopic?: string,
     printJobId?: string,
   ): Promise<boolean> {
-    const topics = [this.buildTopic(orgId, type)];
+    // Publish to the device topic OR the org-type broadcast — never both. HSPOS
+    // devices subscribe to both channels; a dual publish delivers the same ticket
+    // twice, the device prints the first and reports Discard (8) for the duplicate,
+    // and that late report used to downgrade an already-printed job to "failed".
     const printerSpecificTopic = await this.resolvePrinterTopic(
       orgId,
       type,
       printerTopic,
     );
-    if (printerSpecificTopic) {
-      topics.push(printerSpecificTopic);
-    }
+    const topics = printerSpecificTopic
+      ? [printerSpecificTopic]
+      : [this.buildTopic(orgId, type)];
 
     // HSPOS Cloud Printer Packet Format:
     // [Flag (1 byte)] + [Reply Topic (N bytes + \x00)] + [Ticket (N bytes + \x00)] + [Data]

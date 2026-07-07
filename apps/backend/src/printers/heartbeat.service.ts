@@ -87,6 +87,17 @@ export class HeartbeatService implements OnModuleInit {
 
     if (status && ticketId) {
       try {
+        // A Discard (8) after a Done (4) is benign — the device deduped a second
+        // delivery of a ticket it already printed. Never downgrade a sent job.
+        if (status === 'failed') {
+          const existing = await this.printJobsService.getPrintJob(ticketId);
+          if (existing?.status === 'sent') {
+            this.logger.log(
+              `Ignoring late failure report for already-printed job ${ticketId} (duplicate delivery discarded by printer).`,
+            );
+            return;
+          }
+        }
         await this.printJobsService.updatePrintJobStatus(ticketId, status, {
           lastError,
         });

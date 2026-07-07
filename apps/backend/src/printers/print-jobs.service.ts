@@ -70,6 +70,15 @@ export class PrintJobsService {
     return job;
   }
 
+  async getPrintJob(id: string) {
+    const [job] = await this.db
+      .select()
+      .from(schema.printJobs)
+      .where(eq(schema.printJobs.id, id))
+      .limit(1);
+    return job ?? null;
+  }
+
   async updatePrintJobStatus(
     id: string,
     status: PrintJobStatus,

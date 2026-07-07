@@ -179,7 +179,9 @@ describe('OrdersService', () => {
       expect(mockPrintJobsService.createPrintJob).toHaveBeenCalledWith(
         expect.objectContaining({ jobType: 'kitchen' }),
       );
-      expect(mockPrintQueue.add).toHaveBeenCalledTimes(1);
+      // Enqueueing happens inside createPrintJob (deduped by jobId) — the orders
+      // service must NOT add to the queue directly, or every ticket prints twice.
+      expect(mockPrintQueue.add).not.toHaveBeenCalled();
       expect(mockAuditService.log).toHaveBeenCalled();
       expect(mockAnalyticsService.recordUsage).toHaveBeenCalled();
       expect(mockEventsGateway.emitToOrganization).toHaveBeenCalledWith(
