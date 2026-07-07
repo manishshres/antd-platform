@@ -7,6 +7,7 @@ import {
   App,
   Badge,
   Button,
+  Checkbox,
   Divider,
   Drawer,
   Empty,
@@ -57,6 +58,8 @@ interface ModifierGroup {
   id: string;
   name: string;
   isRequired: boolean;
+  multiSelect?: boolean;
+  maxSelections?: number | null;
   options: ModifierOption[];
 }
 
@@ -242,9 +245,11 @@ function PosRegister() {
   const [editingOrder, setEditingOrder] = useState<ExistingOrder | null>(null);
 
   // Modifier picker state; editingLineKey means "replace that cart line" on confirm.
+  // Selections are arrays per group: single-select groups hold at most one id,
+  // multi-select groups hold up to maxSelections ids.
   const [pickerItem, setPickerItem] = useState<MenuItem | null>(null);
   const [pickerSelections, setPickerSelections] = useState<
-    Record<string, string | undefined>
+    Record<string, string[]>
   >({});
   const [pickerNotes, setPickerNotes] = useState("");
   const [pickerCourse, setPickerCourse] = useState<number | undefined>(undefined);
@@ -501,7 +506,7 @@ function PosRegister() {
 
   const openPicker = (
     item: MenuItem,
-    selections: Record<string, string | undefined>,
+    selections: Record<string, string[]>,
     notes: string,
     lineKey: string | null,
   ) => {
@@ -525,12 +530,12 @@ function PosRegister() {
       message.warning("This item is no longer on the menu, so it can't be edited.");
       return;
     }
-    const selections: Record<string, string | undefined> = {};
+    const selections: Record<string, string[]> = {};
     for (const group of item.modifiers ?? []) {
-      const chosen = line.options.find((o) =>
-        group.options.some((go) => go.id === o.id),
-      );
-      if (chosen) selections[group.id] = chosen.id;
+      const chosen = line.options
+        .filter((o) => group.options.some((go) => go.id === o.id))
+        .map((o) => o.id);
+      if (chosen.length > 0) selections[group.id] = chosen;
     }
     openPicker(item, selections, line.notes ?? "", line.key);
   };
@@ -546,23 +551,28 @@ function PosRegister() {
     if (!pickerItem) return;
     const groups = pickerItem.modifiers ?? [];
     for (const g of groups) {
-      if (g.isRequired && !pickerSelections[g.id]) {
+      const picked = pickerSelections[g.id] ?? [];
+      if (g.isRequired && picked.length === 0) {
         message.warning(`Please choose a ${g.name}.`);
+        return;
+      }
+      if (g.multiSelect && g.maxSelections != null && picked.length > g.maxSelections) {
+        message.warning(`${g.name}: choose at most ${g.maxSelections}.`);
         return;
       }
     }
     const options: CartOption[] = [];
     for (const g of groups) {
-      const optId = pickerSelections[g.id];
-      if (!optId) continue;
-      const opt = g.options.find((o) => o.id === optId);
-      if (opt) {
-        options.push({
-          id: opt.id,
-          name: opt.name,
-          priceAdjustment: opt.priceAdjustment,
-          groupName: g.name,
-        });
+      for (const optId of pickerSelections[g.id] ?? []) {
+        const opt = g.options.find((o) => o.id === optId);
+        if (opt) {
+          options.push({
+            id: opt.id,
+            name: opt.name,
+            priceAdjustment: opt.priceAdjustment,
+            groupName: g.name,
+          });
+        }
       }
     }
     const notes = pickerNotes.trim() || undefined;
@@ -1943,46 +1953,95 @@ function PosRegister() {
         okText={editingLineKey ? "Update item" : "Add to order"}
         destroyOnHidden
       >
-        {(pickerItem?.modifiers ?? []).map((group) => (
-          <div key={group.id} style={{ marginBottom: token.margin }}>
-            <Text strong>
-              {group.name}{" "}
-              {group.isRequired ? (
-                <Tag color="red">required</Tag>
-              ) : (
-                <Tag>optional</Tag>
+        {(pickerItem?.modifiers ?? []).map((group) => {
+          const picked = pickerSelections[group.id] ?? [];
+          const atCap =
+            group.multiSelect &&
+            group.maxSelections != null &&
+            picked.length >= group.maxSelections;
+          const optionLabel = (opt: ModifierOption) => (
+            <>
+              {opt.name}
+              {opt.priceAdjustment !== 0 && (
+                <Text type="secondary"> (+{fmtMoney(opt.priceAdjustment)})</Text>
               )}
-            </Text>
-            <Radio.Group
-              value={pickerSelections[group.id]}
-              onChange={(e) =>
-                setPickerSelections((prev) => ({
-                  ...prev,
-                  [group.id]: e.target.value as string,
-                }))
-              }
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: 6,
-                marginTop: 6,
-              }}
-            >
-              {!group.isRequired && <Radio value={undefined}>No thanks</Radio>}
-              {group.options.map((opt) => (
-                <Radio key={opt.id} value={opt.id}>
-                  {opt.name}
-                  {opt.priceAdjustment !== 0 && (
-                    <Text type="secondary">
-                      {" "}
-                      (+{fmtMoney(opt.priceAdjustment)})
-                    </Text>
+            </>
+          );
+          return (
+            <div key={group.id} style={{ marginBottom: token.margin }}>
+              <Text strong>
+                {group.name}{" "}
+                {group.isRequired ? (
+                  <Tag color="red">required</Tag>
+                ) : (
+                  <Tag>optional</Tag>
+                )}
+                {group.multiSelect && (
+                  <Tag color="blue">
+                    {group.maxSelections != null
+                      ? `choose up to ${group.maxSelections}`
+                      : "choose any"}
+                  </Tag>
+                )}
+              </Text>
+              {group.multiSelect ? (
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 6,
+                    marginTop: 6,
+                  }}
+                >
+                  {group.options.map((opt) => (
+                    <Checkbox
+                      key={opt.id}
+                      checked={picked.includes(opt.id)}
+                      // Cap enforcement: once at maxSelections, only unchecking is allowed.
+                      disabled={atCap ? !picked.includes(opt.id) : false}
+                      onChange={(e) =>
+                        setPickerSelections((prev) => ({
+                          ...prev,
+                          [group.id]: e.target.checked
+                            ? [...picked, opt.id]
+                            : picked.filter((id) => id !== opt.id),
+                        }))
+                      }
+                    >
+                      {optionLabel(opt)}
+                    </Checkbox>
+                  ))}
+                </div>
+              ) : (
+                <Radio.Group
+                  value={picked[0]}
+                  onChange={(e) =>
+                    setPickerSelections((prev) => ({
+                      ...prev,
+                      [group.id]:
+                        e.target.value == null ? [] : [e.target.value as string],
+                    }))
+                  }
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 6,
+                    marginTop: 6,
+                  }}
+                >
+                  {!group.isRequired && (
+                    <Radio value={undefined}>No thanks</Radio>
                   )}
-                </Radio>
-              ))}
-            </Radio.Group>
-          </div>
-        ))}
+                  {group.options.map((opt) => (
+                    <Radio key={opt.id} value={opt.id}>
+                      {optionLabel(opt)}
+                    </Radio>
+                  ))}
+                </Radio.Group>
+              )}
+            </div>
+          );
+        })}
         <Input.TextArea
           rows={2}
           placeholder="Kitchen note (optional)"

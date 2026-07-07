@@ -249,9 +249,9 @@ List active (staff) or all (`?all=true`); manage requires manager+.
 | P1 | Payments table + split payments | **Shipped** |
 | P1 | Manager PIN + voids/refunds | **Shipped** |
 | P1 | Multi-select modifiers, quantity limits | **Shipped** |
-| P2 | Customer profiles + one-tap reorder | Planned |
+| P2 | Customer profiles + one-tap reorder | **Shipped** (reorder pending) |
 | P2 | KDS screen | Planned |
-| P2 | Floor plan / tables / coursing | Planned |
+| P2 | Floor plan / tables / coursing | **Shipped** (v1: plans, live status, course tags) |
 | P2 | Stripe Terminal (card-present) | Deferred by decision |
 | P3 | Drawer management + Z-reports | Planned |
 | P3 | Order history search / reprint / duplicate | Planned |
@@ -265,7 +265,7 @@ Totals engine ✓ → Cash POS ✓ → Printing ✓ → AI order editing ✓
                                    ↓
                     Payments table ✓ → Split payments ✓ → Drawer management
                                    ↓
-                    Manager PIN → Voids/refunds
+                    Manager PIN ✓ → Voids/refunds ✓
                                    ↓
               Customers → Reorder     KDS → Tables/coursing     Offline
 ```

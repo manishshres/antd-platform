@@ -74,6 +74,8 @@ interface ModifierGroup {
   id: string;
   name: string;
   isRequired: boolean;
+  multiSelect?: boolean;
+  maxSelections?: number | null;
   options: ModifierOption[];
 }
 
@@ -547,6 +549,9 @@ export default function MenuEditorPage() {
                       <Text strong>{mg.name}</Text>
                       <Space>
                         <Tag color={mg.isRequired ? 'red' : 'blue'}>{mg.isRequired ? 'Required' : 'Optional'}</Tag>
+                        {mg.multiSelect && (
+                          <Tag color="purple">{mg.maxSelections != null ? `Multi (max ${mg.maxSelections})` : 'Multi'}</Tag>
+                        )}
                         {isAdmin && (
                           <Popconfirm title="Delete this modifier group?" onConfirm={async () => { await api.delete(`/menus/modifiers/groups/${mg.id}`); load(); }} okText="Delete" okType="danger">
                             <Button size="small" type="text" danger icon={<DeleteOutlined />} />
@@ -597,7 +602,7 @@ export default function MenuEditorPage() {
       <Modal title="Add Modifier Group" open={modifierModalOpen} onCancel={() => setModifierModalOpen(false)} footer={null} forceRender>
         <Form form={modifierForm} layout="vertical" onFinish={async (values) => {
           try {
-            const { data } = await api.post("/menus/modifiers/groups", { name: values.name, isRequired: values.isRequired, locationId: selectedLocationId });
+            const { data } = await api.post("/menus/modifiers/groups", { name: values.name, isRequired: values.isRequired, multiSelect: values.multiSelect || false, maxSelections: values.multiSelect ? values.maxSelections ?? undefined : undefined, locationId: selectedLocationId });
             if (values.options?.length > 0) {
               for (const opt of values.options) await api.post(`/menus/modifiers/${data.id}/options`, { name: opt.name, priceAdjustment: opt.priceAdjustment || 0 });
             }
@@ -606,6 +611,16 @@ export default function MenuEditorPage() {
         }}>
           <Form.Item name="name" label="Group Name" rules={[{ required: true }]}><Input placeholder="e.g. Size, Crust Type" /></Form.Item>
           <Form.Item name="isRequired" label="Is Required?" valuePropName="checked"><Switch /></Form.Item>
+          <Form.Item name="multiSelect" label="Allow multiple selections? (e.g. Toppings)" valuePropName="checked"><Switch /></Form.Item>
+          <Form.Item noStyle shouldUpdate={(prev, cur) => prev.multiSelect !== cur.multiSelect}>
+            {({ getFieldValue }) =>
+              getFieldValue("multiSelect") ? (
+                <Form.Item name="maxSelections" label="Max selections (blank = unlimited)">
+                  <InputNumber min={1} max={20} placeholder="e.g. 3" />
+                </Form.Item>
+              ) : null
+            }
+          </Form.Item>
           <Typography.Title level={5}>Options</Typography.Title>
           <Form.List name="options" initialValue={[{ name: "", priceAdjustment: 0 }]}>
             {(fields, { add, remove }) => (<>
