@@ -39,6 +39,11 @@ export class PosOrderItemDto {
   @IsString()
   @MaxLength(500)
   notes?: string;
+
+  @ApiProperty({ required: false, description: 'Course number (1 for Appetizer, 2 for Main)' })
+  @IsOptional()
+  @IsNumber()
+  course?: number;
 }
 
 export class CreatePosOrderDto {
@@ -62,6 +67,11 @@ export class CreatePosOrderDto {
   @IsString()
   @MaxLength(50)
   customerPhone?: string;
+
+  @ApiProperty({ required: false, description: 'Table ID' })
+  @IsOptional()
+  @IsUUID()
+  tableId?: string;
 
   @ApiProperty({
     required: false,

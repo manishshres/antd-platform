@@ -14,16 +14,18 @@ import { BillingModule } from './billing/billing.module';
 
 import { SentryModule } from '@sentry/nestjs/setup';
 import { TelnyxModule } from './telnyx/telnyx.module';
-import { AgentsModule } from './agents/agents.module';
-import { CallsModule } from './calls/calls.module';
-import { DocumentsModule } from './documents/documents.module';
-import { MenusModule } from './menus/menus.module';
-import { OrdersModule } from './orders/orders.module';
+import { CustomersModule } from './customers/customers.module';
+import { TablesModule } from './tables/tables.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { PrintersModule } from './printers/printers.module';
 import { QueuesModule } from './queues/queues.module';
 import { HealthModule } from './health/health.module';
 import { OrganizationsModule } from './organizations/organizations.module';
+import { AgentsModule } from './agents/agents.module';
+import { CallsModule } from './calls/calls.module';
+import { DocumentsModule } from './documents/documents.module';
+import { MenusModule } from './menus/menus.module';
+import { OrdersModule } from './orders/orders.module';
 import { ProvisioningModule } from './provisioning/provisioning.module';
 import { InvitationsModule } from './invitations/invitations.module';
 import { LocationsModule } from './locations/locations.module';
@@ -128,6 +130,8 @@ import { RolesGuard } from './auth/guards/roles.guard';
     ConversationsModule,
     DiscountsModule,
     AuditLogsModule,
+    CustomersModule,
+    TablesModule,
   ],
   controllers: [AppController],
   providers: [

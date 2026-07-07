@@ -10,6 +10,7 @@ import { AuditService } from '../common/services/audit.service';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { EventsGateway } from '../events/events.gateway';
+import { UsersService } from '../users/users.service';
 
 const mockEventsGateway = {
   emitToOrganization: jest.fn(),
@@ -65,6 +66,10 @@ describe('OrdersService', () => {
         { provide: getQueueToken('print-queue'), useValue: mockPrintQueue },
         { provide: PrintJobsService, useValue: mockPrintJobsService },
         { provide: AuditService, useValue: mockAuditService },
+        {
+          provide: UsersService,
+          useValue: { verifyManagerPin: jest.fn(), findOneById: jest.fn() },
+        },
         { provide: EventsGateway, useValue: mockEventsGateway },
         { provide: EventEmitter2, useValue: { emit: jest.fn() } },
       ],

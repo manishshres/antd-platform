@@ -281,6 +281,8 @@ export class MenusController {
       dto.name,
       dto.locationId,
       dto.isRequired || false,
+      dto.multiSelect || false,
+      dto.maxSelections,
     );
   }
 

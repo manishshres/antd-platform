@@ -42,8 +42,8 @@ export class PublicOrdersController {
     // They are not strictly tied to a user account unless provided in metadata
     return this.ordersService.createOrderForOrg(
       orgId,
-      dto.customerName,
-      dto.customerPhone,
+      dto.customerName || 'Walk-in',
+      dto.customerPhone || '',
       dto.items, // Temp cast if needed, will check further later
     );
   }

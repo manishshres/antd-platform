@@ -10,7 +10,7 @@ import * as bcrypt from 'bcrypt';
 import { DRIZZLE } from '../database/database.module';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../database/schema';
-import { eq, count } from 'drizzle-orm';
+import { eq, count, and, isNotNull, inArray } from 'drizzle-orm';
 import { notDeleted } from '../database/db.utils';
 import { CreateUserDto } from './dto/create-user.dto';
 import { PaginationDto } from '../common/dto/pagination.dto';
@@ -529,6 +529,47 @@ export class UsersService {
       organizationId: user.organizationId,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
+      posPinSet: !!user.posPinHash,
     };
+  }
+
+  async setPosPin(userId: string, pin: string): Promise<void> {
+    const posPinHash = await bcrypt.hash(pin, 12);
+    await this.db
+      .update(schema.users)
+      .set({ posPinHash, updatedAt: new Date() })
+      .where(eq(schema.users.id, userId));
+  }
+
+  async verifyManagerPin(
+    organizationId: string,
+    pin: string,
+  ): Promise<typeof schema.users.$inferSelect | null> {
+    const managers = await this.db
+      .select()
+      .from(schema.users)
+      .where(
+        and(
+          eq(schema.users.organizationId, organizationId),
+          isNotNull(schema.users.posPinHash),
+          // Anyone at manager level or above can approve PIN-gated actions.
+          inArray(schema.users.role, [
+            'manager',
+            'admin',
+            'sysadmin',
+            'platform_admin',
+          ]),
+          notDeleted(schema.users),
+        ),
+      );
+
+    for (const manager of managers) {
+      if (!manager.posPinHash) continue;
+      const isMatch = await bcrypt.compare(pin, manager.posPinHash);
+      if (isMatch) {
+        return manager;
+      }
+    }
+    return null;
   }
 }

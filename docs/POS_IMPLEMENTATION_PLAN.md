@@ -247,8 +247,8 @@ List active (staff) or all (`?all=true`); manage requires manager+.
 | P1 | Ticket numbers | **Shipped** |
 | P1 | PWA / iPad standalone | **Shipped** |
 | P1 | Payments table + split payments | **Shipped** |
-| P1 | Manager PIN + voids/refunds | Planned — next |
-| P1 | Multi-select modifiers, quantity limits | Planned |
+| P1 | Manager PIN + voids/refunds | **Shipped** |
+| P1 | Multi-select modifiers, quantity limits | **Shipped** |
 | P2 | Customer profiles + one-tap reorder | Planned |
 | P2 | KDS screen | Planned |
 | P2 | Floor plan / tables / coursing | Planned |

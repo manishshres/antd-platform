@@ -1,13 +1,15 @@
 import {
-  IsNotEmpty,
-  IsString,
   IsArray,
-  ValidateNested,
+  IsNotEmpty,
   IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+  ValidateNested,
   Min,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class OrderItemDto {
   @ApiProperty({
@@ -23,6 +25,11 @@ export class OrderItemDto {
   @Min(1)
   @IsNotEmpty()
   quantity: number;
+
+  @ApiPropertyOptional({ description: 'Course number (1 for Appetizer, 2 for Main)' })
+  @IsNumber()
+  @IsOptional()
+  course?: number;
 }
 
 export class CreateOrderDto {
@@ -34,18 +41,28 @@ export class CreateOrderDto {
   @IsNotEmpty()
   locationId: string;
 
-  @ApiProperty({ example: 'John Doe', description: 'Customer Name' })
-  @IsString()
-  @IsNotEmpty()
-  customerName: string;
+  @ApiPropertyOptional({ description: 'Customer ID if linking to a profile' })
+  @IsUUID()
+  @IsOptional()
+  customerId?: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({ description: 'Customer Name' })
+  @IsString()
+  @IsOptional()
+  customerName?: string;
+
+  @ApiPropertyOptional({ description: 'Table ID if dining in' })
+  @IsUUID()
+  @IsOptional()
+  tableId?: string;
+
+  @ApiPropertyOptional({
     example: '+15551234567',
     description: 'Customer Phone Number',
   })
   @IsString()
-  @IsNotEmpty()
-  customerPhone: string;
+  @IsOptional()
+  customerPhone?: string;
 
   @ApiProperty({ type: [OrderItemDto], description: 'List of order items' })
   @IsArray()

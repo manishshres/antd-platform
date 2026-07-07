@@ -35,6 +35,7 @@ interface UserProfile {
   phoneNumber: string | null;
   companyName: string | null;
   role: string;
+  posPinSet?: boolean;
 }
 
 export default function ProfilePage() {
@@ -43,10 +44,12 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true);
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
+  const [savingPosPin, setSavingPosPin] = useState(false);
   const { token } = theme.useToken();
 
   const [profileForm] = Form.useForm();
   const [passwordForm] = Form.useForm();
+  const [posPinForm] = Form.useForm();
 
   useEffect(() => {
     api
@@ -97,6 +100,25 @@ export default function ProfilePage() {
       message.error(msg);
     } finally {
       setSavingPassword(false);
+    }
+  };
+
+  const onSetPosPin = async (values: Record<string, string>) => {
+    setSavingPosPin(true);
+    try {
+      await api.post("/users/me/pos-pin", {
+        pin: values.pin,
+      });
+      message.success("POS PIN updated successfully.");
+      setProfile((prev) => (prev ? { ...prev, posPinSet: true } : prev));
+      posPinForm.resetFields();
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { message?: string } } })?.response?.data
+          ?.message ?? "Failed to set POS PIN.";
+      message.error(msg);
+    } finally {
+      setSavingPosPin(false);
     }
   };
 
@@ -282,6 +304,63 @@ export default function ProfilePage() {
           </Form.Item>
         </Form>
       </Card>
+
+      {/* POS Settings (Managers/Admins only) */}
+      {profile && ["manager", "platform_admin", "sysadmin"].includes(profile.role) && (
+        <Card
+          title="POS Settings"
+          variant="outlined"
+          extra={
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              {profile.posPinSet ? (
+                <Text type="success">PIN is currently set</Text>
+              ) : (
+                <Text type="warning">No PIN set</Text>
+              )}
+            </Text>
+          }
+        >
+          <Form
+            form={posPinForm}
+            layout="vertical"
+            onFinish={onSetPosPin}
+            requiredMark={false}
+          >
+            <Row gutter={16}>
+              <Col xs={24} sm={12}>
+                <Form.Item
+                  label="Manager POS PIN"
+                  name="pin"
+                  extra="A 4-digit PIN used to authorize voids and refunds on the POS."
+                  rules={[
+                    { required: true, message: "Please enter a 4-digit PIN." },
+                    { pattern: /^[0-9]{4}$/, message: "PIN must be exactly 4 digits." },
+                  ]}
+                >
+                  <Input.Password
+                    prefix={<LockOutlined style={{ color: token.colorTextPlaceholder }} />}
+                    placeholder="Enter 4-digit PIN"
+                    maxLength={4}
+                  />
+                </Form.Item>
+              </Col>
+            </Row>
+
+            <Divider style={{ margin: `${token.marginXS}px 0 ${token.marginLG}px` }} />
+
+            <Form.Item style={{ marginBottom: 0 }}>
+              <Button
+                type="primary"
+                htmlType="submit"
+                icon={<SaveOutlined />}
+                loading={savingPosPin}
+              >
+                Set PIN
+              </Button>
+            </Form.Item>
+          </Form>
+        </Card>
+      )}
     </Space>
   );
 }

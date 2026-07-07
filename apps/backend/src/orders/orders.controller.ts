@@ -23,6 +23,9 @@ import { CreateOrderDto } from './dto/create-order.dto';
 import { CreatePosOrderDto } from './dto/create-pos-order.dto';
 import { UpdateOrderItemsDto } from './dto/update-order-items.dto';
 import { PayOrderDto } from './dto/pay-order.dto';
+import { RefundOrderDto } from './dto/refund-order.dto';
+import { PartialRefundDto } from './dto/partial-refund.dto';
+import { AdjustOrderItemsDto } from './dto/adjust-order-items.dto';
 import { RecordPaymentDto } from './dto/record-payment.dto';
 import { UpdateStatusDto } from './dto/update-status.dto';
 import { PrintOrderDto } from './dto/print-order.dto';
@@ -84,8 +87,8 @@ export class OrdersController {
   ): Promise<unknown> {
     return this.ordersService.createOrder(
       user,
-      dto.customerName,
-      dto.customerPhone,
+      dto.customerName || 'Walk-in',
+      dto.customerPhone || '',
       dto.items,
     );
   }
@@ -141,6 +144,56 @@ export class OrdersController {
       dto.paymentMethod,
       dto.tipAmount,
     );
+  }
+
+  @Post(':id/refund')
+  @Roles('user', 'manager', 'admin', 'sysadmin')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Void and refund a paid order using manager PIN' })
+  @ApiResponse({ status: 200, description: 'Order voided and refunded.' })
+  @ApiResponse({ status: 400, description: 'Order not paid or invalid state.' })
+  @ApiResponse({ status: 403, description: 'Invalid manager PIN.' })
+  @ApiResponse({ status: 404, description: 'Order not found.' })
+  async refundOrder(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('id') id: string,
+    @Body() dto: RefundOrderDto,
+  ): Promise<unknown> {
+    if (!id) throw new BadRequestException('Order ID is required.');
+    return this.ordersService.refundPaidOrder(user, id, dto.managerPin, dto.reason);
+  }
+
+  @Post(':id/refund-partial')
+  @Roles('user', 'manager', 'admin', 'sysadmin')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Partially refund a paid order using manager PIN' })
+  @ApiResponse({ status: 200, description: 'Order partially refunded.' })
+  @ApiResponse({ status: 400, description: 'Order not paid or invalid amount.' })
+  @ApiResponse({ status: 403, description: 'Invalid manager PIN.' })
+  @ApiResponse({ status: 404, description: 'Order not found.' })
+  async partialRefundOrder(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('id') id: string,
+    @Body() dto: PartialRefundDto,
+  ): Promise<unknown> {
+    if (!id) throw new BadRequestException('Order ID is required.');
+    return this.ordersService.refundPartialOrder(user, id, dto);
+  }
+
+  @Put(':id/adjust')
+  @Roles('user', 'manager', 'admin', 'sysadmin')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Adjust items in a closed order' })
+  @ApiResponse({ status: 200, description: 'Order items adjusted.' })
+  @ApiResponse({ status: 403, description: 'Invalid manager PIN.' })
+  @ApiResponse({ status: 404, description: 'Order not found.' })
+  async adjustOrderItems(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('id') id: string,
+    @Body() dto: AdjustOrderItemsDto,
+  ): Promise<unknown> {
+    if (!id) throw new BadRequestException('Order ID is required.');
+    return this.ordersService.adjustOrderItems(user, id, dto);
   }
 
   @Post(':id/payments')

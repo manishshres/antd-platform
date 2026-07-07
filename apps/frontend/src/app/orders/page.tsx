@@ -10,7 +10,8 @@ import {
   Typography,
   Space,
   Alert,
-  Drawer,
+  Dropdown,
+  MenuProps,
   Descriptions,
   Divider,
   Input,
@@ -23,6 +24,9 @@ import type { ColumnsType } from "antd/es/table";
 import {
   PrinterOutlined,
   ShopOutlined,
+  DownOutlined,
+  EditOutlined,
+  EyeOutlined,
 } from "@ant-design/icons";
 import { api } from "@/lib/api";
 import PageHeader from "@/components/PageHeader";
@@ -94,11 +98,6 @@ export default function OrdersPage() {
   // Quick client-side filters over the loaded page (E2 toolbar)
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("");
-
-  // Detail Drawer
-  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
-  const [actionLoading, setActionLoading] = useState(false);
 
   const [isAdmin, setIsAdmin] = useState(false);
   
@@ -201,56 +200,6 @@ export default function OrdersPage() {
     };
   }, [socket, load, notification]);
 
-  const viewOrder = (order: Order) => {
-    setSelectedOrder(order);
-    setPrinterId("");
-    setDetailLoading(true);
-    api
-      .get<Order>(`/orders/${order.id}`)
-      .then(({ data }) => {
-        setSelectedOrder(data);
-      })
-      .catch(() => message.error("Failed to load order details."))
-      .finally(() => setDetailLoading(false));
-  };
-
-  const updateStatus = async (orderId: string, newStatus: string) => {
-    setActionLoading(true);
-    try {
-      const { data } = await api.patch<Order>(`/orders/${orderId}/status`, {
-        status: newStatus,
-      });
-      message.success(`Order status updated to ${STATUS_LABEL[newStatus]}`);
-
-      // Update selected order detail view
-      setSelectedOrder(data);
-
-      // Reload main table
-      load();
-    } catch {
-      message.error("Failed to update status.");
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const [printLoading, setPrintLoading] = useState(false);
-  const [printerId, setPrinterId] = useState("");
-
-  const handlePrint = async (orderId: string, printerIdOverride?: string) => {
-    setPrintLoading(true);
-    try {
-      await api.post(`/orders/${orderId}/print`, {
-        printerId: printerIdOverride?.trim() || undefined,
-      });
-      message.success("Order dispatched to MQTT print queue!");
-    } catch {
-      message.error("Failed to enqueue print job.");
-    } finally {
-      setPrintLoading(false);
-    }
-  };
-
   const q = search.trim().toLowerCase();
   const displayedOrders = orders.filter((o) => {
     if (statusFilter && o.status !== statusFilter) return false;
@@ -327,28 +276,36 @@ export default function OrdersPage() {
       title: "Action",
       key: "action",
       align: "center",
-      render: (_: unknown, record: Order) => (
-        <Space size={4}>
-          <Button size='small' onClick={() => viewOrder(record)}>
-            Details
-          </Button>
-          {!record.paidAt &&
-            ["pending", "confirmed"].includes(record.status) && (
-              <Tooltip title='Open this unpaid order in the register to edit items and take payment'>
-                <Button
-                  size='small'
-                  type='primary'
-                  ghost
-                  icon={<ShopOutlined />}
-                  aria-label={`Open order in POS`}
-                  onClick={() => router.push(`/pos?orderId=${record.id}`)}
-                >
-                  Open in POS
-                </Button>
-              </Tooltip>
-            )}
-        </Space>
-      ),
+      render: (_: unknown, record: Order) => {
+        const canEdit =
+          !record.paidAt && ["pending", "confirmed"].includes(record.status);
+
+        const items: MenuProps["items"] = [
+          {
+            key: "details",
+            label: "View Details",
+            icon: <EyeOutlined />,
+            onClick: () => router.push(`/orders/${record.id}`),
+          },
+        ];
+
+        if (canEdit) {
+          items.unshift({
+            key: "edit",
+            label: "Edit in POS",
+            icon: <EditOutlined />,
+            onClick: () => router.push(`/pos?orderId=${record.id}`),
+          });
+        }
+
+        return (
+          <Dropdown menu={{ items }} trigger={["click"]}>
+            <Button size="small">
+              Actions <DownOutlined />
+            </Button>
+          </Dropdown>
+        );
+      },
     },
   ];
 
@@ -414,150 +371,7 @@ export default function OrdersPage() {
         />
       </Card>
 
-      {/* Order Details Drawer */}
-      <Drawer
-        title={`Order Details`}
-        styles={{ wrapper: { width: 480 } }}
-        placement='right'
-        onClose={() => setSelectedOrder(null)}
-        open={!!selectedOrder}
-        loading={detailLoading}
-      >
-        {selectedOrder && (
-          <Space orientation='vertical' size='large' style={{ width: "100%" }}>
-            <Descriptions column={1} size='small' bordered>
-              <Descriptions.Item label='Order ID'>
-                <Text copyable style={{ fontSize: 12 }}>
-                  {selectedOrder.id}
-                </Text>
-              </Descriptions.Item>
-              <Descriptions.Item label='Customer'>
-                {selectedOrder.customerName}
-              </Descriptions.Item>
-              <Descriptions.Item label='Phone'>
-                {formatPhone(selectedOrder.customerPhone)}
-              </Descriptions.Item>
-              <Descriptions.Item label='Status'>
-                <Tag color={STATUS_COLOR[selectedOrder.status] || "default"}>
-                  {STATUS_LABEL[selectedOrder.status] || selectedOrder.status}
-                </Tag>
-              </Descriptions.Item>
-              <Descriptions.Item label='Total Price'>
-                <Text style={{ fontWeight: 600 }}>
-                  {formatPrice(selectedOrder.totalAmount)}
-                </Text>
-              </Descriptions.Item>
-            </Descriptions>
 
-            <div>
-              <Title level={5} style={{ marginBottom: 12 }}>
-                Order Items
-              </Title>
-              {selectedOrder.items && selectedOrder.items.length > 0 ? (
-                selectedOrder.items.map((item) => (
-                  <div
-                    key={item.id}
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      marginBottom: token.marginSM,
-                    }}
-                  >
-                    <div>
-                      <Text style={{ fontWeight: 500 }}>
-                        {item.menuItemName}
-                      </Text>
-                      <div>
-                        <Text type='secondary' style={{ fontSize: 12 }}>
-                          {item.quantity} × {formatPrice(item.price)}
-                        </Text>
-                      </div>
-                    </div>
-                    <Text style={{ fontVariantNumeric: "tabular-nums" }}>
-                      {formatPrice(item.price * item.quantity)}
-                    </Text>
-                  </div>
-                ))
-              ) : (
-                <Text type='secondary'>No items in this order.</Text>
-              )}
-            </div>
-
-            {isAdmin && (
-              <>
-                <Divider style={{ margin: `${token.marginSM}px 0` }} />
-
-                <div>
-                  <Title level={5} style={{ marginBottom: token.marginSM }}>
-                    Manage Order Status
-                  </Title>
-                  <Space wrap size={8}>
-                    <Button
-                      onClick={() => updateStatus(selectedOrder.id, "preparing")}
-                      disabled={selectedOrder.status !== "pending" || actionLoading}
-                      type='primary'
-                    >
-                      Start Preparing
-                    </Button>
-                    <Button
-                      onClick={() => updateStatus(selectedOrder.id, "ready")}
-                      disabled={
-                        selectedOrder.status !== "preparing" || actionLoading
-                      }
-                      color='cyan'
-                      variant='solid'
-                    >
-                      Ready for Pickup
-                    </Button>
-                    <Button
-                      onClick={() => updateStatus(selectedOrder.id, "completed")}
-                      disabled={selectedOrder.status !== "ready" || actionLoading}
-                      color='green'
-                      variant='solid'
-                    >
-                      Complete Order
-                    </Button>
-                    <Button
-                      onClick={() => updateStatus(selectedOrder.id, "cancelled")}
-                      disabled={
-                        ["completed", "cancelled"].includes(selectedOrder.status) ||
-                        actionLoading
-                      }
-                      danger
-                    >
-                      Cancel Order
-                    </Button>
-                  </Space>
-                </div>
-
-                <Divider style={{ margin: `${token.marginSM}px 0` }} />
-
-                <div>
-                  <Title level={5} style={{ marginBottom: token.marginSM }}>
-                    MQTT Print Job
-                  </Title>
-                  <Input
-                    placeholder="Optional printer ID / subtopic (leave blank for all)"
-                    value={printerId}
-                    onChange={(event) => setPrinterId(event.target.value)}
-                    style={{ marginBottom: token.marginSM }}
-                    allowClear
-                  />
-                  <Button
-                    onClick={() => handlePrint(selectedOrder.id, printerId)}
-                    loading={printLoading}
-                    icon={<PrinterOutlined />}
-                    type='primary'
-                    style={{ width: "100%" }}
-                  >
-                    Send to Kitchen &amp; Receipt Printers
-                  </Button>
-                </div>
-              </>
-            )}
-          </Space>
-        )}
-      </Drawer>
     </>
   );
 }

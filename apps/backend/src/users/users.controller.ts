@@ -31,6 +31,7 @@ import { CreateTeamMemberDto } from './dto/create-team-member.dto';
 import { UpdateUserDto, UpdateUserGlobalDto } from './dto/update-user.dto';
 import { UpdateMeDto } from './dto/update-me.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { SetPosPinDto } from './dto/set-pos-pin.dto';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { PaginatedResponseDto } from '../common/dto/paginated-response.dto';
 import { Query } from '@nestjs/common';
@@ -85,6 +86,18 @@ export class UsersController {
     @Body() dto: ChangePasswordDto,
   ) {
     return this.usersService.changeMyPassword(user.id, dto);
+  }
+
+  @Post('me/pos-pin')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Set or update POS PIN' })
+  @ApiResponse({ status: 200, description: 'POS PIN updated successfully.' })
+  async setPosPin(
+    @CurrentUser() user: CurrentUserPayload,
+    @Body() dto: SetPosPinDto,
+  ) {
+    await this.usersService.setPosPin(user.id, dto.pin);
+    return { success: true };
   }
 
   @Delete('me')

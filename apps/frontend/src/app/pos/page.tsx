@@ -95,6 +95,7 @@ interface CartLine {
   quantity: number;
   options: CartOption[];
   notes?: string;
+  course?: number;
 }
 
 interface Discount {
@@ -117,6 +118,24 @@ interface OpenOrderRow {
   paidAt?: string | null;
   totalAmount: number;
   createdAt: string;
+}
+
+/** Table on a floor plan, with live status from the tables endpoint. */
+interface FloorTable {
+  id: string;
+  name: string;
+  capacity?: number | null;
+  shape?: string | null; // 'circle' | 'rect'
+  posX?: number | null;
+  posY?: number | null;
+  status?: string | null; // 'available' | 'occupied' | 'billed'
+  activeOrderTotal?: number | null;
+}
+
+interface FloorPlan {
+  id: string;
+  name: string;
+  tables?: FloorTable[];
 }
 
 /** Shape of the order returned by GET /orders/:id (fields the register needs). */
@@ -171,6 +190,12 @@ function PosRegister() {
 
   const [cart, setCart] = useState<CartLine[]>([]);
   const [orderType, setOrderType] = useState<string>("dine_in");
+
+  // Floor plan / Table management
+  const [viewMode, setViewMode] = useState<"menu" | "floor_plan">("menu");
+  const [floorPlans, setFloorPlans] = useState<FloorPlan[]>([]);
+  const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
+
   const [customerName, setCustomerName] = useState("");
   const [orderNotes, setOrderNotes] = useState("");
   const [charging, setCharging] = useState<"cash" | "card" | null>(null);
@@ -222,7 +247,26 @@ function PosRegister() {
     Record<string, string | undefined>
   >({});
   const [pickerNotes, setPickerNotes] = useState("");
+  const [pickerCourse, setPickerCourse] = useState<number | undefined>(undefined);
   const [editingLineKey, setEditingLineKey] = useState<string | null>(null);
+
+  const loadFloorPlans = () => {
+    if (!selectedLocationId) return;
+    api
+      .get(`/tables/locations/${selectedLocationId}/floor-plans`)
+      .then(({ data }) => {
+        setFloorPlans(data ?? []);
+      })
+      .catch((e) => console.error(e));
+  };
+
+  useEffect(() => {
+    if (viewMode === "floor_plan") {
+      loadFloorPlans();
+      const timer = setInterval(loadFloorPlans, 10000);
+      return () => clearInterval(timer);
+    }
+  }, [viewMode, selectedLocationId]);
 
   useEffect(() => {
     if (!selectedLocationId) return;
@@ -427,20 +471,18 @@ function PosRegister() {
     item: MenuItem,
     options: CartOption[],
     notes?: string,
+    course?: number,
   ): CartLine => {
-    const optionsKey = options
-      .map((o) => o.id)
-      .sort()
-      .join(",");
+    const optsPrice = options.reduce((sum, o) => sum + o.priceAdjustment, 0);
     return {
-      key: `${item.id}|${optionsKey}|${notes ?? ""}`,
+      key: `${item.id}-${Date.now()}`,
       menuItemId: item.id,
       name: item.name,
-      unitPrice:
-        item.price + options.reduce((s, o) => s + o.priceAdjustment, 0),
+      unitPrice: item.price + optsPrice,
       quantity: 1,
       options,
       notes,
+      course,
     };
   };
 
@@ -524,8 +566,9 @@ function PosRegister() {
       }
     }
     const notes = pickerNotes.trim() || undefined;
+    const course = pickerCourse;
     if (editingLineKey) {
-      const replacement = buildLine(pickerItem, options, notes);
+      const replacement = buildLine(pickerItem, options, notes, course);
       setCart((prev) =>
         prev.map((l) =>
           l.key === editingLineKey
@@ -534,9 +577,10 @@ function PosRegister() {
         ),
       );
     } else {
-      addLine(pickerItem, options, notes);
+      setCart((prev) => [...prev, buildLine(pickerItem, options, notes, course)]);
     }
     setPickerItem(null);
+    setPickerCourse(undefined);
     setEditingLineKey(null);
   };
 
@@ -574,6 +618,7 @@ function PosRegister() {
       quantity: l.quantity,
       optionIds: l.options.map((o) => o.id).filter(Boolean),
       notes: l.notes,
+      course: l.course,
     }));
 
   /**
@@ -820,6 +865,17 @@ function PosRegister() {
             ? `Editing order ${orderLabel(editingOrder)}`
             : "Ring up in-store orders"
         }
+        actions={
+          <Radio.Group
+            value={viewMode}
+            onChange={(e) => setViewMode(e.target.value as "menu" | "floor_plan")}
+            buttonStyle="solid"
+            aria-label="Register view"
+          >
+            <Radio.Button value="menu">Menu</Radio.Button>
+            <Radio.Button value="floor_plan">Floor Plan</Radio.Button>
+          </Radio.Group>
+        }
       />
 
       {editingOrder && (
@@ -847,7 +903,7 @@ function PosRegister() {
       {/* Height, wrapping, and touch behavior live in globals.css (.pos-*) so they
           can respond to iPad/tablet breakpoints; colors stay tokenized inline. */}
       <div className="pos-register" style={{ gap: token.marginSM }}>
-        {/* Items area: search + category pills on top, grid below */}
+        {/* Items area / Floor plan area */}
         <div
           style={{
             flex: 1,
@@ -857,8 +913,10 @@ function PosRegister() {
             gap: token.marginSM,
           }}
         >
-          <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-            <Input
+          {viewMode === "menu" ? (
+            <>
+              <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                <Input
               allowClear
               prefix={<SearchOutlined />}
               placeholder="Search menu..."
@@ -1082,6 +1140,63 @@ function PosRegister() {
               </div>
             )}
           </div>
+            </>
+          ) : (
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 16, overflowY: "auto" }}>
+              {floorPlans.length === 0 ? (
+                <Empty description="No floor plans available." />
+              ) : (
+                floorPlans.map((fp) => (
+                  <div key={fp.id} style={{ border: `1px solid ${token.colorBorderSecondary}`, borderRadius: token.borderRadiusLG, padding: token.padding }}>
+                    <Text strong style={{ fontSize: 18, marginBottom: 16, display: "block" }}>{fp.name}</Text>
+                    <div style={{ position: "relative", width: "100%", height: 400, background: token.colorFillAlter, borderRadius: token.borderRadius }}>
+                      {fp.tables?.map((table) => {
+                        const isSelected = selectedTableId === table.id;
+                        let bgColor = token.colorBgContainer;
+                        if (table.status === 'occupied') bgColor = token.colorWarningBg;
+                        else if (table.status === 'billed') bgColor = token.colorSuccessBg;
+                        
+                        return (
+                          <div
+                            key={table.id}
+                            onClick={() => setSelectedTableId(isSelected ? null : table.id)}
+                            style={{
+                              position: "absolute",
+                              left: `${table.posX}%`,
+                              top: `${table.posY}%`,
+                              width: 80,
+                              height: table.shape === 'circle' ? 80 : 60,
+                              borderRadius: table.shape === 'circle' ? '50%' : token.borderRadius,
+                              background: bgColor,
+                              border: `2px solid ${isSelected ? token.colorPrimary : token.colorBorder}`,
+                              display: "flex",
+                              flexDirection: "column",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              cursor: "pointer",
+                              boxShadow: token.boxShadowTertiary,
+                              transform: "translate(-50%, -50%)",
+                              transition: "all 0.2s"
+                            }}
+                          >
+                            <Text strong>{table.name}</Text>
+                            <Text type="secondary" style={{ fontSize: 10 }}>
+                              {table.capacity} pax
+                            </Text>
+                            {(table.activeOrderTotal ?? 0) > 0 && (
+                              <Text type="success" style={{ fontSize: 12, marginTop: 4 }}>
+                                {fmtMoney(table.activeOrderTotal ?? 0)}
+                              </Text>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
         </div>
 
         {/* Cart panel — width is fluid on tablets (globals.css .pos-cart) */}
@@ -1875,7 +1990,17 @@ function PosRegister() {
           onChange={(e) => setPickerNotes(e.target.value)}
           maxLength={500}
           aria-label="Kitchen note"
+          style={{ marginBottom: token.margin }}
         />
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <Text strong>Course</Text>
+          <Radio.Group value={pickerCourse} onChange={(e) => setPickerCourse(e.target.value)}>
+            <Radio.Button value={undefined}>None</Radio.Button>
+            <Radio.Button value={1}>1 (Appetizer)</Radio.Button>
+            <Radio.Button value={2}>2 (Main)</Radio.Button>
+            <Radio.Button value={3}>3 (Dessert)</Radio.Button>
+          </Radio.Group>
+        </div>
       </Modal>
 
       {/* Discount picker */}

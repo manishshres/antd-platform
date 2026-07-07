@@ -12,11 +12,27 @@ import { ApiProperty } from '@nestjs/swagger';
 import { PosOrderItemDto } from './create-pos-order.dto';
 
 export class UpdateOrderItemsDto {
+  @ApiProperty({ required: false, description: 'Customer ID' })
+  @IsOptional()
+  @IsUUID()
+  customerId?: string;
+
   @ApiProperty({ required: false, description: 'Customer name' })
   @IsOptional()
   @IsString()
   @MaxLength(255)
   customerName?: string;
+
+  @ApiProperty({ required: false, description: 'Table ID' })
+  @IsOptional()
+  @IsUUID()
+  tableId?: string;
+
+  @ApiProperty({ required: false, description: 'Customer phone' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  customerPhone?: string;
 
   @ApiProperty({ required: false, example: 'pickup' })
   @IsOptional()

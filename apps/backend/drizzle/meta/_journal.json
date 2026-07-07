@@ -71,6 +71,34 @@
       "when": 1783346536613,
       "tag": "0009_payments",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1783349177399,
+      "tag": "0010_brainy_nehzno",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1783365729110,
+      "tag": "0011_multi_select_modifiers",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1783367677127,
+      "tag": "0012_customer_profiles",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1783403667328,
+      "tag": "0013_wooden_banshee",
+      "breakpoints": true
     }
   ]
 }

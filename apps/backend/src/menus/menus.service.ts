@@ -620,6 +620,8 @@ export class MenusService {
     name: string,
     locationId?: string,
     isRequired: boolean = false,
+    multiSelect: boolean = false,
+    maxSelections?: number,
   ) {
     const orgId = await this.billingService.getRequiredOrg(user);
     const newGroup = await this.db
@@ -629,6 +631,8 @@ export class MenusService {
         organizationId: orgId,
         locationId: locationId || null,
         isRequired,
+        multiSelect,
+        maxSelections: maxSelections ?? null,
       })
       .returning();
 

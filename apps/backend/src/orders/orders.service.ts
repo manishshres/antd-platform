@@ -16,10 +16,13 @@ import { BillingService } from '../billing/billing.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { GetOrdersDto } from './dto/get-orders.dto';
 import { PaginatedResponseDto } from '../common/dto/paginated-response.dto';
+import { PartialRefundDto } from './dto/partial-refund.dto';
+import { AdjustOrderItemsDto } from './dto/adjust-order-items.dto';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { PrintJobsService } from '../printers/print-jobs.service';
 import { AuditService } from '../common/services/audit.service';
+import { UsersService } from '../users/users.service';
 import { EventsGateway } from '../events/events.gateway';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
@@ -36,6 +39,7 @@ export class OrdersService {
     private readonly printQueue: Queue,
     private readonly printJobsService: PrintJobsService,
     private readonly auditService: AuditService,
+    private readonly usersService: UsersService,
     private readonly eventsGateway: EventsGateway,
     private readonly eventEmitter: EventEmitter2,
   ) {}
@@ -118,9 +122,11 @@ export class OrdersService {
       )
       .where(eq(schema.orderItems.orderId, orderId));
 
+    const paymentsRes = await this.db.select().from(schema.payments).where(eq(schema.payments.orderId, orderId));
     return {
       ...order,
       items: itemsRes,
+      payments: paymentsRes,
     };
   }
 
@@ -367,6 +373,7 @@ export class OrdersService {
       quantity: number;
       optionIds?: string[];
       notes?: string;
+      course?: number;
     }[],
   ) {
     const itemIds = [...new Set(items.map((i) => i.menuItemId))];
@@ -425,6 +432,8 @@ export class OrdersService {
         menuItemId: schema.menuItemToModifiers.menuItemId,
         modifierId: schema.menuItemToModifiers.modifierId,
         isRequired: schema.menuModifiers.isRequired,
+        multiSelect: schema.menuModifiers.multiSelect,
+        maxSelections: schema.menuModifiers.maxSelections,
       })
       .from(schema.menuItemToModifiers)
       .innerJoin(
@@ -439,11 +448,16 @@ export class OrdersService {
       );
     const attachedByItem = new Map<
       string,
-      { modifierId: string; isRequired: boolean }[]
+      { modifierId: string; isRequired: boolean; multiSelect: boolean; maxSelections: number | null }[]
     >();
     for (const row of attachRows) {
       const list = attachedByItem.get(row.menuItemId) ?? [];
-      list.push({ modifierId: row.modifierId, isRequired: row.isRequired });
+      list.push({ 
+        modifierId: row.modifierId, 
+        isRequired: row.isRequired,
+        multiSelect: row.multiSelect,
+        maxSelections: row.maxSelections,
+      });
       attachedByItem.set(row.menuItemId, list);
     }
 
@@ -458,7 +472,7 @@ export class OrdersService {
 
       const attached = attachedByItem.get(line.menuItemId) ?? [];
       const attachedGroupIds = new Set(attached.map((a) => a.modifierId));
-      const selectedGroupIds = new Set<string>();
+      const selectionCounts = new Map<string, number>();
 
       const snapshots = (line.optionIds ?? []).map((optionId) => {
         const opt = optionMap.get(optionId);
@@ -472,7 +486,7 @@ export class OrdersService {
             `Modifier option "${opt.name}" does not apply to menu item ${line.menuItemId}.`,
           );
         }
-        selectedGroupIds.add(opt.modifierId);
+        selectionCounts.set(opt.modifierId, (selectionCounts.get(opt.modifierId) ?? 0) + 1);
         return {
           optionId: opt.id,
           modifier: opt.modifierName,
@@ -482,9 +496,20 @@ export class OrdersService {
       });
 
       for (const group of attached) {
-        if (group.isRequired && !selectedGroupIds.has(group.modifierId)) {
+        const count = selectionCounts.get(group.modifierId) ?? 0;
+        if (group.isRequired && count === 0) {
           throw new BadRequestException(
             `Menu item ${line.menuItemId} is missing a required modifier selection.`,
+          );
+        }
+        if (!group.multiSelect && count > 1) {
+          throw new BadRequestException(
+            `Modifier group allows only 1 selection, but multiple were provided for menu item ${line.menuItemId}.`,
+          );
+        }
+        if (group.multiSelect && group.maxSelections !== null && count > group.maxSelections) {
+          throw new BadRequestException(
+            `Modifier group allows up to ${group.maxSelections} selections, but ${count} were provided.`,
           );
         }
       }
@@ -500,6 +525,7 @@ export class OrdersService {
         price: unitPrice,
         modifiers: snapshots.length > 0 ? snapshots : null,
         notes: line.notes?.trim() || null,
+        course: line.course ?? null,
       };
     });
 
@@ -723,8 +749,10 @@ export class OrdersService {
     user: CurrentUserPayload,
     dto: {
       locationId: string;
+      customerId?: string;
       customerName?: string;
       customerPhone?: string;
+      tableId?: string;
       orderType?: string;
       specialInstructions?: string;
       /** Omitted = save unpaid (dine-in / pay-later); kitchen fires, receipt waits. */
@@ -737,6 +765,7 @@ export class OrdersService {
         quantity: number;
         optionIds?: string[];
         notes?: string;
+        course?: number;
       }[];
     },
   ) {
@@ -785,6 +814,8 @@ export class OrdersService {
         .values({
           organizationId: orgId,
           locationId: dto.locationId,
+          customerId: dto.customerId || null,
+          tableId: dto.tableId || null,
           customerName: dto.customerName?.trim() || 'Walk-in',
           customerPhone: dto.customerPhone?.trim() || '',
           status: 'confirmed',
@@ -816,6 +847,7 @@ export class OrdersService {
           price: item.price,
           modifiers: item.modifiers,
           notes: item.notes,
+          course: item.course,
         })),
       );
 
@@ -846,7 +878,10 @@ export class OrdersService {
     user: CurrentUserPayload,
     orderId: string,
     dto: {
+      customerId?: string;
       customerName?: string;
+      customerPhone?: string;
+      tableId?: string;
       orderType?: string;
       specialInstructions?: string;
       discountId?: string;
@@ -856,6 +891,7 @@ export class OrdersService {
         quantity: number;
         optionIds?: string[];
         notes?: string;
+        course?: number;
       }[];
     },
   ) {
@@ -917,12 +953,17 @@ export class OrdersService {
           discountName: discount?.name ?? null,
           discountId: discount?.id ?? null,
           totalAmount,
+          ...(dto.customerId !== undefined ? { customerId: dto.customerId || null } : {}),
+          ...(dto.tableId !== undefined ? { tableId: dto.tableId || null } : {}),
           ...(dto.customerName !== undefined
             ? { customerName: dto.customerName.trim() || 'Walk-in' }
             : {}),
           ...(dto.orderType !== undefined ? { orderType: dto.orderType } : {}),
           ...(dto.specialInstructions !== undefined
             ? { specialInstructions: dto.specialInstructions || null }
+            : {}),
+          ...(dto.customerPhone !== undefined
+            ? { customerPhone: dto.customerPhone.trim() || '' }
             : {}),
           updatedAt: new Date(),
         })
@@ -939,6 +980,7 @@ export class OrdersService {
           price: item.price,
           modifiers: item.modifiers,
           notes: item.notes,
+          course: item.course,
         })),
       );
     });
@@ -1320,4 +1362,260 @@ export class OrdersService {
       receiptJobId: receiptJob.id,
     };
   }
+
+  async refundPaidOrder(
+    user: CurrentUserPayload,
+    orderId: string,
+    managerPin: string,
+    reason?: string,
+  ): Promise<unknown> {
+    // 1. Verify manager PIN
+    const manager = await this.usersService.verifyManagerPin(
+      user.organizationId!,
+      managerPin,
+    );
+    if (!manager) {
+      throw new ForbiddenException('Invalid manager PIN.');
+    }
+
+    // 2. Load order and its payments
+    const orderRes = await this.db
+      .select()
+      .from(schema.orders)
+      .where(
+        and(
+          eq(schema.orders.id, orderId),
+          eq(schema.orders.organizationId, user.organizationId!),
+        ),
+      )
+      .limit(1);
+
+    const order = orderRes[0];
+    if (!order) {
+      throw new NotFoundException('Order not found.');
+    }
+
+    if (order.status === 'cancelled') {
+      throw new BadRequestException('Order is already cancelled/refunded.');
+    }
+    if (!order.paidAt && !order.paymentMethod) {
+      throw new BadRequestException('Order is not paid.');
+    }
+
+    const orderPayments = await this.db
+      .select()
+      .from(schema.payments)
+      .where(eq(schema.payments.orderId, order.id));
+
+    // 3. Mark as cancelled and insert negative payments inside a transaction
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(schema.orders)
+        .set({
+          status: 'cancelled',
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.orders.id, orderId));
+
+      for (const p of orderPayments) {
+        if (p.amount > 0) {
+          await tx.insert(schema.payments).values({
+            organizationId: p.organizationId,
+            locationId: p.locationId,
+            orderId: p.orderId,
+            method: p.method,
+            amount: -p.amount,
+            tipAmount: -p.tipAmount,
+            cashReceived: p.cashReceived ? -p.cashReceived : null,
+            changeGiven: p.changeGiven ? -p.changeGiven : null,
+            createdBy: manager.id,
+          });
+        }
+      }
+
+      await this.auditService.log({
+        organizationId: user.organizationId,
+        userId: manager.id,
+        action: 'order.refunded',
+        entityType: 'order',
+        entityId: order.id,
+        newValue: { orderId: order.id, originalTotal: order.totalAmount, reason },
+      });
+    });
+
+    this.eventsGateway.emitToOrganization(user.organizationId!, 'order.updated', {
+      id: order.id,
+      status: 'cancelled',
+    });
+
+    return { success: true, message: 'Order voided and refunded.' };
+  }
+
+  async refundPartialOrder(
+    user: CurrentUserPayload,
+    orderId: string,
+    dto: PartialRefundDto,
+  ): Promise<unknown> {
+    const manager = await this.usersService.verifyManagerPin(
+      user.organizationId!,
+      dto.managerPin,
+    );
+    if (!manager) {
+      throw new ForbiddenException('Invalid manager PIN.');
+    }
+
+    const orderRes = await this.db
+      .select()
+      .from(schema.orders)
+      .where(
+        and(
+          eq(schema.orders.id, orderId),
+          eq(schema.orders.organizationId, user.organizationId!),
+        ),
+      )
+      .limit(1);
+
+    const order = orderRes[0];
+    if (!order) throw new NotFoundException('Order not found.');
+    if (order.status === 'cancelled') {
+      throw new BadRequestException('Order is cancelled.');
+    }
+    if (!order.paidAt) {
+      throw new BadRequestException('Order is not paid.');
+    }
+
+    await this.db.transaction(async (tx) => {
+      // Create negative payment record
+      await tx.insert(schema.payments).values({
+        organizationId: order.organizationId,
+        locationId: order.locationId,
+        orderId: order.id,
+        method: order.paymentMethod || 'cash',
+        amount: -dto.amount,
+        tipAmount: 0,
+        createdBy: manager.id,
+      });
+
+      await this.auditService.log({
+        organizationId: user.organizationId,
+        userId: manager.id,
+        action: 'order.refund_partial',
+        entityType: 'order',
+        entityId: order.id,
+        newValue: { amount: dto.amount, reason: dto.reason },
+      });
+    });
+
+    return { success: true, message: `Refunded $${(dto.amount / 100).toFixed(2)}` };
+  }
+
+  async adjustOrderItems(
+    user: CurrentUserPayload,
+    orderId: string,
+    dto: AdjustOrderItemsDto,
+  ): Promise<unknown> {
+    const manager = await this.usersService.verifyManagerPin(
+      user.organizationId!,
+      dto.managerPin,
+    );
+    if (!manager) {
+      throw new ForbiddenException('Invalid manager PIN.');
+    }
+
+    const orderRes = await this.db
+      .select()
+      .from(schema.orders)
+      .where(
+        and(
+          eq(schema.orders.id, orderId),
+          eq(schema.orders.organizationId, user.organizationId!),
+        ),
+      )
+      .limit(1);
+
+    const order = orderRes[0];
+    if (!order) throw new NotFoundException('Order not found.');
+
+    const oldItemsRes = await this.db
+      .select()
+      .from(schema.orderItems)
+      .where(eq(schema.orderItems.orderId, order.id));
+
+    const { resolvedItems, subtotal: newSubtotal } = await this.priceCartItems(
+      user.organizationId!,
+      dto.items,
+    );
+
+    // In a full implementation we would recalculate tax, discount, tip perfectly.
+    // For now, we adjust total by the subtotal difference.
+    const oldSubtotal = oldItemsRes.reduce((acc, i) => acc + (i.price * i.quantity), 0);
+    const subtotalDiff = newSubtotal - oldSubtotal;
+    const newTotal = Math.max(0, order.totalAmount + subtotalDiff);
+    const balanceDiff = newTotal - order.totalAmount;
+
+    await this.db.transaction(async (tx) => {
+      // 1. Update order total
+      await tx
+        .update(schema.orders)
+        .set({
+          totalAmount: newTotal,
+          updatedAt: new Date(),
+          paidAt: balanceDiff > 0 ? null : order.paidAt, // Un-pay if balance is due
+        })
+        .where(eq(schema.orders.id, order.id));
+
+      // 2. Overwrite items
+      await tx.delete(schema.orderItems).where(eq(schema.orderItems.orderId, order.id));
+      if (resolvedItems.length > 0) {
+        await tx.insert(schema.orderItems).values(
+          resolvedItems.map((it) => ({
+            orderId: order.id,
+            menuItemId: it.menuItemId,
+            quantity: it.quantity,
+            price: it.price,
+            notes: it.notes,
+            modifiers: it.modifiers,
+          })),
+        );
+      }
+
+      // 3. Issue partial refund if negative balance difference
+      if (balanceDiff < 0) {
+        const refundAmt = Math.abs(balanceDiff);
+        await tx.insert(schema.payments).values({
+          organizationId: order.organizationId,
+          locationId: order.locationId,
+          orderId: order.id,
+          method: order.paymentMethod || 'cash',
+          amount: -refundAmt,
+          tipAmount: 0,
+          createdBy: manager.id,
+        });
+      }
+
+      // 4. Audit Log
+      await this.auditService.log({
+        organizationId: user.organizationId,
+        userId: manager.id,
+        action: 'order.adjust_items',
+        entityType: 'order',
+        entityId: order.id,
+        previousValue: { items: oldItemsRes, totalAmount: order.totalAmount },
+        newValue: { items: dto.items, totalAmount: newTotal, reason: dto.reason, balanceDiff },
+      });
+    });
+
+    this.eventsGateway.emitToOrganization(user.organizationId!, 'order.updated', {
+      id: order.id,
+      status: order.status,
+    });
+
+    return { 
+      success: true, 
+      message: balanceDiff < 0 ? `Adjusted. Refunded $${(Math.abs(balanceDiff) / 100).toFixed(2)}.` : 'Items adjusted.',
+      newTotal,
+      balanceDiff
+    };
+  }
 }
+

@@ -2,7 +2,7 @@ import { Injectable, Inject, Logger } from '@nestjs/common';
 import { DRIZZLE } from '../database/database.module';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../database/schema';
-import { eq, sql, and, gte } from 'drizzle-orm';
+import { eq, sql, and, gte, ne } from 'drizzle-orm';
 import { BillingService } from '../billing/billing.service';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
@@ -137,8 +137,10 @@ export class AnalyticsService {
     const tenMinutesAgo = new Date();
     tenMinutesAgo.setMinutes(tenMinutesAgo.getMinutes() - 10);
 
-    // Build base conditions
-    const orderConditions = [eq(schema.orders.organizationId, organizationId)];
+    const orderConditions = [
+      eq(schema.orders.organizationId, organizationId),
+      ne(schema.orders.status, 'cancelled'),
+    ];
     const convConditions = [
       eq(schema.conversations.organizationId, organizationId),
     ];

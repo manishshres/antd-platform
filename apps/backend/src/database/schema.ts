@@ -176,6 +176,7 @@ export const users = pgTable(
     locationId: uuid('location_id').references(() => locations.id, {
       onDelete: 'set null',
     }),
+    posPinHash: varchar('pos_pin_hash', { length: 255 }),
     deletedAt: timestamp('deleted_at'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
@@ -331,6 +332,8 @@ export const menuModifiers = pgTable(
       onDelete: 'cascade',
     }),
     isRequired: boolean('is_required').default(false).notNull(),
+    multiSelect: boolean('multi_select').default(false).notNull(),
+    maxSelections: integer('max_selections'),
     deletedAt: timestamp('deleted_at'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
@@ -395,6 +398,70 @@ export const discounts = pgTable(
     check('discounts_value_check', sql`${t.value} >= 0`),
   ],
 );
+export const customers = pgTable(
+  'customers',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    organizationId: uuid('organization_id')
+      .references(() => organizations.id, { onDelete: 'cascade' })
+      .notNull(),
+    name: varchar('name', { length: 255 }).notNull(),
+    phone: varchar('phone', { length: 50 }),
+    email: varchar('email', { length: 255 }),
+    notes: text('notes'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_customers_org').on(table.organizationId),
+    index('idx_customers_phone').on(table.phone),
+  ],
+);
+export const floorPlans = pgTable(
+  'floor_plans',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    organizationId: uuid('organization_id')
+      .references(() => organizations.id, { onDelete: 'cascade' })
+      .notNull(),
+    locationId: uuid('location_id')
+      .references(() => locations.id, { onDelete: 'cascade' })
+      .notNull(),
+    name: varchar('name', { length: 255 }).notNull(),
+    width: integer('width').default(1000).notNull(),
+    height: integer('height').default(1000).notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_floor_plans_org').on(table.organizationId),
+    index('idx_floor_plans_location').on(table.locationId),
+  ],
+);
+
+export const tables = pgTable(
+  'tables',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    organizationId: uuid('organization_id')
+      .references(() => organizations.id, { onDelete: 'cascade' })
+      .notNull(),
+    floorPlanId: uuid('floor_plan_id')
+      .references(() => floorPlans.id, { onDelete: 'cascade' })
+      .notNull(),
+    name: varchar('name', { length: 50 }).notNull(),
+    capacity: integer('capacity').default(4).notNull(),
+    posX: integer('pos_x').default(0).notNull(),
+    posY: integer('pos_y').default(0).notNull(),
+    shape: varchar('shape', { length: 50 }).default('rectangle').notNull(), // 'rectangle', 'circle'
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_tables_org').on(table.organizationId),
+    index('idx_tables_floor_plan').on(table.floorPlanId),
+  ],
+);
 
 export const orders = pgTable(
   'orders',
@@ -405,6 +472,12 @@ export const orders = pgTable(
       .notNull(),
     locationId: uuid('location_id').references(() => locations.id, {
       onDelete: 'cascade',
+    }),
+    customerId: uuid('customer_id').references(() => customers.id, {
+      onDelete: 'set null',
+    }),
+    tableId: uuid('table_id').references(() => tables.id, {
+      onDelete: 'set null',
     }),
     customerName: varchar('customer_name', { length: 255 }).notNull(),
     customerPhone: varchar('customer_phone', { length: 50 }).notNull(),
@@ -467,6 +540,7 @@ export const orderItems = pgTable(
     // historical orders. Shape: [{ modifier, option, priceAdjustment }]
     modifiers: jsonb('modifiers'),
     notes: varchar('notes', { length: 500 }),
+    course: integer('course'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
   },
   (t) => [index('idx_order_items_order_id').on(t.orderId)],
@@ -507,7 +581,7 @@ export const payments = pgTable(
     index('idx_payments_order_id').on(t.orderId),
     index('idx_payments_organization_id').on(t.organizationId),
     check('payments_method_check', sql`${t.method} IN ('cash', 'card')`),
-    check('payments_amount_check', sql`${t.amount} > 0`),
+    check('payments_amount_check', sql`${t.amount} != 0`),
   ],
 );
 
