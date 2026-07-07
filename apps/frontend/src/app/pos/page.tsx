@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   Alert,
   App,
+  AutoComplete,
   Badge,
   Button,
   Checkbox,
@@ -30,6 +31,7 @@ import {
   DeleteOutlined,
   DollarOutlined,
   EditOutlined,
+  HistoryOutlined,
   LeftOutlined,
   MinusOutlined,
   RightOutlined,
@@ -141,11 +143,20 @@ interface FloorPlan {
   tables?: FloorTable[];
 }
 
+/** Customer profile row from GET /customers/search. */
+interface CustomerRow {
+  id: string;
+  name: string;
+  phone?: string | null;
+  notes?: string | null;
+}
+
 /** Shape of the order returned by GET /orders/:id (fields the register needs). */
 interface ExistingOrder {
   id: string;
   ticketNumber?: number | null;
   customerName: string;
+  customerId?: string | null;
   status: string;
   source?: string | null;
   paidAt?: string | null;
@@ -200,6 +211,10 @@ function PosRegister() {
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
 
   const [customerName, setCustomerName] = useState("");
+  // Linked customer profile (search-as-you-type); free-typed names stay unlinked.
+  const [customerId, setCustomerId] = useState<string | null>(null);
+  const [customerResults, setCustomerResults] = useState<CustomerRow[]>([]);
+  const [reordering, setReordering] = useState(false);
   const [orderNotes, setOrderNotes] = useState("");
   const [charging, setCharging] = useState<"cash" | "card" | null>(null);
   const [saving, setSaving] = useState(false);
@@ -271,6 +286,7 @@ function PosRegister() {
       const timer = setInterval(loadFloorPlans, 10000);
       return () => clearInterval(timer);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewMode, selectedLocationId]);
 
   useEffect(() => {
@@ -359,6 +375,7 @@ function PosRegister() {
         }
         setEditingOrder(data);
         setCustomerName(data.customerName === "Walk-in" ? "" : data.customerName);
+        setCustomerId(data.customerId ?? null);
         setOrderType(data.orderType ?? "dine_in");
         setOrderNotes(data.specialInstructions ?? "");
         setAppliedDiscountId(data.discountId ?? null);
@@ -454,6 +471,8 @@ function PosRegister() {
   const resetRegister = () => {
     setCart([]);
     setCustomerName("");
+    setCustomerId(null);
+    setCustomerResults([]);
     setOrderNotes("");
     setOrderType("dine_in");
     setEditingOrder(null);
@@ -491,19 +510,6 @@ function PosRegister() {
     };
   };
 
-  const addLine = (item: MenuItem, options: CartOption[], notes?: string) => {
-    const line = buildLine(item, options, notes);
-    setCart((prev) => {
-      const existing = prev.find((l) => l.key === line.key);
-      if (existing) {
-        return prev.map((l) =>
-          l.key === line.key ? { ...l, quantity: l.quantity + 1 } : l,
-        );
-      }
-      return [...prev, line];
-    });
-  };
-
   const openPicker = (
     item: MenuItem,
     selections: Record<string, string[]>,
@@ -538,6 +544,94 @@ function PosRegister() {
       if (chosen.length > 0) selections[group.id] = chosen;
     }
     openPicker(item, selections, line.notes ?? "", line.key);
+  };
+
+  const searchCustomers = async (q: string) => {
+    setCustomerName(q);
+    setCustomerId(null); // typing breaks the profile link
+    if (q.trim().length < 2) {
+      setCustomerResults([]);
+      return;
+    }
+    try {
+      const { data } = await api.get<CustomerRow[]>(
+        `/customers/search?q=${encodeURIComponent(q.trim())}`,
+      );
+      setCustomerResults(data ?? []);
+    } catch {
+      // Search is best-effort; the typed name still works unlinked.
+    }
+  };
+
+  /** One-tap reorder: rebuild the cart from the customer's most recent order,
+   * repriced against the current menu (missing/86'd items are skipped). */
+  const reorderLast = async () => {
+    if (!customerId) return;
+    setReordering(true);
+    try {
+      const { data } = await api.get<
+        {
+          items: {
+            menuItemId: string;
+            quantity: number;
+            notes?: string | null;
+            modifiers?: { optionId?: string }[] | null;
+          }[];
+        }[]
+      >(`/customers/${customerId}/history`);
+      const last = data?.[0];
+      if (!last?.items?.length) {
+        message.info("No previous orders for this customer.");
+        return;
+      }
+      let skipped = 0;
+      const lines: CartLine[] = [];
+      for (const it of last.items) {
+        const menuItem = allItems.find((m) => m.id === it.menuItemId);
+        if (!menuItem || !menuItem.isAvailable) {
+          skipped++;
+          continue;
+        }
+        const options: CartOption[] = [];
+        for (const snap of it.modifiers ?? []) {
+          if (!snap.optionId) continue;
+          for (const g of menuItem.modifiers ?? []) {
+            const opt = g.options.find((o) => o.id === snap.optionId);
+            if (opt) {
+              options.push({
+                id: opt.id,
+                name: opt.name,
+                priceAdjustment: opt.priceAdjustment,
+                groupName: g.name,
+              });
+              break;
+            }
+          }
+        }
+        const line = buildLine(
+          menuItem,
+          options,
+          it.notes ?? undefined,
+          undefined,
+        );
+        line.quantity = it.quantity;
+        lines.push(line);
+      }
+      if (lines.length === 0) {
+        message.warning("None of the previous items are on the menu right now.");
+        return;
+      }
+      setCart(lines);
+      message.success(
+        `Loaded ${lines.length} item(s) from the last order${
+          skipped ? ` — ${skipped} no longer available` : ""
+        }.`,
+      );
+    } catch {
+      message.error("Failed to load order history.");
+    } finally {
+      setReordering(false);
+    }
   };
 
   const duplicateLine = (line: CartLine) => {
@@ -643,6 +737,7 @@ function PosRegister() {
       if (editingOrder) {
         await api.put(`/orders/${editingOrder.id}/items`, {
           customerName: customerName.trim() || undefined,
+          customerId: customerId ?? undefined,
           orderType,
           specialInstructions: orderNotes.trim() || undefined,
           discountId: appliedDiscountId ?? undefined,
@@ -659,6 +754,7 @@ function PosRegister() {
             locationId: selectedLocationId,
             orderType,
             customerName: customerName.trim() || undefined,
+          customerId: customerId ?? undefined,
             specialInstructions: orderNotes.trim() || undefined,
             discountId: appliedDiscountId ?? undefined,
             items: cartPayloadItems(),
@@ -688,6 +784,7 @@ function PosRegister() {
         // Persist any edits, then record the payment on the existing order.
         await api.put(`/orders/${editingOrder.id}/items`, {
           customerName: customerName.trim() || undefined,
+          customerId: customerId ?? undefined,
           orderType,
           specialInstructions: orderNotes.trim() || undefined,
           discountId: appliedDiscountId ?? undefined,
@@ -704,6 +801,7 @@ function PosRegister() {
           orderType,
           paymentMethod: method,
           customerName: customerName.trim() || undefined,
+          customerId: customerId ?? undefined,
           specialInstructions: orderNotes.trim() || undefined,
           discountId: appliedDiscountId ?? undefined,
           tipAmount,
@@ -740,6 +838,7 @@ function PosRegister() {
           `/orders/${editingOrder.id}/items`,
           {
             customerName: customerName.trim() || undefined,
+          customerId: customerId ?? undefined,
             orderType,
             specialInstructions: orderNotes.trim() || undefined,
             discountId: appliedDiscountId ?? undefined,
@@ -752,6 +851,7 @@ function PosRegister() {
           locationId: selectedLocationId,
           orderType,
           customerName: customerName.trim() || undefined,
+          customerId: customerId ?? undefined,
           specialInstructions: orderNotes.trim() || undefined,
           discountId: appliedDiscountId ?? undefined,
           items: cartPayloadItems(),
@@ -1262,15 +1362,42 @@ function PosRegister() {
           />
           {/* Customer + note are one-tap reveals — hidden until needed (Square pattern) */}
           {showCustomer || customerName ? (
-            <Input
-              placeholder="Customer name"
-              value={customerName}
-              autoFocus={showCustomer && !customerName}
-              onChange={(e) => setCustomerName(e.target.value)}
-              aria-label="Customer name"
-              allowClear
-              style={{ marginBottom: token.marginXS }}
-            />
+            <div
+              style={{ display: "flex", gap: 6, marginBottom: token.marginXS }}
+            >
+              <AutoComplete
+                value={customerName}
+                onChange={(v) => searchCustomers(v)}
+                onSelect={(id: string) => {
+                  const c = customerResults.find((r) => r.id === id);
+                  if (c) {
+                    setCustomerId(c.id);
+                    setCustomerName(c.name);
+                    if (c.notes) message.info(`Customer note: ${c.notes}`, 5);
+                  }
+                }}
+                options={customerResults.map((c) => ({
+                  value: c.id,
+                  label: `${c.name}${c.phone ? ` · ${c.phone}` : ""}`,
+                }))}
+                placeholder="Customer name or phone"
+                aria-label="Customer name or phone"
+                allowClear
+                style={{ flex: 1 }}
+              />
+              {customerId && (
+                <Tooltip title="Reorder this customer's last order">
+                  <Button
+                    icon={<HistoryOutlined />}
+                    loading={reordering}
+                    onClick={reorderLast}
+                    aria-label="Reorder last order"
+                  >
+                    Reorder
+                  </Button>
+                </Tooltip>
+              )}
+            </div>
           ) : null}
 
           <div

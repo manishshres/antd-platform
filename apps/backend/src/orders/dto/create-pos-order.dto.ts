@@ -68,6 +68,11 @@ export class CreatePosOrderDto {
   @MaxLength(50)
   customerPhone?: string;
 
+  @ApiProperty({ required: false, description: 'Linked customer profile id' })
+  @IsOptional()
+  @IsUUID()
+  customerId?: string;
+
   @ApiProperty({ required: false, description: 'Table ID' })
   @IsOptional()
   @IsUUID()

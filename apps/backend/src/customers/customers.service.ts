@@ -2,7 +2,7 @@ import { Injectable, Inject, NotFoundException } from '@nestjs/common';
 import { DRIZZLE } from '../database/database.module';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../database/schema';
-import { eq, and, or, ilike, desc } from 'drizzle-orm';
+import { eq, and, or, ilike, desc, inArray } from 'drizzle-orm';
 import { CurrentUserPayload } from '../common/decorators/current-user.decorator';
 import { BillingService } from '../billing/billing.service';
 
@@ -64,19 +64,15 @@ export class CustomersService {
       .orderBy(desc(schema.orders.createdAt))
       .limit(5);
 
-    // Fetch items for these orders
-    const orderIds = recentOrders.map(o => o.id);
-    let items: (typeof schema.orderItems.$inferSelect)[] = [];
-    if (orderIds.length > 0) {
-      // In a real app you might want to join, but fetching items directly is fine for this demo limit
-      for (const oId of orderIds) {
-        const orderItems = await this.db
-          .select()
-          .from(schema.orderItems)
-          .where(eq(schema.orderItems.orderId, oId));
-        items.push(...orderItems);
-      }
-    }
+    // Fetch items for these orders in one query (no per-order round trips)
+    const orderIds = recentOrders.map((o) => o.id);
+    const items =
+      orderIds.length > 0
+        ? await this.db
+            .select()
+            .from(schema.orderItems)
+            .where(inArray(schema.orderItems.orderId, orderIds))
+        : [];
 
     return recentOrders.map((order) => ({
       ...order,

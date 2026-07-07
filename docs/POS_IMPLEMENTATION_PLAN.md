@@ -249,7 +249,7 @@ List active (staff) or all (`?all=true`); manage requires manager+.
 | P1 | Payments table + split payments | **Shipped** |
 | P1 | Manager PIN + voids/refunds | **Shipped** |
 | P1 | Multi-select modifiers, quantity limits | **Shipped** |
-| P2 | Customer profiles + one-tap reorder | **Shipped** (reorder pending) |
+| P2 | Customer profiles + one-tap reorder | **Shipped** |
 | P2 | KDS screen | Planned |
 | P2 | Floor plan / tables / coursing | **Shipped** (v1: plans, live status, course tags) |
 | P2 | Stripe Terminal (card-present) | Deferred by decision |

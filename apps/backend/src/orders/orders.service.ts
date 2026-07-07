@@ -720,6 +720,23 @@ export class OrdersService {
     return Math.min(subtotal, Math.max(0, raw));
   }
 
+  /** Throws unless the customer profile exists in this org. */
+  private async requireOrgCustomer(orgId: string, customerId: string) {
+    const [customer] = await this.db
+      .select({ id: schema.customers.id })
+      .from(schema.customers)
+      .where(
+        and(
+          eq(schema.customers.id, customerId),
+          eq(schema.customers.organizationId, orgId),
+        ),
+      )
+      .limit(1);
+    if (!customer) {
+      throw new NotFoundException('Customer not found in your organization.');
+    }
+  }
+
   /** Next per-location daily ticket number ("Order #47"). Runs inside the insert transaction. */
   private async nextTicketNumber(
     tx: Pick<NodePgDatabase<typeof schema>, 'select'>,
@@ -789,6 +806,11 @@ export class OrdersService {
       .limit(1);
     if (!location) {
       throw new NotFoundException('Location not found in your organization.');
+    }
+
+    // A linked customer profile must belong to this org (never trust client ids).
+    if (dto.customerId) {
+      await this.requireOrgCustomer(orgId, dto.customerId);
     }
 
     const { resolvedItems, subtotal } = await this.priceCartItems(
@@ -915,6 +937,10 @@ export class OrdersService {
       throw new BadRequestException(
         'Orders with recorded payments cannot be edited.',
       );
+    }
+
+    if (dto.customerId) {
+      await this.requireOrgCustomer(orgId, dto.customerId);
     }
 
     const { resolvedItems, subtotal } = await this.priceCartItems(
