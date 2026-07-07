@@ -254,7 +254,7 @@ List active (staff) or all (`?all=true`); manage requires manager+.
 | P2 | Floor plan / tables / coursing | **Shipped** (v1: plans, live status, course tags) |
 | P2 | Stripe Terminal (card-present) | Deferred by decision |
 | P3 | Drawer management + Z-reports | Planned |
-| P3 | Order history search / reprint / duplicate | Planned |
+| P3 | Order history search / reprint / duplicate | **Shipped** |
 | P3 | Offline mode (cash-only, idempotent sync) | Planned |
 | P4 | Upsells, SKU/barcode, customer display | Future |
 
