@@ -11,7 +11,19 @@ import { OnEvent } from '@nestjs/event-emitter';
 import { DRIZZLE } from '../database/database.module';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../database/schema';
-import { eq, and, inArray, count, isNull, desc, gte, sql } from 'drizzle-orm';
+import {
+  eq,
+  and,
+  or,
+  ilike,
+  inArray,
+  count,
+  isNull,
+  desc,
+  gte,
+  lte,
+  sql,
+} from 'drizzle-orm';
 import { BillingService } from '../billing/billing.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { GetOrdersDto } from './dto/get-orders.dto';
@@ -52,12 +64,42 @@ export class OrdersService {
     // scopes the list to that org instead of returning every tenant's orders unfiltered.
     const orgId = await this.billingService.getRequiredOrg(user);
 
-    const { offset = 0, limit = 20, locationId, status } = query;
+    const {
+      offset = 0,
+      limit = 20,
+      locationId,
+      status,
+      q,
+      dateFrom,
+      dateTo,
+    } = query;
 
     const conditions = [isNull(schema.orders.deletedAt)];
     if (orgId) conditions.push(eq(schema.orders.organizationId, orgId));
     if (locationId) conditions.push(eq(schema.orders.locationId, locationId));
     if (status) conditions.push(eq(schema.orders.status, status));
+
+    // History search: ticket number ("47" or "#47"), customer name, or phone.
+    if (q?.trim()) {
+      const term = q.trim();
+      const searchConds = [
+        ilike(schema.orders.customerName, `%${term}%`),
+        ilike(schema.orders.customerPhone, `%${term}%`),
+      ];
+      const ticketNo = Number(term.replace(/^#/, ''));
+      if (Number.isInteger(ticketNo) && ticketNo > 0) {
+        searchConds.push(eq(schema.orders.ticketNumber, ticketNo));
+      }
+      conditions.push(or(...searchConds)!);
+    }
+    if (dateFrom) {
+      conditions.push(gte(schema.orders.createdAt, new Date(dateFrom)));
+    }
+    if (dateTo) {
+      const end = new Date(dateTo);
+      end.setHours(23, 59, 59, 999);
+      conditions.push(lte(schema.orders.createdAt, end));
+    }
 
     const whereClause = and(...conditions);
 

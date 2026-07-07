@@ -16,6 +16,7 @@ import {
   Divider,
   Input,
   Select,
+  DatePicker,
   Tooltip,
   theme,
   App,
@@ -95,9 +96,22 @@ export default function OrdersPage() {
   const [pageSize, setPageSize] = useState(10);
   const [total, setTotal] = useState(0);
 
-  // Quick client-side filters over the loaded page (E2 toolbar)
+  // Server-side history filters: search hits ticket #, customer name, and phone
+  // across ALL orders (not just the loaded page); debounced to avoid a request
+  // per keystroke.
   const [search, setSearch] = useState("");
+  const [debouncedQ, setDebouncedQ] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("");
+  const [dateRange, setDateRange] = useState<[string, string] | null>(null);
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+       
+      setDebouncedQ(search.trim());
+      setPage(1);
+    }, 400);
+    return () => clearTimeout(t);
+  }, [search]);
 
   const [isAdmin, setIsAdmin] = useState(false);
   
@@ -137,19 +151,27 @@ export default function OrdersPage() {
     setLoading(true);
     setError(null);
     const offset = (page - 1) * pageSize;
+    // Server-side history search: ticket #, customer name/phone, status, date range.
+    const params = new URLSearchParams({
+      locationId: selectedLocationId,
+      offset: String(offset),
+      limit: String(pageSize),
+    });
+    if (debouncedQ) params.set("q", debouncedQ);
+    if (statusFilter) params.set("status", statusFilter);
+    if (dateRange?.[0]) params.set("dateFrom", dateRange[0]);
+    if (dateRange?.[1]) params.set("dateTo", dateRange[1]);
     // The backend returns a paginated envelope { data, total, hasMore }; consume it directly
     // and drive the AntD Table from the server total (H1).
     api
-      .get<PaginatedOrders>(
-        `/orders?locationId=${selectedLocationId}&offset=${offset}&limit=${pageSize}`,
-      )
+      .get<PaginatedOrders>(`/orders?${params.toString()}`)
       .then(({ data }) => {
         setOrders(Array.isArray(data?.data) ? data.data : []);
         setTotal(typeof data?.total === "number" ? data.total : 0);
       })
       .catch(() => setError("Failed to load orders."))
       .finally(() => setLoading(false));
-  }, [selectedLocationId, page, pageSize]);
+  }, [selectedLocationId, page, pageSize, debouncedQ, statusFilter, dateRange]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -200,15 +222,6 @@ export default function OrdersPage() {
     };
   }, [socket, load, notification]);
 
-  const q = search.trim().toLowerCase();
-  const displayedOrders = orders.filter((o) => {
-    if (statusFilter && o.status !== statusFilter) return false;
-    if (!q) return true;
-    return (
-      o.customerName?.toLowerCase().includes(q) ||
-      o.customerPhone?.toLowerCase().includes(q)
-    );
-  });
 
   const columns: ColumnsType<Order> = [
     {
@@ -329,27 +342,42 @@ export default function OrdersPage() {
         <TableToolbar
           search={search}
           onSearchChange={setSearch}
-          searchPlaceholder="Search customer or phone…"
+          searchPlaceholder="Search ticket #, customer, or phone…"
           searchAlign="right"
           filters={
-            <Select
-              allowClear
-              placeholder="All statuses"
-              value={statusFilter || undefined}
-              onChange={(v) => setStatusFilter(v ?? "")}
-              style={{ width: 180 }}
-              options={Object.entries(STATUS_LABEL).map(([value, label]) => ({
-                value,
-                label,
-              }))}
-            />
+            <Space>
+              <Select
+                allowClear
+                placeholder="All statuses"
+                value={statusFilter || undefined}
+                onChange={(v) => {
+                  setStatusFilter(v ?? "");
+                  setPage(1);
+                }}
+                style={{ width: 160 }}
+                options={Object.entries(STATUS_LABEL).map(([value, label]) => ({
+                  value,
+                  label,
+                }))}
+              />
+              <DatePicker.RangePicker
+                allowClear
+                aria-label="Filter by date range"
+                onChange={(_, dateStrings) => {
+                  setDateRange(
+                    dateStrings[0] ? [dateStrings[0], dateStrings[1]] : null,
+                  );
+                  setPage(1);
+                }}
+              />
+            </Space>
           }
           onExport={orders.length > 0 ? exportCsv : undefined}
           onRefresh={load}
         />
         <Table
           columns={columns}
-          dataSource={displayedOrders}
+          dataSource={orders}
           rowKey='id'
           loading={loading}
           sticky

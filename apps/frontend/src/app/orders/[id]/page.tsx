@@ -15,7 +15,11 @@ import {
   theme,
   Spin,
 } from "antd";
-import { ArrowLeftOutlined, PrinterOutlined } from "@ant-design/icons";
+import {
+  ArrowLeftOutlined,
+  CopyOutlined,
+  PrinterOutlined,
+} from "@ant-design/icons";
 import { api } from "@/lib/api";
 import PageHeader from "@/components/PageHeader";
 import { formatPrice, formatPhone } from "@/lib/format";
@@ -183,6 +187,15 @@ export default function OrderDetailsPage() {
       <PageHeader
         title={`Order ${order.ticketNumber != null ? `#${order.ticketNumber}` : `#${order.id.slice(0, 6)}`}`}
         subtitle={`Customer: ${order.customerName}`}
+        actions={
+          <Button
+            icon={<CopyOutlined />}
+            onClick={() => router.push(`/pos?duplicateOrder=${order.id}`)}
+            aria-label="Duplicate this order in the POS"
+          >
+            Duplicate in POS
+          </Button>
+        }
       />
 
       <Card variant="borderless" style={{ maxWidth: 800 }}>

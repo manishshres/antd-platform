@@ -192,6 +192,8 @@ function PosRegister() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const editOrderId = searchParams.get("orderId");
+  const duplicateOrderId = searchParams.get("duplicateOrder");
+  const duplicatedRef = useRef(false);
   const { selectedLocationId, selectedLocation, userRole } = useLocation();
   // Manager-only discounts are role-gated until PIN-based user switching lands.
   const canApplyManagerDiscounts = userRole !== "user";
@@ -420,6 +422,7 @@ function PosRegister() {
       categories.flatMap((c) => (c.items ?? []).filter((i) => !i.deletedAt)),
     [categories],
   );
+
   const favoriteItems = useMemo(
     () => allItems.filter((i) => i.isFavorite),
     [allItems],
@@ -563,6 +566,48 @@ function PosRegister() {
     }
   };
 
+  /** Rebuild cart lines from historical order items, repriced against the
+   * current menu. Returns the lines plus how many items had to be skipped
+   * (86'd or removed from the menu). */
+  const linesFromHistoryItems = (
+    items: {
+      menuItemId: string;
+      quantity: number;
+      notes?: string | null;
+      modifiers?: { optionId?: string }[] | null;
+    }[],
+  ): { lines: CartLine[]; skipped: number } => {
+    let skipped = 0;
+    const lines: CartLine[] = [];
+    for (const it of items) {
+      const menuItem = allItems.find((m) => m.id === it.menuItemId);
+      if (!menuItem || !menuItem.isAvailable) {
+        skipped++;
+        continue;
+      }
+      const options: CartOption[] = [];
+      for (const snap of it.modifiers ?? []) {
+        if (!snap.optionId) continue;
+        for (const g of menuItem.modifiers ?? []) {
+          const opt = g.options.find((o) => o.id === snap.optionId);
+          if (opt) {
+            options.push({
+              id: opt.id,
+              name: opt.name,
+              priceAdjustment: opt.priceAdjustment,
+              groupName: g.name,
+            });
+            break;
+          }
+        }
+      }
+      const line = buildLine(menuItem, options, it.notes ?? undefined, undefined);
+      line.quantity = it.quantity;
+      lines.push(line);
+    }
+    return { lines, skipped };
+  };
+
   /** One-tap reorder: rebuild the cart from the customer's most recent order,
    * repriced against the current menu (missing/86'd items are skipped). */
   const reorderLast = async () => {
@@ -584,39 +629,7 @@ function PosRegister() {
         message.info("No previous orders for this customer.");
         return;
       }
-      let skipped = 0;
-      const lines: CartLine[] = [];
-      for (const it of last.items) {
-        const menuItem = allItems.find((m) => m.id === it.menuItemId);
-        if (!menuItem || !menuItem.isAvailable) {
-          skipped++;
-          continue;
-        }
-        const options: CartOption[] = [];
-        for (const snap of it.modifiers ?? []) {
-          if (!snap.optionId) continue;
-          for (const g of menuItem.modifiers ?? []) {
-            const opt = g.options.find((o) => o.id === snap.optionId);
-            if (opt) {
-              options.push({
-                id: opt.id,
-                name: opt.name,
-                priceAdjustment: opt.priceAdjustment,
-                groupName: g.name,
-              });
-              break;
-            }
-          }
-        }
-        const line = buildLine(
-          menuItem,
-          options,
-          it.notes ?? undefined,
-          undefined,
-        );
-        line.quantity = it.quantity;
-        lines.push(line);
-      }
+      const { lines, skipped } = linesFromHistoryItems(last.items);
       if (lines.length === 0) {
         message.warning("None of the previous items are on the menu right now.");
         return;
@@ -633,6 +646,41 @@ function PosRegister() {
       setReordering(false);
     }
   };
+
+  // Duplicate an order into a fresh cart (?duplicateOrder=<id>): items are
+  // repriced against the current menu and nothing links back to the original.
+  // Waits for the menu so lines can be rebuilt; runs once per navigation.
+  useEffect(() => {
+    if (!duplicateOrderId || allItems.length === 0 || duplicatedRef.current)
+      return;
+    duplicatedRef.current = true;
+    api
+      .get<ExistingOrder>(`/orders/${duplicateOrderId}`)
+      .then(({ data }) => {
+        const { lines, skipped } = linesFromHistoryItems(data.items);
+        if (lines.length === 0) {
+          message.warning(
+            "None of that order's items are on the menu right now.",
+          );
+          return;
+        }
+        setCart(lines);
+        setOrderType(data.orderType ?? "dine_in");
+        setCustomerName(
+          data.customerName === "Walk-in" ? "" : data.customerName,
+        );
+        setCustomerId(data.customerId ?? null);
+        message.success(
+          `Duplicated order ${orderLabel(data)} — ${lines.length} item(s)${
+            skipped ? `, ${skipped} no longer available` : ""
+          }. This is a new order.`,
+          5,
+        );
+      })
+      .catch(() => message.error("Failed to duplicate the order."))
+      .finally(() => router.replace("/pos"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [duplicateOrderId, allItems.length]);
 
   const duplicateLine = (line: CartLine) => {
     setCart((prev) => [
