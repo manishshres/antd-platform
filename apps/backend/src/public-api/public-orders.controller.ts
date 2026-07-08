@@ -40,11 +40,22 @@ export class PublicOrdersController {
     const orgId = request.organizationId;
     // We assume public API orders are made on behalf of a guest/external source
     // They are not strictly tied to a user account unless provided in metadata
-    return this.ordersService.createOrderForOrg(
+    const order = await this.ordersService.createOrderForOrg(
       orgId,
       dto.customerName || 'Walk-in',
       dto.customerPhone || '',
       dto.items, // Temp cast if needed, will check further later
     );
+
+    // Report the order's actual status — createOrderForOrg creates 'pending',
+    // not 'confirmed'; the AI script reads dynamic_variables.order_status.
+    return {
+      message: 'Order created successfully.',
+      order_status: order.status,
+      dynamic_variables: {
+        order_status: order.status,
+      },
+      data: order,
+    };
   }
 }

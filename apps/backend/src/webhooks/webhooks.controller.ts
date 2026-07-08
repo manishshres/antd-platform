@@ -20,7 +20,7 @@ import { ApiKeyThrottlerGuard } from './api-key-throttler.guard';
 import { DRIZZLE } from '../database/database.module';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../database/schema';
-import { eq } from 'drizzle-orm';
+import { eq, and, or, isNull, gt } from 'drizzle-orm';
 import { AiOrderWebhookDto } from './dto/ai-order-webhook.dto';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
@@ -71,17 +71,55 @@ export class WebhooksController {
 
     const hashedApiKey = createHash('sha256').update(apiKey).digest('hex');
 
-    // Find organization matching the API key
+    // Find organization matching the API key (could be Webhook Secret or Developer API Key)
     const orgs = await this.db
       .select({ id: schema.organizations.id })
       .from(schema.organizations)
       .where(eq(schema.organizations.webhookApiKey, hashedApiKey))
       .limit(1);
 
-    const org = orgs[0];
-    if (!org) {
-      throw new UnauthorizedException('Invalid Webhook API Key.');
+    let orgId = orgs[0]?.id;
+
+    if (!orgId) {
+      // Fallback: a developer API key (coai_...) also authorizes order ingestion —
+      // but only while unexpired.
+      const keys = await this.db
+        .select({
+          id: schema.apiKeys.id,
+          organizationId: schema.apiKeys.organizationId,
+        })
+        .from(schema.apiKeys)
+        .where(
+          and(
+            eq(schema.apiKeys.keyHash, hashedApiKey),
+            or(
+              isNull(schema.apiKeys.expiresAt),
+              gt(schema.apiKeys.expiresAt, new Date()),
+            ),
+          ),
+        )
+        .limit(1);
+
+      orgId = keys[0]?.organizationId;
+      if (keys[0]) {
+        // Fire-and-forget usage timestamp for the API-keys dashboard.
+        void this.db
+          .update(schema.apiKeys)
+          .set({ lastUsedAt: new Date() })
+          .where(eq(schema.apiKeys.id, keys[0].id))
+          .then(
+            () => undefined,
+            () => undefined,
+          );
+      }
     }
+
+    if (!orgId) {
+      throw new UnauthorizedException('Invalid API Key.');
+    }
+
+    // Pass orgId into the rest of the flow instead of org.id
+    const org = { id: orgId };
 
     if (dto.items.length === 0) {
       throw new BadRequestException('Order must contain at least one item.');
@@ -135,7 +173,11 @@ export class WebhooksController {
 
     return {
       message: 'Order received and accepted for processing.',
+      order_status: 'confirmed',
       jobId: job.id,
+      dynamic_variables: {
+        order_status: 'confirmed',
+      },
     };
   }
 

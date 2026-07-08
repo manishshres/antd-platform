@@ -14,7 +14,7 @@ describe('WebhooksController', () => {
     select: jest.fn().mockReturnThis(),
     from: jest.fn().mockReturnThis(),
     where: jest.fn().mockReturnThis(),
-    limit: jest.fn(),
+    limit: jest.fn().mockResolvedValue([]),
   };
 
   const mockWebhookQueue = {
@@ -66,7 +66,7 @@ describe('WebhooksController', () => {
     });
 
     it('should throw UnauthorizedException if API key is invalid', async () => {
-      mockDb.limit.mockResolvedValueOnce([]); // Organization not found
+      mockDb.limit.mockResolvedValue([]); // Organization not found for both fallback paths
       await expect(
         controller.handleAiOrder('invalid-key', {
           customerName: 'A',
@@ -97,7 +97,11 @@ describe('WebhooksController', () => {
 
       expect(res).toEqual({
         message: 'Order received and accepted for processing.',
+        order_status: 'confirmed',
         jobId: 'job-123',
+        dynamic_variables: {
+          order_status: 'confirmed',
+        },
       });
       expect(mockWebhookQueue.add).toHaveBeenCalledWith('process-ai-order', {
         orgId: 'org-1',

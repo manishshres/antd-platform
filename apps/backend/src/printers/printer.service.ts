@@ -10,6 +10,8 @@ const MAX_PRINT_PACKET_BYTES = 16378;
 
 export interface PrintJobPayload {
   orderId: string;
+  ticketNumber?: number;
+  updated?: boolean;
   customerName: string;
   customerPhone: string;
   totalAmount: number;
@@ -17,6 +19,9 @@ export interface PrintJobPayload {
     menuItemName: string;
     quantity: number;
     price: number;
+    /** Modifier snapshot: {modifier, option, priceAdjustment} objects. */
+    modifiers?: { modifier?: string; option?: string }[] | null;
+    notes?: string | null;
   }[];
   createdAt: Date;
   printerId?: string;
@@ -150,7 +155,13 @@ export class PrinterService {
       // Metadata
       .align('left')
       .line(`Restaurant: ${orgName}`)
-      .line(`Order Ref:  ${payload.orderId.substring(0, 8)}`)
+      .line(
+        `Order:      ${
+          payload.ticketNumber != null
+            ? `#${payload.ticketNumber}`
+            : payload.orderId.substring(0, 8)
+        }${payload.updated ? '  ** UPDATED **' : ''}`,
+      )
       .line(`Customer:   ${payload.customerName}`)
       .line(`Time:       ${dateStr}`)
       .rule()
@@ -163,6 +174,16 @@ export class PrinterService {
 
     for (const item of payload.items) {
       builder.line(`[ ] ${item.quantity} x ${item.menuItemName}`);
+      // Modifier selections and per-item notes are prep instructions — the
+      // kitchen must see "spicy" / "no onions", not just the item name.
+      if (Array.isArray(item.modifiers)) {
+        for (const mod of item.modifiers) {
+          if (mod?.option) builder.line(`      + ${mod.option}`);
+        }
+      }
+      if (item.notes) {
+        builder.line(`      * ${item.notes}`);
+      }
     }
 
     builder.size(1, 1).bold(false).rule().align('center').feed(4).cut();

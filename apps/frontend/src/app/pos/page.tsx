@@ -387,7 +387,10 @@ function PosRegister() {
         }
         setCart(
           data.items.map((item, idx) => {
-            const options: CartOption[] = (item.modifiers ?? []).map((m) => ({
+            // Defensive: modifiers must be the snapshot array; tolerate rows
+            // written in other shapes rather than crashing the register.
+            const snaps = Array.isArray(item.modifiers) ? item.modifiers : [];
+            const options: CartOption[] = snaps.map((m) => ({
               id: m.optionId ?? "",
               name: m.option,
               priceAdjustment: m.priceAdjustment,

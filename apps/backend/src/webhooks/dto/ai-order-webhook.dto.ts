@@ -35,6 +35,17 @@ export class WebhookOrderItemDto {
   @IsInt()
   @Min(1)
   quantity: number;
+
+  @ApiProperty({
+    example: ['spicy', 'extra cheese'],
+    description: 'List of modifiers for this item',
+    type: [String],
+    required: false,
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  modifiers?: string[];
 }
 
 export class AiOrderWebhookDto {

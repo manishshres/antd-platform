@@ -23,6 +23,7 @@ interface WebhookJobData {
     menuItemId?: string;
     name?: string;
     quantity: number;
+    modifiers?: string[];
   }[];
   orderType?: string;
   specialInstructions?: string;
@@ -86,7 +87,11 @@ export class WebhookQueueProcessor extends WorkerHost {
       throw new BadRequestException('Order must contain at least one item.');
     }
 
-    const resolvedItems: { menuItemId: string; quantity: number }[] = [];
+    const resolvedItems: {
+      menuItemId: string;
+      quantity: number;
+      modifiers?: string[];
+    }[] = [];
 
     for (const item of items) {
       let menuItemId = item.menuItemId;
@@ -126,6 +131,7 @@ export class WebhookQueueProcessor extends WorkerHost {
       resolvedItems.push({
         menuItemId,
         quantity: item.quantity,
+        modifiers: item.modifiers,
       });
     }
 

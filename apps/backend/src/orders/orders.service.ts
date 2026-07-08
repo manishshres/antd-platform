@@ -164,7 +164,10 @@ export class OrdersService {
       )
       .where(eq(schema.orderItems.orderId, orderId));
 
-    const paymentsRes = await this.db.select().from(schema.payments).where(eq(schema.payments.orderId, orderId));
+    const paymentsRes = await this.db
+      .select()
+      .from(schema.payments)
+      .where(eq(schema.payments.orderId, orderId));
     return {
       ...order,
       items: itemsRes,
@@ -193,7 +196,7 @@ export class OrdersService {
     orgId: string;
     customerName: string;
     customerPhone: string;
-    items: { menuItemId: string; quantity: number }[];
+    items: { menuItemId: string; quantity: number; modifiers?: string[] }[];
     orderType?: string;
     specialInstructions?: string;
   }) {
@@ -213,7 +216,7 @@ export class OrdersService {
     orgId: string,
     customerName: string,
     customerPhone: string,
-    items: { menuItemId: string; quantity: number }[],
+    items: { menuItemId: string; quantity: number; modifiers?: string[] }[],
     userId?: string,
     locationId?: string,
     orderType?: string,
@@ -254,6 +257,7 @@ export class OrdersService {
       menuItemId: string;
       quantity: number;
       price: number;
+      modifiers?: string[];
     }[] = [];
 
     for (const item of items) {
@@ -269,6 +273,7 @@ export class OrdersService {
         menuItemId: item.menuItemId,
         quantity: item.quantity,
         price: menuItem.price,
+        modifiers: item.modifiers,
       });
     }
 
@@ -330,6 +335,17 @@ export class OrdersService {
           menuItemId: resItem.menuItemId,
           quantity: resItem.quantity,
           price: resItem.price,
+          // jsonb column — store the value directly (never pre-stringified), and in the
+          // same snapshot shape as POS orders ({modifier, option, priceAdjustment}) so
+          // the register, kitchen tickets, and reorder flows can all consume it. AI
+          // free-text requests carry no price adjustment.
+          modifiers: resItem.modifiers?.length
+            ? resItem.modifiers.map((name) => ({
+                modifier: 'Request',
+                option: name,
+                priceAdjustment: 0,
+              }))
+            : null,
         })),
       );
 
@@ -490,12 +506,17 @@ export class OrdersService {
       );
     const attachedByItem = new Map<
       string,
-      { modifierId: string; isRequired: boolean; multiSelect: boolean; maxSelections: number | null }[]
+      {
+        modifierId: string;
+        isRequired: boolean;
+        multiSelect: boolean;
+        maxSelections: number | null;
+      }[]
     >();
     for (const row of attachRows) {
       const list = attachedByItem.get(row.menuItemId) ?? [];
-      list.push({ 
-        modifierId: row.modifierId, 
+      list.push({
+        modifierId: row.modifierId,
         isRequired: row.isRequired,
         multiSelect: row.multiSelect,
         maxSelections: row.maxSelections,
@@ -528,7 +549,10 @@ export class OrdersService {
             `Modifier option "${opt.name}" does not apply to menu item ${line.menuItemId}.`,
           );
         }
-        selectionCounts.set(opt.modifierId, (selectionCounts.get(opt.modifierId) ?? 0) + 1);
+        selectionCounts.set(
+          opt.modifierId,
+          (selectionCounts.get(opt.modifierId) ?? 0) + 1,
+        );
         return {
           optionId: opt.id,
           modifier: opt.modifierName,
@@ -549,7 +573,11 @@ export class OrdersService {
             `Modifier group allows only 1 selection, but multiple were provided for menu item ${line.menuItemId}.`,
           );
         }
-        if (group.multiSelect && group.maxSelections !== null && count > group.maxSelections) {
+        if (
+          group.multiSelect &&
+          group.maxSelections !== null &&
+          count > group.maxSelections
+        ) {
           throw new BadRequestException(
             `Modifier group allows up to ${group.maxSelections} selections, but ${count} were provided.`,
           );
@@ -603,7 +631,12 @@ export class OrdersService {
 
     const matrix = (
       doc: 'kitchen' | 'receipt',
-    ): { onSave: boolean; onUpdate: boolean; onPaid: boolean; copies: number } => {
+    ): {
+      onSave: boolean;
+      onUpdate: boolean;
+      onPaid: boolean;
+      copies: number;
+    } => {
       const m = s[doc] as Record<string, unknown> | undefined;
       if (m && typeof m === 'object') {
         return {
@@ -1019,8 +1052,12 @@ export class OrdersService {
           discountName: discount?.name ?? null,
           discountId: discount?.id ?? null,
           totalAmount,
-          ...(dto.customerId !== undefined ? { customerId: dto.customerId || null } : {}),
-          ...(dto.tableId !== undefined ? { tableId: dto.tableId || null } : {}),
+          ...(dto.customerId !== undefined
+            ? { customerId: dto.customerId || null }
+            : {}),
+          ...(dto.tableId !== undefined
+            ? { tableId: dto.tableId || null }
+            : {}),
           ...(dto.customerName !== undefined
             ? { customerName: dto.customerName.trim() || 'Walk-in' }
             : {}),
@@ -1491,14 +1528,22 @@ export class OrdersService {
         action: 'order.refunded',
         entityType: 'order',
         entityId: order.id,
-        newValue: { orderId: order.id, originalTotal: order.totalAmount, reason },
+        newValue: {
+          orderId: order.id,
+          originalTotal: order.totalAmount,
+          reason,
+        },
       });
     });
 
-    this.eventsGateway.emitToOrganization(user.organizationId!, 'order.updated', {
-      id: order.id,
-      status: 'cancelled',
-    });
+    this.eventsGateway.emitToOrganization(
+      user.organizationId!,
+      'order.updated',
+      {
+        id: order.id,
+        status: 'cancelled',
+      },
+    );
 
     return { success: true, message: 'Order voided and refunded.' };
   }
@@ -1558,7 +1603,10 @@ export class OrdersService {
       });
     });
 
-    return { success: true, message: `Refunded $${(dto.amount / 100).toFixed(2)}` };
+    return {
+      success: true,
+      message: `Refunded $${(dto.amount / 100).toFixed(2)}`,
+    };
   }
 
   async adjustOrderItems(
@@ -1600,7 +1648,10 @@ export class OrdersService {
 
     // In a full implementation we would recalculate tax, discount, tip perfectly.
     // For now, we adjust total by the subtotal difference.
-    const oldSubtotal = oldItemsRes.reduce((acc, i) => acc + (i.price * i.quantity), 0);
+    const oldSubtotal = oldItemsRes.reduce(
+      (acc, i) => acc + i.price * i.quantity,
+      0,
+    );
     const subtotalDiff = newSubtotal - oldSubtotal;
     const newTotal = Math.max(0, order.totalAmount + subtotalDiff);
     const balanceDiff = newTotal - order.totalAmount;
@@ -1617,7 +1668,9 @@ export class OrdersService {
         .where(eq(schema.orders.id, order.id));
 
       // 2. Overwrite items
-      await tx.delete(schema.orderItems).where(eq(schema.orderItems.orderId, order.id));
+      await tx
+        .delete(schema.orderItems)
+        .where(eq(schema.orderItems.orderId, order.id));
       if (resolvedItems.length > 0) {
         await tx.insert(schema.orderItems).values(
           resolvedItems.map((it) => ({
@@ -1653,21 +1706,32 @@ export class OrdersService {
         entityType: 'order',
         entityId: order.id,
         previousValue: { items: oldItemsRes, totalAmount: order.totalAmount },
-        newValue: { items: dto.items, totalAmount: newTotal, reason: dto.reason, balanceDiff },
+        newValue: {
+          items: dto.items,
+          totalAmount: newTotal,
+          reason: dto.reason,
+          balanceDiff,
+        },
       });
     });
 
-    this.eventsGateway.emitToOrganization(user.organizationId!, 'order.updated', {
-      id: order.id,
-      status: order.status,
-    });
+    this.eventsGateway.emitToOrganization(
+      user.organizationId!,
+      'order.updated',
+      {
+        id: order.id,
+        status: order.status,
+      },
+    );
 
-    return { 
-      success: true, 
-      message: balanceDiff < 0 ? `Adjusted. Refunded $${(Math.abs(balanceDiff) / 100).toFixed(2)}.` : 'Items adjusted.',
+    return {
+      success: true,
+      message:
+        balanceDiff < 0
+          ? `Adjusted. Refunded $${(Math.abs(balanceDiff) / 100).toFixed(2)}.`
+          : 'Items adjusted.',
       newTotal,
-      balanceDiff
+      balanceDiff,
     };
   }
 }
-

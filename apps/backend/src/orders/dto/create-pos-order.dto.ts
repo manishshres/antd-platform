@@ -40,7 +40,10 @@ export class PosOrderItemDto {
   @MaxLength(500)
   notes?: string;
 
-  @ApiProperty({ required: false, description: 'Course number (1 for Appetizer, 2 for Main)' })
+  @ApiProperty({
+    required: false,
+    description: 'Course number (1 for Appetizer, 2 for Main)',
+  })
   @IsOptional()
   @IsNumber()
   course?: number;
