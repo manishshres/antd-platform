@@ -129,9 +129,14 @@ export class TelnyxService {
     }
   }
 
-  async getConversations(assistantId?: string): Promise<any> {
-    const params = new URLSearchParams({ 'page[size]': '100' });
-    if (assistantId) params.set('assistant_id', assistantId);
+  async getConversations(assistantId?: string, pageNumber = 1): Promise<any> {
+    const params = new URLSearchParams({
+      'page[size]': '100',
+      'page[number]': String(pageNumber),
+    });
+    if (assistantId) {
+      params.set('metadata->assistant_id', `eq.${assistantId}`);
+    }
     return this.fetchJson(`/ai/conversations?${params.toString()}`);
   }
 
@@ -403,8 +408,7 @@ export class TelnyxService {
                   type: 'retrieval',
                   retrieval: {
                     bucket_ids: [bucketId],
-                    max_num_results:
-                      retrieval?.retrieval?.max_num_results ?? 5,
+                    max_num_results: retrieval?.retrieval?.max_num_results ?? 5,
                   },
                 },
               ],

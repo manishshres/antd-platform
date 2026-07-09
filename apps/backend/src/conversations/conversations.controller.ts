@@ -67,8 +67,9 @@ export class ConversationsController {
   async syncConversations(
     @CurrentUser() user: CurrentUserPayload,
     @Body() body: { locationId: string; telnyxAssistantId: string },
+    @Query('orgId') queryOrgId?: string,
   ) {
-    const orgId = user.organizationId;
+    const orgId = queryOrgId || user.organizationId;
     if (!orgId) throw new Error('User has no organizationId');
 
     const count = await this.conversationsService.syncFromTelnyx(
