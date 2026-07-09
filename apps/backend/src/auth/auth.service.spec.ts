@@ -95,6 +95,31 @@ describe('AuthService', () => {
       ).rejects.toThrow(HttpException);
     });
 
+    it('locked-account error does not leak the unlock timestamp (#20)', async () => {
+      const unlockAt = new Date(Date.now() + 60000);
+      mockUsersService.findOneByEmail.mockResolvedValue({
+        id: 'user-1',
+        email: 'test@test.com',
+        lockedUntil: unlockAt,
+      });
+
+      await expect(
+        service.validateUser('test@test.com', 'password'),
+      ).rejects.toThrow(
+        'Account temporarily locked due to too many failed attempts. Please try again later.',
+      );
+
+      // Regression guard: the message must not reveal exactly when the account unlocks.
+      let message = '';
+      try {
+        await service.validateUser('test@test.com', 'password');
+      } catch (err) {
+        message = (err as Error).message;
+      }
+      expect(message).not.toContain(unlockAt.toISOString());
+      expect(message).not.toMatch(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/);
+    });
+
     it('should return user object if password is valid', async () => {
       mockUsersService.findOneByEmail.mockResolvedValue({
         id: 'user-1',

@@ -212,4 +212,50 @@ describe('UsersService', () => {
       );
     });
   });
+
+  describe('verifyManagerPin — actingUserId fast path (#10)', () => {
+    const managerRow = {
+      id: 'mgr-1',
+      organizationId: 'org-1',
+      role: 'manager',
+      posPinHash: 'hashed_pin',
+    };
+
+    const stubSelect = (result: any) =>
+      dbMock.select.mockReturnValueOnce({
+        from: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        then: (resolve: any) => resolve(result),
+      });
+
+    it('validates only the acting user and returns them on a PIN match', async () => {
+      stubSelect([managerRow]);
+      (bcrypt.compare as jest.Mock).mockResolvedValueOnce(true);
+
+      const result = await service.verifyManagerPin('org-1', '1234', 'mgr-1');
+
+      expect(result).toMatchObject({ id: 'mgr-1' });
+      // Fast path issues a single scoped lookup rather than scanning every manager.
+      expect(dbMock.select).toHaveBeenCalledTimes(1);
+      expect(bcrypt.compare).toHaveBeenCalledTimes(1);
+    });
+
+    it('returns null when the acting user PIN does not match', async () => {
+      stubSelect([managerRow]);
+      (bcrypt.compare as jest.Mock).mockResolvedValueOnce(false);
+
+      const result = await service.verifyManagerPin('org-1', '9999', 'mgr-1');
+
+      expect(result).toBeNull();
+    });
+
+    it('returns null (no bcrypt compare) when the acting user is not an eligible manager', async () => {
+      stubSelect([]); // no row matched the id + org + manager-role + pin-hash filter
+
+      const result = await service.verifyManagerPin('org-1', '1234', 'ghost');
+
+      expect(result).toBeNull();
+      expect(bcrypt.compare).not.toHaveBeenCalled();
+    });
+  });
 });

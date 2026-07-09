@@ -16,11 +16,18 @@ describe('BillingService', () => {
     from: jest.fn().mockReturnThis(),
     where: jest.fn().mockReturnThis(),
     limit: jest.fn().mockResolvedValue([]),
+    groupBy: jest.fn().mockResolvedValue([]),
     insert: jest.fn().mockReturnThis(),
     values: jest.fn().mockReturnThis(),
     update: jest.fn().mockReturnThis(),
     set: jest.fn().mockReturnThis(),
     returning: jest.fn().mockResolvedValue([{ id: 'org-1' }]),
+  };
+
+  // Shared so individual tests can override cost-rate resolution. Defaults to
+  // returning the caller-supplied fallback (i.e. the production defaults).
+  const mockConfigService = {
+    get: jest.fn((_key: string, def?: unknown) => def),
   };
 
   const mockStripeService = {
@@ -62,10 +69,7 @@ describe('BillingService', () => {
         { provide: InvoicePdfService, useValue: mockInvoicePdfService },
         { provide: TelnyxService, useValue: mockTelnyxService },
         { provide: CACHE_MANAGER, useValue: mockCacheManager },
-        {
-          provide: ConfigService,
-          useValue: { get: jest.fn((_key: string, def?: unknown) => def) },
-        },
+        { provide: ConfigService, useValue: mockConfigService },
       ],
     }).compile();
 
@@ -121,6 +125,36 @@ describe('BillingService', () => {
           cancelUrl: '',
         }),
       ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('getMarginReport — config-driven cost rates (#13)', () => {
+    it('applies the configured cost rate instead of a hardcoded constant', async () => {
+      // Override just the call-minute rate; everything else falls back to defaults.
+      mockConfigService.get.mockImplementation((key: string, def?: unknown) =>
+        key === 'COST_RATE_CALL_MINUTE_CENTS' ? 7 : def,
+      );
+
+      // Sequenced DB reads inside getMarginReport:
+      mockDb.limit
+        .mockResolvedValueOnce([{ organizationId: 'org-1' }]) // getRequiredOrg → user lookup
+        .mockResolvedValueOnce([{ id: 'loc-1' }]) // location ownership check
+        .mockResolvedValueOnce([]); // subscription (none → revenue 0, skip Stripe)
+      mockDb.groupBy.mockResolvedValueOnce([
+        { eventType: 'call_minutes', totalAmount: 10 },
+      ]);
+
+      const report = await service.getMarginReport('user-1', 'loc-1');
+
+      // 10 call minutes * 7 cents (from config) = 70, not the default of 50.
+      expect(report.costCents).toBe(70);
+      expect(report.revenueCents).toBe(0);
+      expect(report.marginCents).toBe(-70);
+      expect(report.usageDetails.call_minutes).toBe(10);
+      expect(mockConfigService.get).toHaveBeenCalledWith(
+        'COST_RATE_CALL_MINUTE_CENTS',
+        5,
+      );
     });
   });
 });
