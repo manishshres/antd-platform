@@ -35,7 +35,7 @@ export class CustomersService {
 
   async getCustomerHistory(user: CurrentUserPayload, customerId: string) {
     const orgId = await this.billingService.getRequiredOrg(user);
-    
+
     // First verify customer belongs to org
     const customer = await this.db
       .select()
@@ -47,7 +47,7 @@ export class CustomersService {
         ),
       )
       .limit(1);
-      
+
     if (customer.length === 0) {
       throw new NotFoundException('Customer not found');
     }

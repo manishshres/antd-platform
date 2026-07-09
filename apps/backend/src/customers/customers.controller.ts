@@ -1,7 +1,18 @@
-import { Controller, Get, Post, Body, Query, Param, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Query,
+  Param,
+  UseGuards,
+} from '@nestjs/common';
 import { CustomersService } from './customers.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { CurrentUser, CurrentUserPayload } from '../common/decorators/current-user.decorator';
+import {
+  CurrentUser,
+  CurrentUserPayload,
+} from '../common/decorators/current-user.decorator';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 
 @ApiTags('Customers')
@@ -33,7 +44,8 @@ export class CustomersController {
   @ApiOperation({ summary: 'Create or update a customer profile' })
   async upsertCustomer(
     @CurrentUser() user: CurrentUserPayload,
-    @Body() body: { name: string; phone?: string; email?: string; notes?: string },
+    @Body()
+    body: { name: string; phone?: string; email?: string; notes?: string },
   ) {
     return this.customersService.upsertCustomer(user, body);
   }

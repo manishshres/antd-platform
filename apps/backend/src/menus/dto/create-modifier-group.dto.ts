@@ -23,12 +23,16 @@ export class CreateModifierGroupDto {
   @IsOptional()
   isRequired?: boolean;
 
-  @ApiPropertyOptional({ description: 'Does this modifier group allow multiple selections?' })
+  @ApiPropertyOptional({
+    description: 'Does this modifier group allow multiple selections?',
+  })
   @IsBoolean()
   @IsOptional()
   multiSelect?: boolean;
 
-  @ApiPropertyOptional({ description: 'Maximum number of selections allowed if multiSelect is true' })
+  @ApiPropertyOptional({
+    description: 'Maximum number of selections allowed if multiSelect is true',
+  })
   @IsOptional()
   maxSelections?: number;
 }
