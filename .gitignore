@@ -21,3 +21,13 @@ apps/backend/mosquitto.passwd
 *.log
 .DS_Store
 .git.backup-pre-monorepo/
+
+# Local dev scratch scripts & tooling — never commit
+apps/backend/debug-migration.ts
+apps/backend/generate_api_key.ts
+apps/backend/seed_tables.ts
+apps/backend/test-sync.ts
+apps/backend/patch*.js
+apps/backend/url.txt
+.agents/
+.claude/
