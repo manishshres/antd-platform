@@ -34,7 +34,7 @@ This backend is the **single source of truth** for the Call Center AI SaaS Platf
 | Voice AI        | Telnyx API                              | Assistants, call logs, recordings            |
 | AI Extraction   | Google Gemini API                       | Menu import from websites                    |
 | File Storage    | Cloudflare R2 (S3-compatible)           | Recordings, document uploads                 |
-| Docs            | Swagger / OpenAPI (`@nestjs/swagger`)   | Available at `/api/docs`                     |
+| Docs            | Swagger / OpenAPI (`@nestjs/swagger`)   | `/api/docs` — **non-production only**, disabled when `NODE_ENV=production` |
 | Validation      | `class-validator` + `class-transformer` | On all DTOs                                  |
 | Config          | `@nestjs/config` (`ConfigService`)      | Typed env access — no `process.env` directly |
 | Security        | Helmet.js                               | Secure HTTP headers                          |
@@ -74,7 +74,8 @@ antd-backend/
 │   ├── agents/                      # Voice AI agent configuration (Telnyx proxy & org scope)
 │   ├── calls/                       # Call logs, recording proxy, transcripts
 │   ├── menus/                       # Menu CRUD, crawler, Gemini extractor, and import task queue
-│   ├── orders/                      # Customer order CRUD & manual/auto printing
+│   ├── orders/                      # Customer order CRUD, POS/AI order creation, payments, refunds, transaction summary
+│   ├── tables/                      # Floor plans & tables CRUD; live table status derived from each table's active order
 │   ├── printers/                    # MQTT printing logic, print jobs, configurations, and worker queue
 │   ├── queues/                      # Global BullMQ configuration & queues initialization
 │   ├── stripe/                      # Stripe webhook handler & client provider
@@ -107,7 +108,13 @@ GET  /api/v1/auth/me             → returns current user profile (via @CurrentU
 ### JWT Strategy
 
 - **Access Token**: Short-lived (15 min). Sent in `Authorization: Bearer <token>` header. Contains `sub` (userId), `email`, `role`, and `organizationId`.
-- **Refresh Token**: Long-lived (7 days). Stored (SHA-256 hashed) in the `refresh_tokens` table for rotation/revocation. On refresh, the old token is invalidated and a new one is returned.
+- **Refresh Token**: Stored (SHA-256 hashed) in the `refresh_tokens` table for rotation/revocation.
+  - Default TTL is **24 hours**; login with `rememberMe: true` gets **30 days** (`REFRESH_TTL_DEFAULT` / `REFRESH_TTL_REMEMBER_ME` in `auth.service.ts`).
+  - On refresh, the **original token's TTL is preserved** across rotation — a rememberMe session keeps its 30-day lifetime through every subsequent refresh, it doesn't collapse to the 24h default.
+
+### Frontend Token Refresh
+
+The frontend (`apps/frontend/src/lib/api.ts`) proactively refreshes the access token ~5 minutes before it expires (decodes the JWT `exp` client-side, schedules a timer), so users rarely hit a reactive 401. The 401-triggered refresh-and-retry in the response interceptor remains as a safety net for cases the proactive timer misses (e.g. laptop sleep).
 
 ### Decorators & Guards
 
@@ -129,6 +136,10 @@ Use `@Public()` to bypass `JwtAuthGuard` checks for public paths. Expose current
 3. **Always** apply changes locally via `npx drizzle-kit push` or generate migrations with `npx drizzle-kit generate` + `npx drizzle-kit migrate`.
 4. **Soft deletes**: Add `deletedAt` timestamp column to schemas requiring soft deletes. Filter using `isNull(table.deletedAt)`.
 5. **No JS Filtering**: Use `inArray` to query items inside categories. Never pull all rows and filter using `Array.prototype.filter` in JS memory.
+
+### Idempotency Keys
+
+For endpoints a client might retry (e.g. POS creating an order while offline, then resyncing), accept an optional client-supplied idempotency key, check for an existing row before inserting, and back it with a **unique constraint** so a race between the check and the insert still can't create a duplicate. See `orders.clientOrderId` (unique per `organizationId`, migration `0014`) and `OrdersService.createPosOrder` for the reference implementation.
 
 ---
 
@@ -161,6 +172,14 @@ To hide Telnyx carrier branding:
 
 ---
 
+## 🚀 Bootstrap & CI
+
+- `DatabaseModule.onApplicationBootstrap()` seeds default plans and, **only when `NODE_ENV` is not `production`**, a default admin user (`test@example.com`). A fresh production database must have its first admin provisioned through a secure, explicit step — never via this dev convenience seed.
+- Swagger (`/api/docs`) is likewise mounted only outside production (see `main.ts`).
+- `.github/workflows/ci.yml` runs on every push to `main`/`master` and on PRs: backend `build` + `test` and frontend `tsc --noEmit` are **gating**; lint runs but is currently `continue-on-error: true` because of pre-existing lint debt across the repo. Run `npm run lint` locally anyway before finishing — don't let the informational CI status be a reason to skip it. Once the workspaces are lint-clean, flip lint to a hard gate.
+
+---
+
 ## 🛑 Common Anti-Patterns to Avoid
 
 | ❌ Don't                                    | ✅ Do Instead                                 |
@@ -168,6 +187,7 @@ To hide Telnyx carrier branding:
 | `process.env.JWT_SECRET` directly           | `this.configService.get('JWT_SECRET')`        |
 | Raw SQL strings                             | Drizzle query builder                         |
 | Business logic in controllers               | Move to service layer                         |
+| Ad-hoc debug code (`fs.appendFileSync`, stray `console.log`) left in a handler | Use the NestJS `Logger`; remove scratch debugging before committing |
 | Synchronous blocking operations             | Use BullMQ queues for heavy tasks             |
 | Plaintext refresh tokens                    | Save SHA-256 hashes of refresh tokens         |
 | Returning raw Telnyx structures             | Map to clean DTOs (white-labeling)            |

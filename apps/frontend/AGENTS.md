@@ -31,6 +31,21 @@ Always consult these vendor documentation files before implementing UI component
 
 ---
 
+## ⚠️ Known Issue — route-guard middleware is currently dead code
+
+`src/middleware.ts` (Next.js edge middleware that redirected unauthenticated
+users away from protected paths) was renamed to `src/proxy.ts`. **Next.js only
+runs middleware from a file literally named `middleware.ts` at the project/src
+root** — `proxy.ts` is not picked up by the framework and nothing imports it,
+so edge-level route protection is currently a no-op. The only remaining gate
+is client-side (`DashboardLayout.tsx` / `LocationContext` checking for a
+token after the page has already rendered). If you're touching auth or
+routing, either restore `middleware.ts` (thin wrapper re-exporting the logic
+in `proxy.ts`) or explicitly decide client-side-only protection is
+acceptable — don't assume `proxy.ts` is doing anything today.
+
+---
+
 ## Visual Design System
 
 - **Ant Design v6**: Use `theme.useToken()` for all layout values, borders, shadows, and colors.

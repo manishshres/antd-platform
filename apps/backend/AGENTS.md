@@ -8,12 +8,13 @@ Quick-reference rules for AI coding assistants working on this project. For deta
 
 - **Framework**: NestJS 11+ with TypeScript (strict mode)
 - **Database**: PostgreSQL via **Drizzle ORM** — no raw SQL
-- **Auth**: JWT access tokens (15 min) + HTTP-only refresh tokens (7 days, stored hashed in DB)
+- **Auth**: JWT access tokens (15 min) + HTTP-only refresh tokens, stored hashed in DB. TTL is 24h by default, 30 days with `rememberMe`; the original TTL is preserved across every rotation.
 - **Queues**: BullMQ + Redis (print-queue, import-menu, webhook-queue)
 - **MQTT**: Eclipse Mosquitto broker + MQTT.js client
 - **Printer routing**: fixed topics `restaurant/{orgId}/kitchen/print` and `restaurant/{orgId}/receipt/print`
 - **Billing**: Stripe SDK
-- **Docs**: Swagger / OpenAPI at `http://localhost:4000/api/docs`
+- **Docs**: Swagger / OpenAPI at `http://localhost:4000/api/docs` — **non-production only**
+- **CI**: `.github/workflows/ci.yml` gates build + test (backend) and typecheck (frontend) on push/PR. Lint runs but is informational for now — still run it locally.
 
 ---
 
@@ -133,6 +134,8 @@ return { message: 'Import queued', jobId: job.id };
 - Secrets: always via `this.configService.get<string>('KEY')` — never `process.env.KEY`.
 - File uploads: validate MIME type AND magic bytes, not just extension.
 - Audit log: call `this.auditService.log(...)` for all state-changing admin/user actions.
+- Dev-only conveniences (default admin seed, Swagger docs) must check `NODE_ENV !== 'production'` before running. Never let a production boot create known-credential accounts or expose the full API surface.
+- Idempotent writes: for any endpoint a client might retry (offline sync, double-tap), accept an optional client-supplied key, check-then-insert, and back it with a DB unique constraint — see `orders.clientOrderId`.
 
 ```typescript
 await this.auditService.log({

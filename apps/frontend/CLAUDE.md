@@ -39,6 +39,7 @@ NEXT_PUBLIC_API_URL=https://api.your-domain.com
 | Styling           | Ant Design tokens + inline styles    | No TailwindCSS. No raw hex colors.         |
 | Icons             | `@ant-design/icons` v6               |                                            |
 | Audio             | wavesurfer.js v7                     | Call recording waveform player             |
+| Dates             | dayjs                                 | Approved date library — don't add moment.js or date-fns alongside it |
 | Language          | TypeScript (strict)                  | All DTOs in `src/types/`                   |
 | Linting           | ESLint 9 (flat config) + Prettier    | Zero warnings policy                       |
 
@@ -72,20 +73,27 @@ antd-demo/
 │   │   │   └── page.tsx            # Tab-grouped categories, items, import from website
 │   │   ├── orders/
 │   │   │   └── page.tsx            # Order list, status management, mock generator
+│   │   ├── pos/
+│   │   │   ├── page.tsx            # In-store register: category rail, item grid, cart, tender/payment, table picker
+│   │   │   └── components/
 │   │   ├── billing/
 │   │   │   └── page.tsx            # Plan details, usage meters, Stripe redirect
 │   │   ├── documentation/
 │   │   │   └── page.tsx            # Knowledge base / document management
-│   │   ├── printers/               # [PLANNED] Printer management dashboard
+│   │   ├── printers/                # Printer management dashboard
 │   │   │   └── page.tsx
-│   │   ├── users/                  # [PLANNED] Admin: user CRUD, roles, permissions
+│   │   ├── users/                   # Admin: user CRUD, roles, permissions
 │   │   │   └── page.tsx
-│   │   ├── audit/                  # [PLANNED] Admin: audit log viewer
+│   │   ├── audit/                   # Admin: audit log viewer
 │   │   │   └── page.tsx
-│   │   └── settings/               # [PLANNED] Organization settings, API keys
+│   │   └── settings/                # Organization settings, incl. settings/locations, settings/floor-plans
 │   │       └── page.tsx
 │   ├── components/
 │   │   ├── DashboardLayout.tsx     # Shell: sidebar + header + content + auth guard
+│   │   ├── PageHeader.tsx          # Standard page title/subtitle/actions header
+│   │   ├── PageStates.tsx          # EmptyState / ErrorState shared components
+│   │   ├── TransactionDrawer.tsx       # Single-order detail: items, status actions, print
+│   │   ├── TransactionsListDrawer.tsx  # Transactions hub: date range, live summary, open/closed, source filters
 │   │   ├── ErrorBoundary.tsx       # [PLANNED] React Error Boundary wrapper
 │   │   ├── PageSkeleton.tsx        # [PLANNED] Reusable skeleton loader for data pages
 │   │   └── [feature]/              # Feature-specific components
@@ -168,8 +176,18 @@ User submits /login form
 On every route render:
   DashboardLayout.tsx checks for token
   → If missing → redirect to /login
+  ⚠️ This is currently the ONLY auth gate — see "Known Issue" in AGENTS.md:
+  the edge-middleware route guard (src/middleware.ts → renamed src/proxy.ts)
+  is not wired up and does nothing. Don't assume unauthenticated requests are
+  blocked before a page renders.
 
-Refresh flow (when access token expires):
+Proactive refresh (src/lib/api.ts):
+  → A timer fires ~5 min before the access token's JWT `exp`
+  → Silently calls POST /api/v1/auth/refresh and swaps the stored token
+  → Keeps idle users logged in without ever hitting a 401
+
+Reactive refresh (safety net, when the proactive timer is missed):
+  → A request gets a 401
   → POST /api/v1/auth/refresh (sends HTTP-only refresh cookie)
   → Store new accessToken
   → Retry original request
@@ -388,7 +406,7 @@ npm run build
 cd ~/Projects/antd-backend && npm run dev
 
 # Start frontend
-npm run dev               # http://localhost:3000
+npm run dev               # http://localhost:3000 — runs `next dev --webpack` (Turbopack opted out)
 
 # Before committing:
 npm run lint              # must pass with 0 warnings
@@ -490,3 +508,4 @@ These repos communicate exclusively via HTTP. The frontend never imports from th
 | `@ant-design/nextjs-registry` | 1.x  | SSR style hydration for Ant Design |
 | `axios`                    | 1.x     | HTTP client                        |
 | `wavesurfer.js`            | 7.x     | Call recording waveform visualizer |
+| `dayjs`                    | 1.x     | Date range logic (e.g. Transactions hub filters) |
