@@ -112,7 +112,7 @@ export default function CallsPage() {
 
   const { token } = theme.useToken();
 
-  const { selectedLocationId } = useLocation();
+  const { selectedLocationId, selectedLocation } = useLocation();
 
   // Filters
   const [search, setSearch] = useState("");
@@ -136,6 +136,23 @@ export default function CallsPage() {
       .catch(() => setError("Failed to load call logs."))
       .finally(() => setLoading(false));
   }, [search, selectedLocationId]);
+
+  const handleRefresh = useCallback(async () => {
+    if (!selectedLocationId || !selectedLocation?.telnyxAssistantId) {
+      load();
+      return;
+    }
+    setLoading(true);
+    try {
+      await api.post("/conversations/sync", {
+        locationId: selectedLocationId,
+        telnyxAssistantId: selectedLocation.telnyxAssistantId,
+      });
+    } catch (err) {
+      console.error("Failed to sync calls", err);
+    }
+    load();
+  }, [selectedLocationId, selectedLocation?.telnyxAssistantId, load]);
 
   useEffect(() => {
     load();
@@ -372,7 +389,7 @@ export default function CallsPage() {
           showIcon
           style={{ marginBottom: token.marginSM }}
           action={
-            <Button size='small' onClick={load}>
+            <Button size='small' onClick={handleRefresh}>
               Retry
             </Button>
           }
@@ -447,7 +464,7 @@ export default function CallsPage() {
             <Tooltip title='Refresh'>
               <Button
                 icon={<ReloadOutlined />}
-                onClick={load}
+                onClick={handleRefresh}
                 loading={loading}
               />
             </Tooltip>
