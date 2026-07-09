@@ -12,6 +12,7 @@ import {
   HttpStatus,
   ParseUUIDPipe,
   BadRequestException,
+  Res,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -33,6 +34,7 @@ import { PrintOrderDto } from './dto/print-order.dto';
 import { GetOrdersDto } from './dto/get-orders.dto';
 import { PaginatedResponseDto } from '../common/dto/paginated-response.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import type { Response } from 'express';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import {
@@ -79,6 +81,67 @@ export class OrdersController {
       dateFrom,
       dateTo,
     );
+  }
+
+  @Get('export/csv')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Export filtered orders as CSV' })
+  @ApiResponse({ status: 200, description: 'CSV export.' })
+  async exportOrdersCsv(
+    @CurrentUser() user: CurrentUserPayload,
+    @Query() query: GetOrdersDto,
+    @Res() res: Response,
+  ) {
+    const result = await this.ordersService.getOrders(user, {
+      ...query,
+      offset: 0,
+      limit: 10000,
+    });
+    const orders = result.data as Array<Record<string, unknown>>;
+
+    // Escape a value for CSV: quote it, double embedded quotes, and neutralize
+    // spreadsheet formula injection — a cell starting with =, +, -, @, tab or CR
+    // is executed as a formula by Excel/Sheets, so prefix those with a single quote.
+    const csvCell = (value: unknown): string => {
+      let s: string;
+      if (value == null) s = '';
+      else if (typeof value === 'string') s = value;
+      else if (typeof value === 'number' || typeof value === 'boolean')
+        s = String(value);
+      else s = JSON.stringify(value);
+      const guarded = /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
+      return `"${guarded.replace(/"/g, '""')}"`;
+    };
+
+    const headers = [
+      'Ticket #',
+      'Customer Name',
+      'Phone',
+      'Status',
+      'Total',
+      'Source',
+      'Created At',
+    ];
+    const rows = orders.map((o) => [
+      o.ticketNumber ? `#${o.ticketNumber as number}` : '',
+      o.customerName,
+      o.customerPhone,
+      o.status,
+      `$${((o.totalAmount as number) / 100).toFixed(2)}`,
+      o.source ?? '',
+      o.createdAt ? new Date(o.createdAt as string).toISOString() : '',
+    ]);
+
+    const csv = [headers, ...rows]
+      .map((row) => row.map(csvCell).join(','))
+      .join('\n');
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="orders-${new Date().toISOString().slice(0, 10)}.csv"`,
+    );
+    res.send(csv);
   }
 
   @Get(':id')
