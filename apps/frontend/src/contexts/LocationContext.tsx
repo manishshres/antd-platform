@@ -2,6 +2,8 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { api } from "@/lib/api";
+import { getAccessToken, onTokenChange } from "@/lib/token-store";
+import { decodeRoleFromToken, decodeJwtPayload } from "@/lib/jwt";
 
 export interface Location {
   id: string;
@@ -55,17 +57,7 @@ const LocationContext = createContext<LocationContextType | undefined>(undefined
 /** Read the role from the stored JWT synchronously (SSR-safe). */
 function getRoleFromToken(): string {
   if (typeof window === "undefined") return "user";
-  const token = localStorage.getItem("access_token");
-  if (!token) return "user";
-  try {
-    const payload = token.split(".")[1];
-    const decoded = JSON.parse(
-      window.atob(payload.replace(/-/g, "+").replace(/_/g, "/")),
-    ) as { role?: string };
-    return decoded.role || "user";
-  } catch {
-    return "user";
-  }
+  return decodeRoleFromToken(getAccessToken() ?? "");
 }
 
 export function LocationProvider({ children }: { children: React.ReactNode }) {
@@ -90,30 +82,20 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const updateAuth = () => {
-      const token = localStorage.getItem("access_token");
-      if (token) {
-        try {
-          const payload = token.split(".")[1];
-          const decoded = JSON.parse(window.atob(payload.replace(/-/g, "+").replace(/_/g, "/")));
-          const r = decoded.role || "user";
-          setUserRole(r);
-          setIsPlatformAdmin(r === "platform_admin");
-        } catch {
-          setUserRole("user");
-          setIsPlatformAdmin(false);
-        }
-      } else {
-        setUserRole("user");
-        setIsPlatformAdmin(false);
-      }
+      const token = getAccessToken();
+      const r = token ? decodeRoleFromToken(token) : "user";
+      setUserRole(r);
+      setIsPlatformAdmin(r === "platform_admin");
     };
 
     updateAuth();
     window.addEventListener("storage", updateAuth);
     window.addEventListener("auth-change", updateAuth);
+    const unsub = onTokenChange(() => updateAuth());
     return () => {
       window.removeEventListener("storage", updateAuth);
       window.removeEventListener("auth-change", updateAuth);
+      unsub();
     };
   }, []);
 
@@ -152,10 +134,7 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
       setOrganizations(data);
       if (data.length > 0) {
         const savedOrgId = localStorage.getItem("selectedOrgId");
-        if (savedOrgId === "undefined" || savedOrgId === "null") {
-          localStorage.removeItem("selectedOrgId");
-        }
-        if (savedOrgId && savedOrgId !== "undefined" && savedOrgId !== "null" && data.find((org) => org.id === savedOrgId)) {
+        if (savedOrgId && data.find((org) => org.id === savedOrgId)) {
           setSelectedOrgIdState(savedOrgId);
           return savedOrgId;
         } else {
@@ -173,7 +152,7 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     if (token) {
       setLoading(true);
       const load = async () => {
@@ -196,7 +175,8 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
   }, [fetchLocations, fetchOrganizations, isPlatformAdmin]);
 
   const setSelectedLocationId = (id: string) => {
-    if (userRole === "manager") return; // locked
+    if (userRole === "manager") return;
+    if (!id || id === "undefined" || id === "null") return;
     if (locations.find((loc) => loc.id === id)) {
       setSelectedLocationIdState(id);
       localStorage.setItem("selectedLocationId", id);
@@ -204,6 +184,7 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
   };
 
   const setSelectedOrgId = (id: string) => {
+    if (!id || id === "undefined" || id === "null") return;
     if (organizations.find((org) => org.id === id)) {
       setSelectedOrgIdState(id);
       localStorage.setItem("selectedOrgId", id);

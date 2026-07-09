@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Spin } from "antd";
+import { getAccessToken } from "@/lib/token-store";
 
 const ROLE_WEIGHTS: Record<string, number> = {
   platform_admin: 100,
@@ -19,7 +20,7 @@ export function withRoleGuard(WrappedComponent: React.ComponentType<any>, requir
     const router = useRouter();
 
     useEffect(() => {
-      const token = localStorage.getItem("access_token");
+      const token = getAccessToken();
       if (!token) {
         router.replace("/login");
         return;
