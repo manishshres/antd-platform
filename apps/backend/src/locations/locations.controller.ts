@@ -64,12 +64,7 @@ export class LocationsController {
       );
     }
 
-    try {
-      return await this.locationsService.listLocations(targetOrgId);
-    } catch (err: any) {
-      require('fs').appendFileSync('/tmp/debug.log', err.stack + '\\n');
-      throw err;
-    }
+    return this.locationsService.listLocations(targetOrgId);
   }
 
   @Post()
