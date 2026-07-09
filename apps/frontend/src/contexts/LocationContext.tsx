@@ -139,8 +139,10 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
       } else {
         setSelectedLocationIdState(null);
       }
-    } catch (err) {
-      console.error("Failed to fetch locations", err);
+    } catch (err: any) {
+      if (err?.message !== "Refresh failed") {
+        console.error("Failed to fetch locations", err);
+      }
     }
   }, [userRole]);
 
@@ -162,8 +164,10 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
           return data[0].id;
         }
       }
-    } catch (err) {
-      console.error("Failed to fetch organizations", err);
+    } catch (err: any) {
+      if (err?.message !== "Refresh failed") {
+        console.error("Failed to fetch organizations", err);
+      }
     }
     return undefined;
   }, []);
