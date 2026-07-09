@@ -49,6 +49,7 @@ describe('UsersService', () => {
 
     auditServiceMock = {
       log: jest.fn().mockResolvedValue(undefined),
+      fireAndForget: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -206,7 +207,7 @@ describe('UsersService', () => {
       await service.deleteUserGlobal('u1');
 
       expect(dbMock.update).toHaveBeenCalled();
-      expect(auditServiceMock.log).toHaveBeenCalledWith(
+      expect(auditServiceMock.fireAndForget).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'user.delete' }),
       );
     });

@@ -447,7 +447,7 @@ export class OrdersService {
       fullOrder.paidAt ? ['save', 'paid'] : ['save'],
     );
 
-    void this.auditService.log({
+    this.auditService.fireAndForget({
       action: 'order.create',
       userId,
       organizationId: orgId,
@@ -881,9 +881,16 @@ export class OrdersService {
 
   /** Next per-location daily ticket number ("Order #47"). Runs inside the insert transaction. */
   private async nextTicketNumber(
-    tx: Pick<NodePgDatabase<typeof schema>, 'select'>,
+    tx: Pick<NodePgDatabase<typeof schema>, 'select' | 'execute'>,
     locationId: string,
   ): Promise<number> {
+    // Serialize concurrent ticket-number allocations for this location within the
+    // transaction — Postgres doesn't allow FOR UPDATE on an aggregate (MAX) query,
+    // so without this lock two concurrent orders can read the same max and collide.
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtext(${locationId}))`,
+    );
+
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
     const [row] = await tx
@@ -1180,7 +1187,7 @@ export class OrdersService {
     // corrected copy (payload marked updated).
     await this.printForEvents(orgId, fullOrder, ['update'], { updated: true });
 
-    void this.auditService.log({
+    this.auditService.fireAndForget({
       action: 'order.items.update',
       userId: user.id,
       organizationId: orgId,
@@ -1311,7 +1318,7 @@ export class OrdersService {
       await this.printForEvents(orgId, fullOrder, ['paid']);
     }
 
-    void this.auditService.log({
+    this.auditService.fireAndForget({
       action: 'order.payment.recorded',
       userId: user.id,
       organizationId: orgId,
@@ -1449,7 +1456,7 @@ export class OrdersService {
       })
       .where(eq(schema.orders.id, orderId));
 
-    void this.auditService.log({
+    this.auditService.fireAndForget({
       action: 'order.status_update',
       userId: user.id,
       organizationId: orgId,
@@ -1544,11 +1551,10 @@ export class OrdersService {
     managerPin: string,
     reason?: string,
   ): Promise<unknown> {
+    const orgId = await this.billingService.getRequiredOrg(user);
+
     // 1. Verify manager PIN
-    const manager = await this.usersService.verifyManagerPin(
-      user.organizationId!,
-      managerPin,
-    );
+    const manager = await this.usersService.verifyManagerPin(orgId, managerPin);
     if (!manager) {
       throw new ForbiddenException('Invalid manager PIN.');
     }
@@ -1560,7 +1566,7 @@ export class OrdersService {
       .where(
         and(
           eq(schema.orders.id, orderId),
-          eq(schema.orders.organizationId, user.organizationId!),
+          eq(schema.orders.organizationId, orgId),
         ),
       )
       .limit(1);
@@ -1609,7 +1615,7 @@ export class OrdersService {
       }
 
       await this.auditService.log({
-        organizationId: user.organizationId,
+        organizationId: orgId,
         userId: manager.id,
         action: 'order.refunded',
         entityType: 'order',
@@ -1622,14 +1628,10 @@ export class OrdersService {
       });
     });
 
-    this.eventsGateway.emitToOrganization(
-      user.organizationId!,
-      'order.updated',
-      {
-        id: order.id,
-        status: 'cancelled',
-      },
-    );
+    this.eventsGateway.emitToOrganization(orgId, 'order.updated', {
+      id: order.id,
+      status: 'cancelled',
+    });
 
     return { success: true, message: 'Order voided and refunded.' };
   }
@@ -1639,8 +1641,10 @@ export class OrdersService {
     orderId: string,
     dto: PartialRefundDto,
   ): Promise<unknown> {
+    const orgId = await this.billingService.getRequiredOrg(user);
+
     const manager = await this.usersService.verifyManagerPin(
-      user.organizationId!,
+      orgId,
       dto.managerPin,
     );
     if (!manager) {
@@ -1653,7 +1657,7 @@ export class OrdersService {
       .where(
         and(
           eq(schema.orders.id, orderId),
-          eq(schema.orders.organizationId, user.organizationId!),
+          eq(schema.orders.organizationId, orgId),
         ),
       )
       .limit(1);
@@ -1680,7 +1684,7 @@ export class OrdersService {
       });
 
       await this.auditService.log({
-        organizationId: user.organizationId,
+        organizationId: orgId,
         userId: manager.id,
         action: 'order.refund_partial',
         entityType: 'order',
@@ -1700,8 +1704,10 @@ export class OrdersService {
     orderId: string,
     dto: AdjustOrderItemsDto,
   ): Promise<unknown> {
+    const orgId = await this.billingService.getRequiredOrg(user);
+
     const manager = await this.usersService.verifyManagerPin(
-      user.organizationId!,
+      orgId,
       dto.managerPin,
     );
     if (!manager) {
@@ -1714,7 +1720,7 @@ export class OrdersService {
       .where(
         and(
           eq(schema.orders.id, orderId),
-          eq(schema.orders.organizationId, user.organizationId!),
+          eq(schema.orders.organizationId, orgId),
         ),
       )
       .limit(1);
@@ -1728,7 +1734,7 @@ export class OrdersService {
       .where(eq(schema.orderItems.orderId, order.id));
 
     const { resolvedItems, subtotal: newSubtotal } = await this.priceCartItems(
-      user.organizationId!,
+      orgId,
       dto.items,
     );
 
@@ -1786,7 +1792,7 @@ export class OrdersService {
 
       // 4. Audit Log
       await this.auditService.log({
-        organizationId: user.organizationId,
+        organizationId: orgId,
         userId: manager.id,
         action: 'order.adjust_items',
         entityType: 'order',
@@ -1801,14 +1807,10 @@ export class OrdersService {
       });
     });
 
-    this.eventsGateway.emitToOrganization(
-      user.organizationId!,
-      'order.updated',
-      {
-        id: order.id,
-        status: order.status,
-      },
-    );
+    this.eventsGateway.emitToOrganization(orgId, 'order.updated', {
+      id: order.id,
+      status: order.status,
+    });
 
     return {
       success: true,

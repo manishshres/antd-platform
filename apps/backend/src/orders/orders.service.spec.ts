@@ -50,6 +50,7 @@ describe('OrdersService', () => {
 
   const mockAuditService: any = {
     log: jest.fn(),
+    fireAndForget: jest.fn(),
   };
 
   const mockAnalyticsService: any = {
@@ -107,7 +108,7 @@ describe('OrdersService', () => {
       await service.updateOrderStatus('user-id', 'order-id', 'preparing');
 
       expect(mockDb.update).toHaveBeenCalled();
-      expect(mockAuditService.log).toHaveBeenCalled();
+      expect(mockAuditService.fireAndForget).toHaveBeenCalled();
     });
   });
 
@@ -182,7 +183,7 @@ describe('OrdersService', () => {
       // Enqueueing happens inside createPrintJob (deduped by jobId) — the orders
       // service must NOT add to the queue directly, or every ticket prints twice.
       expect(mockPrintQueue.add).not.toHaveBeenCalled();
-      expect(mockAuditService.log).toHaveBeenCalled();
+      expect(mockAuditService.fireAndForget).toHaveBeenCalled();
       expect(mockAnalyticsService.recordUsage).toHaveBeenCalled();
       expect(mockEventsGateway.emitToOrganization).toHaveBeenCalledWith(
         'org-id',

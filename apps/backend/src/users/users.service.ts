@@ -214,7 +214,7 @@ export class UsersService {
       .where(eq(schema.users.id, id))
       .returning();
 
-    void this.auditService.log({
+    this.auditService.fireAndForget({
       action: 'user.update',
       userId: updated.id,
       organizationId: updated.organizationId,
@@ -240,7 +240,7 @@ export class UsersService {
       })
       .where(eq(schema.users.id, id));
 
-    void this.auditService.log({
+    this.auditService.fireAndForget({
       action: 'user.delete',
       userId: user.id,
       organizationId: user.organizationId,
@@ -355,7 +355,7 @@ export class UsersService {
     // Force log out immediately upon deletion
     await this.forceLogout(id, organizationId);
 
-    void this.auditService.log({
+    this.auditService.fireAndForget({
       action: 'user.delete',
       userId: id,
       organizationId: organizationId,
@@ -373,7 +373,7 @@ export class UsersService {
       .delete(schema.refreshTokens)
       .where(eq(schema.refreshTokens.userId, id));
 
-    void this.auditService.log({
+    this.auditService.fireAndForget({
       action: 'user.force_logout',
       userId: id,
       organizationId: organizationId,
@@ -392,7 +392,7 @@ export class UsersService {
       .delete(schema.refreshTokens)
       .where(eq(schema.refreshTokens.userId, id));
 
-    void this.auditService.log({
+    this.auditService.fireAndForget({
       action: 'user.force_logout',
       userId: id,
       organizationId: user.organizationId,
@@ -544,7 +544,34 @@ export class UsersService {
   async verifyManagerPin(
     organizationId: string,
     pin: string,
+    actingUserId?: string,
   ): Promise<typeof schema.users.$inferSelect | null> {
+    // When an acting user is specified, validate only that user's PIN.
+    // When omitted (legacy), iterate all managers — caller should migrate to providing actingUserId.
+    if (actingUserId) {
+      const [user] = await this.db
+        .select()
+        .from(schema.users)
+        .where(
+          and(
+            eq(schema.users.id, actingUserId),
+            eq(schema.users.organizationId, organizationId),
+            isNotNull(schema.users.posPinHash),
+            inArray(schema.users.role, [
+              'manager',
+              'admin',
+              'sysadmin',
+              'platform_admin',
+            ]),
+            notDeleted(schema.users),
+          ),
+        );
+      if (!user?.posPinHash) return null;
+      const isMatch = await bcrypt.compare(pin, user.posPinHash);
+      return isMatch ? user : null;
+    }
+
+    // Legacy fallback: iterate all managers (O(n) bcrypt — use actingUserId for new code paths).
     const managers = await this.db
       .select()
       .from(schema.users)
@@ -552,7 +579,6 @@ export class UsersService {
         and(
           eq(schema.users.organizationId, organizationId),
           isNotNull(schema.users.posPinHash),
-          // Anyone at manager level or above can approve PIN-gated actions.
           inArray(schema.users.role, [
             'manager',
             'admin',

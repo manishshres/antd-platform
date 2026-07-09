@@ -148,6 +148,15 @@ export class WebhookQueueProcessor extends WorkerHost {
     this.logger.log(
       `Background order processing complete. Order ID: ${order.id}`,
     );
+
+    // Mark the webhook event as completed so the reservation moves from 'pending' to 'completed'.
+    if (idempotencyKey) {
+      await this.db
+        .update(schema.webhookEvents)
+        .set({ status: 'completed', processedAt: new Date() })
+        .where(eq(schema.webhookEvents.eventId, idempotencyKey));
+    }
+
     return {
       orderId: order.id,
       status: order.status,

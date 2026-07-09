@@ -40,14 +40,4 @@ export class PaginationDto {
   @IsOptional()
   @Type(() => String)
   locationId?: string;
-
-  @ApiPropertyOptional({ description: 'Filter by organization ID' })
-  @IsOptional()
-  @Type(() => String)
-  orgId?: string;
-
-  @ApiPropertyOptional({ description: 'Search query string' })
-  @IsOptional()
-  @Type(() => String)
-  search?: string;
 }

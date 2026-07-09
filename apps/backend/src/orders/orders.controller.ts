@@ -10,6 +10,7 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  ParseUUIDPipe,
   BadRequestException,
 } from '@nestjs/common';
 import {
@@ -88,9 +89,8 @@ export class OrdersController {
   @ApiResponse({ status: 404, description: 'Order not found.' })
   async getOrderById(
     @CurrentUser() user: CurrentUserPayload,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
   ): Promise<unknown> {
-    if (!id) throw new BadRequestException('Order ID is required.');
     return this.ordersService.getOrderById(user, id);
   }
 
@@ -138,10 +138,9 @@ export class OrdersController {
   @ApiResponse({ status: 404, description: 'Order not found.' })
   async updateOrderItems(
     @CurrentUser() user: CurrentUserPayload,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateOrderItemsDto,
   ): Promise<unknown> {
-    if (!id) throw new BadRequestException('Order ID is required.');
     return this.ordersService.updateOrderItems(user, id, dto);
   }
 
@@ -154,10 +153,9 @@ export class OrdersController {
   @ApiResponse({ status: 404, description: 'Order not found.' })
   async payOrder(
     @CurrentUser() user: CurrentUserPayload,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: PayOrderDto,
   ): Promise<unknown> {
-    if (!id) throw new BadRequestException('Order ID is required.');
     return this.ordersService.payOrder(
       user,
       id,
@@ -176,10 +174,9 @@ export class OrdersController {
   @ApiResponse({ status: 404, description: 'Order not found.' })
   async refundOrder(
     @CurrentUser() user: CurrentUserPayload,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: RefundOrderDto,
   ): Promise<unknown> {
-    if (!id) throw new BadRequestException('Order ID is required.');
     return this.ordersService.refundPaidOrder(
       user,
       id,
@@ -201,10 +198,9 @@ export class OrdersController {
   @ApiResponse({ status: 404, description: 'Order not found.' })
   async partialRefundOrder(
     @CurrentUser() user: CurrentUserPayload,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: PartialRefundDto,
   ): Promise<unknown> {
-    if (!id) throw new BadRequestException('Order ID is required.');
     return this.ordersService.refundPartialOrder(user, id, dto);
   }
 
@@ -217,10 +213,9 @@ export class OrdersController {
   @ApiResponse({ status: 404, description: 'Order not found.' })
   async adjustOrderItems(
     @CurrentUser() user: CurrentUserPayload,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AdjustOrderItemsDto,
   ): Promise<unknown> {
-    if (!id) throw new BadRequestException('Order ID is required.');
     return this.ordersService.adjustOrderItems(user, id, dto);
   }
 
@@ -242,10 +237,9 @@ export class OrdersController {
   @ApiResponse({ status: 404, description: 'Order not found.' })
   async recordPayment(
     @CurrentUser() user: CurrentUserPayload,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: RecordPaymentDto,
   ): Promise<unknown> {
-    if (!id) throw new BadRequestException('Order ID is required.');
     return this.ordersService.recordPayment(user, id, dto);
   }
 
@@ -259,10 +253,9 @@ export class OrdersController {
   @ApiResponse({ status: 404, description: 'Order not found.' })
   async updateOrderStatus(
     @CurrentUser() user: CurrentUserPayload,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateStatusDto,
   ): Promise<unknown> {
-    if (!id) throw new BadRequestException('Order ID is required.');
     return this.ordersService.updateOrderStatus(user, id, dto.status);
   }
 
@@ -274,12 +267,10 @@ export class OrdersController {
   @ApiResponse({ status: 404, description: 'Order not found.' })
   async getOrderPrintJobs(
     @CurrentUser() user: CurrentUserPayload,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Query('status') status?: string,
     @Query('jobType') jobType?: string,
   ): Promise<unknown> {
-    if (!id) throw new BadRequestException('Order ID is required.');
-
     return this.ordersService.getOrderPrintJobs(user, id, {
       status,
       jobType,
@@ -295,10 +286,9 @@ export class OrdersController {
   @ApiResponse({ status: 404, description: 'Order not found.' })
   async printOrder(
     @CurrentUser() user: CurrentUserPayload,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: PrintOrderDto,
   ): Promise<unknown> {
-    if (!id) throw new BadRequestException('Order ID is required.');
     return this.ordersService.printOrder(user, id, dto.printerId);
   }
 }
