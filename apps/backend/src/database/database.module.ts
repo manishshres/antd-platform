@@ -43,6 +43,7 @@ export class DatabaseModule implements OnApplicationBootstrap {
   constructor(
     @Inject(DRIZZLE)
     private readonly db: NodePgDatabase<typeof schema>,
+    private readonly configService: ConfigService,
   ) {}
 
   async onApplicationBootstrap() {
@@ -88,20 +89,30 @@ export class DatabaseModule implements OnApplicationBootstrap {
         this.logger.log('Seeding default plans completed.');
       }
 
+      const isProduction =
+        this.configService.get<string>('NODE_ENV') === 'production';
       const existingUsers = await this.db.select().from(schema.users).limit(1);
       if (existingUsers.length === 0) {
-        this.logger.log('Seeding default test user...');
-        // Use async bcrypt.hash (never sync on bootstrap — avoids blocking event loop)
-        const bcrypt = await import('bcrypt');
-        const passwordHash = await bcrypt.hash('changeme123!', 12);
-        await this.db.insert(schema.users).values({
-          email: 'test@example.com',
-          passwordHash,
-          role: 'admin', // Seed as admin so they can test everything
-        });
-        this.logger.log(
-          'Seeding default test user completed. IMPORTANT: change the password immediately.',
-        );
+        if (isProduction) {
+          // Never seed a known-credential admin into a production database.
+          // The first admin must be created through a secure provisioning step.
+          this.logger.warn(
+            'No users found and NODE_ENV=production — skipping default-user seed. Provision the first admin securely.',
+          );
+        } else {
+          this.logger.log('Seeding default test user...');
+          // Use async bcrypt.hash (never sync on bootstrap — avoids blocking event loop)
+          const bcrypt = await import('bcrypt');
+          const passwordHash = await bcrypt.hash('changeme123!', 12);
+          await this.db.insert(schema.users).values({
+            email: 'test@example.com',
+            passwordHash,
+            role: 'admin', // Seed as admin so they can test everything
+          });
+          this.logger.log(
+            'Seeding default test user completed. IMPORTANT: change the password immediately.',
+          );
+        }
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
