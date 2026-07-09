@@ -1,9 +1,8 @@
 import { Module, Global, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Pool } from 'pg';
-import { drizzle, NodePgDatabase } from 'drizzle-orm/node-postgres';
+import { drizzle } from 'drizzle-orm/node-postgres';
 import * as schema from './schema';
-import { SeedService } from './seed.service';
 
 export const DRIZZLE = 'DRIZZLE';
 
@@ -28,9 +27,8 @@ export const DRIZZLE = 'DRIZZLE';
         return drizzle(pool, { schema });
       },
     },
-    SeedService,
   ],
-  exports: [DRIZZLE, SeedService],
+  exports: [DRIZZLE],
 })
 export class DatabaseModule {
   private readonly logger = new Logger(DatabaseModule.name);

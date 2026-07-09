@@ -4,6 +4,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { DatabaseModule } from './database/database.module';
+import { SeedModule } from './database/seed.module';
 import { CommonModule } from './common/common.module';
 import { PrometheusModule } from '@willsoto/nestjs-prometheus';
 import { LoggerModule } from 'nestjs-pino';
@@ -103,6 +104,7 @@ import { RolesGuard } from './auth/guards/roles.guard';
 
     // ── Data layer
     DatabaseModule,
+    SeedModule,
     CommonModule,
 
     // ── Auth & Identity
