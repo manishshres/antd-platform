@@ -11,6 +11,7 @@ import {
   Get,
   Query,
   Delete,
+  Logger,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -36,6 +37,8 @@ import { UpdateLocationDto } from './dto/update-location.dto';
 @UseGuards(JwtAuthGuard, RolesGuard, OrgStatusGuard)
 @Controller('locations')
 export class LocationsController {
+  private readonly logger = new Logger(LocationsController.name);
+
   constructor(private readonly locationsService: LocationsService) {}
 
   @Get()
@@ -59,9 +62,13 @@ export class LocationsController {
     }
 
     if (!targetOrgId) {
-      throw new BadRequestException(
-        'User does not belong to an organization and no orgId provided.',
+      // An authenticated user with no organization simply has no locations yet.
+      // Return an empty list (a clean empty state on the client) rather than a
+      // 400 that the frontend would surface as a hard error.
+      this.logger.warn(
+        `User ${user.id} has no organization and provided no orgId; returning empty locations list.`,
       );
+      return [];
     }
 
     return this.locationsService.listLocations(targetOrgId);
