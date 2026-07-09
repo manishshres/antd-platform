@@ -9,7 +9,7 @@ import { CurrentUserPayload } from '../common/decorators/current-user.decorator'
 import { DRIZZLE } from '../database/database.module';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../database/schema';
-import { eq, and, inArray, isNull, sql } from 'drizzle-orm';
+import { eq, and, inArray, isNull, sql, gte } from 'drizzle-orm';
 
 export interface ResolvedCartItem {
   menuItemId: string;
@@ -338,7 +338,7 @@ export class OrderPricingService {
       .where(
         and(
           eq(schema.orders.locationId, locationId),
-          sql`${schema.orders.createdAt} >= ${startOfDay}`,
+          gte(schema.orders.createdAt, startOfDay),
         ),
       );
     return (row?.max ?? 0) + 1;

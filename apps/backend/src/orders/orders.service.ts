@@ -942,13 +942,15 @@ export class OrdersService {
     // NOT NULL FK to locations, so the previous `locationId || orgId` fallback silently failed
     // and under-counted order volume for billing (H5).
     if (fullOrder.locationId) {
-      void this.analyticsService.recordUsage(
-        orgId,
-        fullOrder.locationId,
-        'order_volume',
-        1,
-        { orderId: fullOrder.id },
-      );
+      this.analyticsService
+        .recordUsage(orgId, fullOrder.locationId, 'order_volume', 1, {
+          orderId: fullOrder.id,
+        })
+        .catch((err: unknown) => {
+          this.logger.error(
+            `Failed to record usage for order ${fullOrder.id}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        });
     } else {
       this.logger.warn(
         `Order ${fullOrder.id} has no resolvable location; skipping usage recording.`,

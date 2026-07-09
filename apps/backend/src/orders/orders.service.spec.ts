@@ -57,7 +57,7 @@ describe('OrdersService', () => {
   };
 
   const mockAnalyticsService: any = {
-    recordUsage: jest.fn(),
+    recordUsage: jest.fn().mockResolvedValue(undefined),
   };
 
   const mockPricingService: any = {
