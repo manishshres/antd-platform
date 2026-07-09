@@ -5,6 +5,7 @@ import { InvoicePdfService } from './invoice-pdf.service';
 import { TelnyxService } from '../telnyx/telnyx.service';
 import { DRIZZLE } from '../database/database.module';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { ConfigService } from '@nestjs/config';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 
 describe('BillingService', () => {
@@ -61,6 +62,10 @@ describe('BillingService', () => {
         { provide: InvoicePdfService, useValue: mockInvoicePdfService },
         { provide: TelnyxService, useValue: mockTelnyxService },
         { provide: CACHE_MANAGER, useValue: mockCacheManager },
+        {
+          provide: ConfigService,
+          useValue: { get: jest.fn((_key: string, def?: unknown) => def) },
+        },
       ],
     }).compile();
 

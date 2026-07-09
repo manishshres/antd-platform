@@ -17,6 +17,7 @@ import { randomBytes, createHash } from 'crypto';
 import { TelnyxService } from '../telnyx/telnyx.service';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
+import { ConfigService } from '@nestjs/config';
 
 /** Short TTL for the userId→org resolution — org membership changes rarely (H8). */
 const ORG_RESOLUTION_TTL_MS = 60_000;
@@ -30,6 +31,7 @@ export class BillingService {
     private readonly invoicePdfService: InvoicePdfService,
     private readonly telnyxService: TelnyxService,
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
+    private readonly configService: ConfigService,
   ) {}
 
   async getRequiredOrg(
@@ -273,14 +275,18 @@ export class BillingService {
       .from(schema.locations)
       .where(eq(schema.locations.organizationId, orgId));
 
-    for (const loc of locs) {
-      if (loc.telnyxAssistantId) {
-        await this.telnyxService.updateAssistantDynamicVariable(
+    const targets = locs.filter(
+      (loc): loc is { telnyxAssistantId: string } => !!loc.telnyxAssistantId,
+    );
+
+    await Promise.all(
+      targets.map((loc) =>
+        this.telnyxService.updateAssistantDynamicVariable(
           loc.telnyxAssistantId,
           { order_key: newKey },
-        );
-      }
-    }
+        ),
+      ),
+    );
   }
 
   async getBillingOverview() {
@@ -419,13 +425,32 @@ export class BillingService {
       .groupBy(schema.usageEvents.eventType);
 
     let costCents = 0;
+    const costRateCallMinuteCents = this.configService.get<number>(
+      'COST_RATE_CALL_MINUTE_CENTS',
+      5,
+    );
+    const costRateTranscriptionCents = this.configService.get<number>(
+      'COST_RATE_TRANSCRIPTION_CENTS',
+      2,
+    );
+    const costRateSummaryCents = this.configService.get<number>(
+      'COST_RATE_SUMMARY_CENTS',
+      1,
+    );
+    const costRateSmsCents = this.configService.get<number>(
+      'COST_RATE_SMS_CENTS',
+      1,
+    );
     const usageDetails: Record<string, number> = {};
     for (const u of usageRes) {
       usageDetails[u.eventType] = u.totalAmount;
-      if (u.eventType === 'call_minutes') costCents += u.totalAmount * 5; // 5 cents/min
-      if (u.eventType === 'ai_transcription') costCents += u.totalAmount * 2; // 2 cents/txn
-      if (u.eventType === 'ai_summary') costCents += u.totalAmount * 1; // 1 cent/summary
-      if (u.eventType === 'sms') costCents += u.totalAmount * 1; // 1 cent/sms
+      if (u.eventType === 'call_minutes')
+        costCents += u.totalAmount * costRateCallMinuteCents;
+      if (u.eventType === 'ai_transcription')
+        costCents += u.totalAmount * costRateTranscriptionCents;
+      if (u.eventType === 'ai_summary')
+        costCents += u.totalAmount * costRateSummaryCents;
+      if (u.eventType === 'sms') costCents += u.totalAmount * costRateSmsCents;
     }
 
     return {

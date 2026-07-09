@@ -52,6 +52,8 @@ import { RolesGuard } from './auth/guards/roles.guard';
 
 @Module({
   imports: [
+    // ── Core infrastructure
+    ConfigModule.forRoot({ isGlobal: true, validate: validateEnv }),
     CacheModule.registerAsync({
       isGlobal: true,
       imports: [ConfigModule],
@@ -59,12 +61,9 @@ import { RolesGuard } from './auth/guards/roles.guard';
       useFactory: (configService: ConfigService) => ({
         store: redisStore,
         url: configService.get<string>('REDIS_URL') || 'redis://localhost:6379',
-        ttl: 3600, // default cache for 1 hour
+        ttl: 3600,
       }),
     }),
-    SentryModule.forRoot(),
-    EventEmitterModule.forRoot(),
-    ConfigModule.forRoot({ isGlobal: true, validate: validateEnv }),
     ScheduleModule.forRoot(),
     PrometheusModule.register(),
     LoggerModule.forRoot({
@@ -99,46 +98,61 @@ import { RolesGuard } from './auth/guards/roles.guard';
         ],
       }),
     }),
+    SentryModule.forRoot(),
+    EventEmitterModule.forRoot(),
+
+    // ── Data layer
     DatabaseModule,
     CommonModule,
+
+    // ── Auth & Identity
     AuthModule,
     UsersModule,
-    StripeModule,
-    BillingModule,
-    TelnyxModule,
-    AgentsModule,
-    CallsModule,
-    DocumentsModule,
-    MenusModule,
-    OrdersModule,
-    WebhooksModule,
-    PrintersModule,
-    QueuesModule,
-    HealthModule,
-    OrganizationsModule,
-    ProvisioningModule,
-    InvitationsModule,
-    LocationsModule,
-    CronModule,
-    StorageModule,
-    RecordingsModule,
-    AnalyticsModule,
-    EventsModule,
-    NotificationsModule,
     ApiKeysModule,
     PublicApiModule,
-    ConversationsModule,
+
+    // ── Billing
+    StripeModule,
+    BillingModule,
+
+    // ── Multi-tenancy
+    OrganizationsModule,
+    InvitationsModule,
+    ProvisioningModule,
+    LocationsModule,
+
+    // ── Core features
+    OrdersModule,
+    MenusModule,
     DiscountsModule,
-    AuditLogsModule,
     CustomersModule,
     TablesModule,
+
+    // ── AI & Voice
+    AgentsModule,
+    CallsModule,
+    ConversationsModule,
+    DocumentsModule,
+    RecordingsModule,
+    TelnyxModule,
+
+    // ── Infrastructure features
+    PrintersModule,
+    QueuesModule,
+    WebhooksModule,
+    StorageModule,
+    NotificationsModule,
+    EventsModule,
+    AnalyticsModule,
+
+    // ── Operations
+    HealthModule,
+    CronModule,
+    AuditLogsModule,
   ],
   controllers: [AppController],
   providers: [
     AppService,
-    // Global authn/authz (H6): every route requires a valid JWT unless marked @Public();
-    // RolesGuard runs after and enforces @Roles() metadata where present. Registration order
-    // matters — JWT must populate req.user before RolesGuard reads it.
     { provide: APP_GUARD, useClass: GlobalJwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
   ],
