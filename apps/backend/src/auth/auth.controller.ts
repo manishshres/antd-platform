@@ -124,10 +124,12 @@ export class AuthController {
     try {
       const result = await this.authService.refresh(refreshToken);
 
-      // Rotate the cookie to the new refresh token (default TTL; rememberMe isn't known here).
-      setRefreshCookie(res, result.refresh_token, REFRESH_TTL_DEFAULT * 1000);
+      // Rotate the cookie to the new refresh token, preserving the original TTL
+      // so rememberMe sessions keep their 30-day lifetime across rotations.
+      const { refreshTtlSecs, ...clientResult } = result;
+      setRefreshCookie(res, result.refresh_token, refreshTtlSecs * 1000);
 
-      return result;
+      return clientResult;
     } catch (error) {
       clearRefreshCookie(res);
       throw error;

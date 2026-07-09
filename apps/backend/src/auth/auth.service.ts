@@ -23,7 +23,7 @@ import { AuditService } from '../common/services/audit.service';
 const BCRYPT_ROUNDS = 12;
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
 const VERIFY_TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
-export const REFRESH_TTL_DEFAULT = 604800; // 7 days in seconds
+export const REFRESH_TTL_DEFAULT = 24 * 60 * 60; // 24 hours
 export const REFRESH_TTL_REMEMBER_ME = 30 * 24 * 60 * 60; // 30 days in seconds
 
 function hashToken(token: string): string {
@@ -287,6 +287,7 @@ export class AuthService {
       return {
         access_token: newAccessToken,
         refresh_token: newRefreshToken,
+        refreshTtlSecs,
       };
     } catch (err: unknown) {
       const message =
