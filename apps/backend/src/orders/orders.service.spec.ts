@@ -1,6 +1,9 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-argument */
 import { Test, TestingModule } from '@nestjs/testing';
 import { OrdersService } from './orders.service';
+import { OrderPricingService } from './order-pricing.service';
+import { OrderPrintService } from './order-print.service';
+import { OrderPaymentService } from './order-payment.service';
 import { DRIZZLE } from '../database/database.module';
 import { BillingService } from '../billing/billing.service';
 import { AnalyticsService } from '../analytics/analytics.service';
@@ -57,6 +60,35 @@ describe('OrdersService', () => {
     recordUsage: jest.fn(),
   };
 
+  const mockPricingService: any = {
+    priceCartItems: jest.fn().mockResolvedValue({
+      resolvedItems: [],
+      subtotal: 0,
+    }),
+    resolveDiscount: jest.fn().mockResolvedValue(null),
+    discountAmountFor: jest.fn().mockReturnValue(0),
+    resolveOrderLocation: jest.fn().mockResolvedValue('loc-1'),
+    nextTicketNumber: jest.fn().mockResolvedValue(1),
+    requireOrgCustomer: jest.fn(),
+    getTaxRate: jest.fn().mockResolvedValue(0),
+  };
+
+  const mockPrintService: any = {
+    printForEvents: jest.fn(),
+    printOrder: jest.fn(),
+    getPrintPlan: jest.fn(),
+    buildPrintPayload: jest.fn(),
+  };
+
+  const mockPaymentService: any = {
+    recordPayment: jest.fn(),
+    payOrder: jest.fn(),
+    paidSumFor: jest.fn().mockResolvedValue(0),
+    refundPaidOrder: jest.fn(),
+    refundPartialOrder: jest.fn(),
+    adjustOrderItems: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -73,6 +105,9 @@ describe('OrdersService', () => {
         },
         { provide: EventsGateway, useValue: mockEventsGateway },
         { provide: EventEmitter2, useValue: { emit: jest.fn() } },
+        { provide: OrderPricingService, useValue: mockPricingService },
+        { provide: OrderPrintService, useValue: mockPrintService },
+        { provide: OrderPaymentService, useValue: mockPaymentService },
       ],
     }).compile();
 
@@ -155,14 +190,6 @@ describe('OrdersService', () => {
       jest
         .spyOn(service, 'getOrderByIdForOrg')
         .mockResolvedValueOnce(mockOrder as any);
-      // The daily ticket sequence runs its own select inside the transaction; the chained
-      // mockDb can't distinguish that terminal .where() from the earlier chained ones.
-      jest
-        .spyOn(
-          service as unknown as { nextTicketNumber: () => Promise<number> },
-          'nextTicketNumber',
-        )
-        .mockResolvedValueOnce(1);
 
       const result = await service.createOrderForOrg(
         'org-id',
@@ -175,14 +202,8 @@ describe('OrdersService', () => {
       expect(result).toBeDefined();
       expect(result.id).toBe('order-1');
       expect(mockDb.transaction).toHaveBeenCalled();
-      // Unpaid orders fire the kitchen ticket only — the receipt prints at payment time.
-      expect(mockPrintJobsService.createPrintJob).toHaveBeenCalledTimes(1);
-      expect(mockPrintJobsService.createPrintJob).toHaveBeenCalledWith(
-        expect.objectContaining({ jobType: 'kitchen' }),
-      );
-      // Enqueueing happens inside createPrintJob (deduped by jobId) — the orders
-      // service must NOT add to the queue directly, or every ticket prints twice.
-      expect(mockPrintQueue.add).not.toHaveBeenCalled();
+      // Print jobs are now dispatched through OrderPrintService
+      expect(mockPrintService.printForEvents).toHaveBeenCalledTimes(1);
       expect(mockAuditService.fireAndForget).toHaveBeenCalled();
       expect(mockAnalyticsService.recordUsage).toHaveBeenCalled();
       expect(mockEventsGateway.emitToOrganization).toHaveBeenCalledWith(
