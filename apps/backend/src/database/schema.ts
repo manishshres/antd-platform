@@ -9,6 +9,7 @@ import {
   text,
   primaryKey,
   index,
+  unique,
   check,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
@@ -508,6 +509,7 @@ export const orders = pgTable(
     paidAt: timestamp('paid_at'),
     // Human-friendly per-location daily sequence ("Order #47") for tickets and callouts.
     ticketNumber: integer('ticket_number'),
+    clientOrderId: varchar('client_order_id', { length: 255 }),
     deletedAt: timestamp('deleted_at'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
@@ -517,6 +519,7 @@ export const orders = pgTable(
     index('idx_orders_location_id').on(t.locationId),
     // M11: composite index for tenant-scoped paginated order lists
     index('idx_orders_org_created').on(t.organizationId, t.createdAt),
+    unique('idx_orders_org_client_id').on(t.organizationId, t.clientOrderId),
     check(
       'orders_status_check',
       sql`${t.status} IN ('pending', 'confirmed', 'preparing', 'ready', 'delivered', 'cancelled')`,
