@@ -39,6 +39,7 @@ describe('AuthService', () => {
 
   const mockAuditService = {
     log: jest.fn(),
+    fireAndForget: jest.fn(),
   };
 
   const mockDb = {
@@ -153,7 +154,7 @@ describe('AuthService', () => {
       expect(result.refresh_token).toBe('refresh-token');
       expect(result.user.id).toBe('user-1');
       expect(mockDb.insert).toHaveBeenCalled();
-      expect(mockAuditService.log).toHaveBeenCalledWith(
+      expect(mockAuditService.fireAndForget).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'auth.login', userId: 'user-1' }),
       );
     });

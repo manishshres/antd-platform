@@ -67,9 +67,8 @@ export class AuthService {
 
     // Check account lockout
     if (user.lockedUntil && new Date() < new Date(user.lockedUntil)) {
-      const unlockAt = new Date(user.lockedUntil).toISOString();
       throw new HttpException(
-        `Account locked due to too many failed attempts. Try again after ${unlockAt}.`,
+        'Account temporarily locked due to too many failed attempts. Please try again later.',
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }
@@ -181,7 +180,7 @@ export class AuthService {
       `User ${user.email} logged in (rememberMe: ${rememberMe}).`,
     );
 
-    void this.auditService.log({
+    this.auditService.fireAndForget({
       action: 'auth.login',
       userId: user.id,
       organizationId: user.organizationId,
@@ -226,7 +225,7 @@ export class AuthService {
         this.logger.warn(
           `Refresh token reuse detected for user ${payload.sub}; all sessions revoked.`,
         );
-        void this.auditService.log({
+        this.auditService.fireAndForget({
           action: 'auth.refresh_token_reuse',
           userId: payload.sub,
         });
@@ -376,7 +375,7 @@ export class AuthService {
 
     this.logger.log(`Password reset successfully for user ${record.userId}.`);
 
-    void this.auditService.log({
+    this.auditService.fireAndForget({
       action: 'auth.password_reset',
       userId: record.userId,
     });

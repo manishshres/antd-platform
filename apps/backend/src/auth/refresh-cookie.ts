@@ -15,18 +15,19 @@ export const REFRESH_COOKIE_NAME = 'refresh_token';
  */
 const REFRESH_COOKIE_PATH = '/';
 
-function isProd(): boolean {
-  return process.env.NODE_ENV === 'production';
+function isProd(env?: string): boolean {
+  return (env ?? process.env.NODE_ENV) === 'production';
 }
 
 export function setRefreshCookie(
   res: Response,
   token: string,
   maxAgeMs: number,
+  nodeEnv?: string,
 ): void {
   res.cookie(REFRESH_COOKIE_NAME, token, {
     httpOnly: true,
-    secure: isProd(),
+    secure: isProd(nodeEnv),
     // Lax works for same-site deployments (app + api on one registrable domain). A fully
     // cross-site SPA/API split would need SameSite=None; Secure.
     sameSite: 'lax',

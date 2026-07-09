@@ -6,10 +6,10 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ValidationPipe, VersioningType } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import helmet from 'helmet';
-import { RequestHandler } from 'express';
 import { GlobalExceptionFilter } from './common/filters/http-exception.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { Logger } from 'nestjs-pino';
+import { ValidationErrorFilter } from './common/filters/validation-error.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -27,9 +27,8 @@ async function bootstrap() {
     'http://localhost:3000',
   );
 
-  // Secure HTTP headers - safely cast helmet default export
-  const helmetFn = helmet as unknown as () => RequestHandler;
-  app.use(helmetFn());
+  // Secure HTTP headers
+  app.use(helmet());
 
   // Global exception filter — consistent error shape, never leaks stack traces
   app.useGlobalFilters(new GlobalExceptionFilter());
@@ -47,9 +46,6 @@ async function bootstrap() {
   });
 
   // Enable global validation pipe
-  const {
-    ValidationErrorFilter,
-  } = require('./common/filters/validation-error.filter');
   app.useGlobalFilters(new ValidationErrorFilter());
 
   app.useGlobalPipes(

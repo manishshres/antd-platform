@@ -50,9 +50,7 @@ export class StripeWebhookController {
 
     const rawBody = req.rawBody;
     if (!rawBody) {
-      throw new BadRequestException(
-        'Raw request body is missing. Ensure rawBody is enabled.',
-      );
+      throw new BadRequestException('Invalid webhook payload.');
     }
 
     try {

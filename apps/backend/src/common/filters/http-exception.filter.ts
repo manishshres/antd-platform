@@ -57,8 +57,9 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         error = HttpStatus[status] ?? 'Error';
       }
 
-      // Explicitly send 400 Bad Request errors to Sentry
-      if (status === HttpStatus.BAD_REQUEST) {
+      // Only send application-level 400s to Sentry (skip validation-pipe errors,
+      // which have an array message — those are noise, not actionable).
+      if (status === HttpStatus.BAD_REQUEST && !Array.isArray(message)) {
         Sentry.captureException(exception, {
           level: 'warning',
           tags: { type: 'bad_request' },

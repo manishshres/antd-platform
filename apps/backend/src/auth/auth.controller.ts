@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
+import { ConfigService } from '@nestjs/config';
 import {
   ApiTags,
   ApiOperation,
@@ -45,18 +46,26 @@ import {
 @UseGuards(ThrottlerGuard)
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly configService: ConfigService,
+  ) {}
 
   @Public()
   @Post('register')
-  @ApiOperation({ summary: 'Register a new user account (disabled)' })
+  @ApiOperation({ summary: 'Register a new user account' })
+  @ApiResponse({ status: 201, description: 'Registration successful.' })
   @ApiResponse({ status: 403, description: 'Self-registration is disabled.' })
   register(@Body() _registerDto: RegisterDto) {
-    // Self-registration is disabled — organizations and users are created by a platform admin
-    // and joined via invitation.
-    throw new ForbiddenException(
-      'Self-registration is disabled. Contact your platform administrator for an invitation.',
-    );
+    if (!this.configService.get<boolean>('SELF_REGISTRATION_ENABLED', false)) {
+      throw new ForbiddenException(
+        'Self-registration is disabled. Contact your platform administrator for an invitation.',
+      );
+    }
+    return {
+      message:
+        'Registration not yet implemented. Contact your platform administrator.',
+    };
   }
 
   @Public()
