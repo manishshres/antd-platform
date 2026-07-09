@@ -75,20 +75,25 @@ async function bootstrap() {
     credentials: true,
   });
 
-  // Configure Swagger API Docs
-  const config = new DocumentBuilder()
-    .setTitle('Call Center AI Backend API')
-    .setDescription('The API documentation for the SaaS backend')
-    .setVersion('1.0')
-    .addBearerAuth()
-    .build();
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api/docs', app, document);
+  // Configure Swagger API Docs — kept out of production to avoid exposing the
+  // full API surface publicly.
+  if (nodeEnv !== 'production') {
+    const config = new DocumentBuilder()
+      .setTitle('Call Center AI Backend API')
+      .setDescription('The API documentation for the SaaS backend')
+      .setVersion('1.0')
+      .addBearerAuth()
+      .build();
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('api/docs', app, document);
+  }
 
   const port = configService.get<number>('PORT', 4000);
   await app.listen(port);
   logger.log(`NestJS Backend running on http://localhost:${port}/api/v1`);
-  logger.log(`Swagger Docs available at http://localhost:${port}/api/docs`);
+  if (nodeEnv !== 'production') {
+    logger.log(`Swagger Docs available at http://localhost:${port}/api/docs`);
+  }
   logger.log(`Environment: ${nodeEnv}`);
 }
 void bootstrap();
