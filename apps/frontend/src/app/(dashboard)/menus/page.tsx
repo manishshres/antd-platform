@@ -60,6 +60,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { api } from "@/lib/api";
+import { getAccessToken } from "@/lib/token-store";
 
 const { Title, Text, Paragraph } = Typography;
 const { Option } = Select;
@@ -251,7 +252,7 @@ export default function MenuEditorPage() {
   useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
-    const tk = localStorage.getItem("access_token");
+    const tk = getAccessToken();
     if (tk) {
       try {
         const payload = JSON.parse(window.atob(tk.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));

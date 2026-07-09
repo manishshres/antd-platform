@@ -6,6 +6,8 @@ import { LockOutlined, MailOutlined, RobotOutlined } from "@ant-design/icons";
 import { ConeekoLogo } from "@/components/Logo";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
+import { onLoginSuccess } from "@/lib/api";
+import { getAccessToken } from "@/lib/token-store";
 import Link from "next/link";
 
 const { Title, Text } = Typography;
@@ -18,7 +20,7 @@ export default function LoginPage() {
 
   // If already authenticated, redirect to dashboard
   useEffect(() => {
-    if (typeof window !== "undefined" && localStorage.getItem("access_token")) {
+    if (typeof window !== "undefined" && getAccessToken()) {
       router.push("/dashboard");
     }
   }, [router]);
@@ -34,9 +36,7 @@ export default function LoginPage() {
       });
 
       if (data?.access_token) {
-        // Refresh token is set as an HttpOnly cookie by the backend (H2) — do not persist it.
-        localStorage.setItem("access_token", data.access_token);
-        // Notify contexts (LocationContext) to re-read the role from the new token (M15).
+        onLoginSuccess(data.access_token);
         window.dispatchEvent(new Event("auth-change"));
         router.push("/dashboard");
       } else {

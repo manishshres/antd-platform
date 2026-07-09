@@ -33,6 +33,7 @@ import {
   SyncOutlined,
 } from "@ant-design/icons";
 import { api } from "@/lib/api";
+import { getAccessToken } from "@/lib/token-store";
 import PageHeader from "@/components/PageHeader";
 import PrintSettingsCard from "@/components/PrintSettingsCard";
 import { useLocation } from "@/contexts/LocationContext";
@@ -131,7 +132,7 @@ export default function PrintersPage() {
       loadPrinters();
       loadDLQ();
       if (typeof window !== "undefined") {
-        const token = localStorage.getItem("access_token");
+        const token = getAccessToken();
         if (token) {
           try {
             const payload = token.split(".")[1];

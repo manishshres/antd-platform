@@ -24,6 +24,7 @@ import {
 import { PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined, KeyOutlined, ApiOutlined, GlobalOutlined, BankOutlined, SecurityScanOutlined, BuildOutlined, CreditCardOutlined, NotificationOutlined, SettingOutlined, MailOutlined, UserAddOutlined, MinusCircleOutlined, LinkOutlined, SyncOutlined, ReloadOutlined, TagOutlined } from "@ant-design/icons";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
+import { getAccessToken } from "@/lib/token-store";
 import PageHeader from "@/components/PageHeader";
 import DiscountsSettings from "@/components/DiscountsSettings";
 import { useLocation, Location } from "@/contexts/LocationContext";
@@ -156,7 +157,7 @@ export default function SettingsHubPage() {
   }, [message]);
 
   useEffect(() => {
-    const storedToken = localStorage.getItem("access_token");
+    const storedToken = getAccessToken();
     let isPA = false;
     if (storedToken) {
       try {
@@ -522,7 +523,7 @@ export default function SettingsHubPage() {
                   <Upload
                     name="file"
                     action={`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1'}/menus/import/upload-pdf`}
-                    headers={{ Authorization: `Bearer ${localStorage.getItem('access_token')}` }}
+                    headers={{ Authorization: `Bearer ${getAccessToken()}` }}
                     showUploadList={false}
                     onChange={(info) => {
                       if (info.file.status === 'done') {

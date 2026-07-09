@@ -5,7 +5,8 @@ import { Form, Input, Button, Card, Typography, Alert, Space, theme, message } f
 import { LockOutlined, MailOutlined, RobotOutlined } from "@ant-design/icons";
 import { ConeekoLogo } from "@/components/Logo";
 import { useRouter } from "next/navigation";
-import { api } from "@/lib/api";
+import { api, onLoginSuccess } from "@/lib/api";
+import { getAccessToken } from "@/lib/token-store";
 import Link from "next/link";
 
 const { Title, Text } = Typography;
@@ -18,7 +19,7 @@ export default function RegisterPage() {
 
   // If already authenticated, redirect to dashboard
   useEffect(() => {
-    if (typeof window !== "undefined" && localStorage.getItem("access_token")) {
+    if (getAccessToken()) {
       router.push("/dashboard");
     }
   }, [router]);
@@ -47,7 +48,7 @@ export default function RegisterPage() {
 
       if (data?.access_token) {
         // Refresh token is set as an HttpOnly cookie by the backend (H2) — do not persist it.
-        localStorage.setItem("access_token", data.access_token);
+        onLoginSuccess(data.access_token);
         window.dispatchEvent(new Event("auth-change"));
         router.push("/dashboard");
       } else {

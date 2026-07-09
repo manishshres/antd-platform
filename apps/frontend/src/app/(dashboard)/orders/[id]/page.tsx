@@ -21,6 +21,7 @@ import {
   PrinterOutlined,
 } from "@ant-design/icons";
 import { api } from "@/lib/api";
+import { getAccessToken } from "@/lib/token-store";
 import PageHeader from "@/components/PageHeader";
 import { formatPrice, formatPhone } from "@/lib/format";
 
@@ -77,7 +78,7 @@ export default function OrderDetailsPage() {
   // set-state-in-effect cascade.
   const [isAdmin] = useState(() => {
     if (typeof window === "undefined") return false;
-    const tokenStr = localStorage.getItem("access_token");
+    const tokenStr = getAccessToken();
     if (!tokenStr) return false;
     try {
       const payload = tokenStr.split(".")[1];

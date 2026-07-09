@@ -26,6 +26,7 @@ import {
   UploadOutlined,
 } from "@ant-design/icons";
 import { api } from "@/lib/api";
+import { getAccessToken } from "@/lib/token-store";
 import PageHeader from "@/components/PageHeader";
 
 const { Text } = Typography;
@@ -131,7 +132,7 @@ export default function DocumentationPage() {
     Promise.resolve().then(() => {
       load();
       if (typeof window !== "undefined") {
-        const token = localStorage.getItem("access_token");
+        const token = getAccessToken();
         if (token) {
           try {
             const payload = token.split(".")[1];

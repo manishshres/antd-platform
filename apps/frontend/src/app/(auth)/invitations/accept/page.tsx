@@ -15,7 +15,7 @@ import {
   Space,
 } from "antd";
 import { LockOutlined, UserOutlined, PhoneOutlined, SafetyCertificateOutlined } from "@ant-design/icons";
-import { api } from "@/lib/api";
+import { api, onLoginSuccess } from "@/lib/api";
 
 const { Title, Text } = Typography;
 
@@ -79,7 +79,7 @@ function AcceptInvitationContent() {
 
       if (data?.access_token) {
         // Refresh token is set as an HttpOnly cookie by the backend (H2) — do not persist it.
-        localStorage.setItem("access_token", data.access_token);
+        onLoginSuccess(data.access_token);
         window.dispatchEvent(new Event("auth-change"));
         message.success("Invitation accepted! Logging you in...");
         router.push("/dashboard");

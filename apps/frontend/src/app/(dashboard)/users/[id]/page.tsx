@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { Card, Form, Input, Button, Select, Space, message, theme, Breadcrumb } from "antd";
 import { ArrowLeftOutlined, SaveOutlined, UserOutlined, MailOutlined, PhoneOutlined } from "@ant-design/icons";
 import { api } from "@/lib/api";
+import { getAccessToken } from "@/lib/token-store";
 import PageHeader from "@/components/PageHeader";
 
 
@@ -29,7 +30,7 @@ export default function EditUserPage() {
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
 
   useEffect(() => {
-    const storedToken = localStorage.getItem("access_token");
+    const storedToken = getAccessToken();
     let platformAdmin = false;
     if (storedToken) {
       try {

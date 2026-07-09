@@ -4,7 +4,7 @@ import { useEffect, useState, Suspense } from "react";
 import { Form, Input, Button, Card, Typography, Alert, Space, theme, Spin } from "antd";
 import { LockOutlined, RobotOutlined, CheckCircleOutlined, UserOutlined, PhoneOutlined } from "@ant-design/icons";
 import { ConeekoLogo } from "@/components/Logo";
-import { api } from "@/lib/api";
+import { api, onLoginSuccess } from "@/lib/api";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 
@@ -60,7 +60,7 @@ function InviteContent() {
       
       if (data?.access_token) {
         // Refresh token is set as an HttpOnly cookie by the backend (H2) — do not persist it.
-        localStorage.setItem("access_token", data.access_token);
+        onLoginSuccess(data.access_token);
         window.dispatchEvent(new Event("auth-change"));
         router.push("/dashboard");
       }

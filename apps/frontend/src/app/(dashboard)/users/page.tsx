@@ -28,6 +28,7 @@ import {
   LockOutlined,
 } from "@ant-design/icons";
 import { api } from "@/lib/api";
+import { getAccessToken } from "@/lib/token-store";
 import { useLocation } from "@/contexts/LocationContext";
 import PageHeader from "@/components/PageHeader";
 import dayjs from "dayjs";
@@ -75,7 +76,7 @@ export default function UsersPage() {
   const fetchUsers = useCallback(async () => {
     setLoading(true);
     try {
-      const storedToken = localStorage.getItem("access_token");
+      const storedToken = getAccessToken();
       let platformAdmin = false;
       if (storedToken) {
         try {

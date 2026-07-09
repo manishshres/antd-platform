@@ -49,8 +49,9 @@ export const themeConfig: ThemeConfig = {
     boxShadowSecondary: "0 1px 2px rgba(0,0,0,0.04)",
   },
   components: {
+    // siderBg is intentionally always-dark chrome, independent of light/dark mode
+    // (see DashboardLayout.tsx SIDEBAR_BG comment).
     Layout: {
-      headerBg: "#ffffff",
       siderBg: "#001529",
     },
     Card: {

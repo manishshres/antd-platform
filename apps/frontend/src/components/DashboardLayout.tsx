@@ -7,29 +7,19 @@ import {
   MenuFoldOutlined,
   MenuOutlined,
   MenuUnfoldOutlined,
-  DashboardOutlined,
-  PhoneOutlined,
-  FileTextOutlined,
-  RobotOutlined,
+  UserOutlined,
   SunOutlined,
   MoonOutlined,
   LogoutOutlined,
-  ShoppingOutlined,
-  ShopOutlined,
-  CoffeeOutlined,
   CreditCardOutlined,
-  PrinterOutlined,
-  TeamOutlined,
-  UserOutlined,
-  SettingOutlined,
-  LineChartOutlined,
-  SafetyCertificateOutlined,
   EnvironmentOutlined,
   BankOutlined,
   CompassOutlined,
 } from "@ant-design/icons";
 import { usePathname, useRouter } from "next/navigation";
 import { api } from "@/lib/api";
+import { getAccessToken, clearAccessToken, onTokenChange } from "@/lib/token-store";
+import { decodeJwtPayload } from "@/lib/jwt";
 import { LocationProvider, useLocation } from "@/contexts/LocationContext";
 import { SocketProvider, useSocket } from "@/hooks/useSocket";
 import { NotificationsProvider } from "@/contexts/NotificationsContext";
@@ -38,6 +28,7 @@ import CommandPalette from "./CommandPalette";
 import OnboardingTour from "./OnboardingTour";
 import { themeConfig } from "@/lib/theme";
 import { ConeekoLogo } from "./Logo";
+import { NAV_ITEMS, type NavItem } from "@/lib/navigation";
 
 const { Sider, Header, Content, Footer } = Layout;
 const { Text } = Typography;
@@ -47,20 +38,6 @@ const { Text } = Typography;
 // would incorrectly flip with the mode (L7).
 const SIDEBAR_BG = "#001529";
 const SIDEBAR_FG = "#ffffff";
-
-interface NavLeaf {
-  key: string;
-  icon: React.ReactNode;
-  label: string;
-  allowed: string[];
-}
-interface NavGroup {
-  key: string;
-  label: string;
-  icon: React.ReactNode;
-  children: NavLeaf[];
-}
-type NavItem = NavLeaf | NavGroup;
 
 function SidebarMenu({
   onClick,
@@ -77,63 +54,16 @@ function SidebarMenu({
   const r = role.toLowerCase();
   const isPlatformAdmin = r === "platform_admin";
   const isAdmin = ["admin", "owner", "sysadmin"].includes(r) || isPlatformAdmin;
-  const isManager = r === "manager";
   const isSysAdmin = r === "sysadmin" || isPlatformAdmin;
 
-  // New grouped navigation structure
-  const rawItems: NavItem[] = [
-    { key: "/dashboard", icon: <DashboardOutlined />, label: "Dashboard", allowed: ["platform_admin", "sysadmin", "admin", "manager", "user"] },
-    { key: "/calls", icon: <RobotOutlined />, label: "AI Call Center", allowed: ["platform_admin", "sysadmin", "admin", "manager", "user"] },
-    {
-      key: 'grp-operations',
-      label: 'Store Operations',
-      icon: <ShoppingOutlined />,
-      children: [
-        { key: "/pos", icon: <ShopOutlined />, label: "POS Register", allowed: ["platform_admin", "sysadmin", "admin", "manager", "user"] },
-        { key: "/orders", icon: <ShoppingOutlined />, label: "Orders", allowed: ["platform_admin", "sysadmin", "admin", "manager", "user"] },
-        { key: "/menus", icon: <CoffeeOutlined />, label: "Menu", allowed: ["platform_admin", "sysadmin", "admin", "manager"] },
-        { key: "/printers", icon: <PrinterOutlined />, label: "Printers", allowed: ["platform_admin", "sysadmin", "admin", "manager"] },
-      ],
-    },
-    {
-      key: 'grp-analytics',
-      label: 'Analytics & Logs',
-      icon: <LineChartOutlined />,
-      children: [
-        { key: "/analytics/usage", icon: <LineChartOutlined />, label: "Usage Analytics", allowed: ["platform_admin", "sysadmin", "admin"] },
-        { key: "/audit", icon: <SafetyCertificateOutlined />, label: "Audit Logs", allowed: ["platform_admin", "sysadmin"] },
-      ],
-    },
-    {
-      key: 'grp-settings',
-      label: 'Settings & Team',
-      icon: <SettingOutlined />,
-      children: [
-        { key: "/users", icon: <TeamOutlined />, label: "Team Members", allowed: ["platform_admin", "sysadmin", "admin"] },
-        { key: "/settings", icon: <SettingOutlined />, label: "Store Settings", allowed: ["platform_admin", "sysadmin", "admin"] },
-        { key: "/profile", icon: <UserOutlined />, label: "My Profile", allowed: ["platform_admin", "sysadmin", "admin", "manager", "user"] },
-      ],
-    },
-    {
-      key: 'grp-admin',
-      label: 'Platform Admin',
-      icon: <BankOutlined />,
-      children: [
-        { key: "/platform-admin", icon: <BankOutlined />, label: "Admin Console", allowed: ["platform_admin"] },
-        { key: "/admin/health", icon: <DashboardOutlined />, label: "Platform Health", allowed: ["platform_admin"] },
-      ],
-    }
-  ];
-
-  // Helper to resolve generic role
   let genericRole = "user";
   if (isPlatformAdmin) genericRole = "platform_admin";
   else if (isSysAdmin) genericRole = "sysadmin";
   else if (isAdmin) genericRole = "admin";
-  else if (isManager) genericRole = "manager";
+  else if (role.toLowerCase() === "manager") genericRole = "manager";
 
   // Filter items based on role
-  const filteredNav = rawItems
+  const filteredNav = NAV_ITEMS
     .map((item): NavItem | null => {
       if ("children" in item) {
         const children = item.children.filter((child) =>
@@ -150,10 +80,14 @@ function SidebarMenu({
       ? {
           key: item.key,
           label: item.label,
-          icon: item.icon,
-          children: item.children.map((c) => ({ key: c.key, label: c.label, icon: c.icon })),
+          icon: <item.icon />,
+          children: item.children.map((c) => ({
+            key: c.key,
+            label: c.label,
+            icon: <c.icon />,
+          })),
         }
-      : { key: item.key, label: item.label, icon: item.icon },
+      : { key: item.key, label: item.label, icon: <item.icon /> },
   );
 
   // Find selected key
@@ -205,17 +139,7 @@ function LayoutInner({
   isDarkMode: boolean;
   toggleTheme: () => void;
 }) {
-  const pathname = usePathname();
   const router = useRouter();
-  const isAuthPage = 
-    pathname === "/login" || 
-    pathname === "/register" || 
-    pathname === "/forgot-password" || 
-    pathname === "/reset-password" || 
-    pathname === "/verify-email" || 
-    pathname === "/invite" ||
-    pathname === "/invitations/accept";
-
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [siderCollapsed, setSiderCollapsed] = useState(false);
   const [role, setRole] = useState<string>("user");
@@ -227,41 +151,37 @@ function LayoutInner({
   const { isConnected } = useSocket();
 
   useEffect(() => {
-    Promise.resolve().then(() => {
-      if (typeof window !== "undefined") {
-        const accessToken = localStorage.getItem("access_token");
-        if (accessToken) {
-          try {
-            const payload = accessToken.split(".")[1];
-            const decoded = JSON.parse(window.atob(payload.replace(/-/g, "+").replace(/_/g, "/"))) as { role?: string; email?: string };
-            setRole(decoded.role || "user");
-            setEmail(decoded.email || "");
-          } catch {
-            setRole("user");
-            setEmail("");
-          }
-        }
+    const handler = () => {
+      const accessToken = getAccessToken();
+      if (!accessToken) {
+        setRole("user");
+        setEmail("");
+        return;
       }
-    });
-  }, [pathname]);
-
-  if (isAuthPage) {
-    return <Layout style={{ minHeight: "100vh" }}>{children}</Layout>;
-  }
+      const decoded = decodeJwtPayload<{ role?: string; email?: string }>(accessToken);
+      setRole(decoded?.role || "user");
+      setEmail(decoded?.email || "");
+    };
+    handler();
+    window.addEventListener("auth-change", handler);
+    const unsub = onTokenChange(() => handler());
+    return () => {
+      window.removeEventListener("auth-change", handler);
+      unsub();
+    };
+  }, []);
 
   const isPlatformAdmin = role === "platform_admin";
   const isManager = role === "manager";
 
   const handleLogout = async () => {
     try {
-      // Refresh token lives in the HttpOnly cookie (H2); the backend reads it and clears it.
       await api.post("/auth/logout", {});
     } catch {
       // Ignore logout failure
     }
-    localStorage.removeItem("access_token");
+    clearAccessToken();
     localStorage.removeItem("refresh_token");
-    // Clear tenant context so the next login on a shared device doesn't inherit it (M14).
     localStorage.removeItem("selectedOrgId");
     localStorage.removeItem("selectedLocationId");
     window.dispatchEvent(new Event("auth-change"));
@@ -529,7 +449,9 @@ export default function DashboardLayout({
 }) {
   const [isDarkMode, setIsDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
-      return localStorage.getItem('theme') === 'dark';
+      const stored = localStorage.getItem('theme');
+      if (stored) return stored === 'dark';
+      return window.matchMedia('(prefers-color-scheme: dark)').matches;
     }
     return false;
   });

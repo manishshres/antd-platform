@@ -30,6 +30,8 @@ import {
   EyeOutlined,
 } from "@ant-design/icons";
 import { api } from "@/lib/api";
+import { getAccessToken } from "@/lib/token-store";
+import { decodeRoleFromToken } from "@/lib/jwt";
 import PageHeader from "@/components/PageHeader";
 import TableToolbar from "@/components/TableToolbar";
 import { useLocation } from "@/contexts/LocationContext";
@@ -116,7 +118,12 @@ export default function OrdersPage() {
   const [isAdmin, setIsAdmin] = useState(false);
   
   const { selectedLocationId } = useLocation();
-  const { socket } = useSocket();
+  const { socket, isConnected, connect } = useSocket();
+
+  // Connect socket on mount for realtime order updates.
+  useEffect(() => {
+    connect();
+  }, [connect]);
   const { token } = theme.useToken();
 
   const exportCsv = () => {
@@ -177,15 +184,11 @@ export default function OrdersPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
     if (typeof window !== "undefined") {
-      const token = localStorage.getItem("access_token");
+      const token = getAccessToken();
       if (token) {
-        try {
-          const payload = token.split(".")[1];
-          const decoded = JSON.parse(window.atob(payload.replace(/-/g, "+").replace(/_/g, "/"))) as { role?: string };
-          setIsAdmin(["admin", "sysadmin"].includes(decoded.role?.toLowerCase() || ""));
-        } catch {
-          setIsAdmin(false);
-        }
+        setIsAdmin(["admin", "sysadmin"].includes(decodeRoleFromToken(token).toLowerCase()));
+      } else {
+        setIsAdmin(false);
       }
     }
   }, [load]);
