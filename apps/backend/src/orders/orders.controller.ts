@@ -60,6 +60,26 @@ export class OrdersController {
     return this.ordersService.getOrders(user, query);
   }
 
+  @Get('summary')
+  @Roles('user', 'manager', 'admin', 'sysadmin')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Transaction summary metrics for the POS hub' })
+  @ApiResponse({ status: 200, description: 'Open/sales/refund totals.' })
+  async getTransactionSummary(
+    @CurrentUser() user: CurrentUserPayload,
+    @Query('locationId') locationId: string,
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+  ): Promise<unknown> {
+    if (!locationId) throw new BadRequestException('locationId is required.');
+    return this.ordersService.getTransactionSummary(
+      user,
+      locationId,
+      dateFrom,
+      dateTo,
+    );
+  }
+
   @Get(':id')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Get a single order with items' })
@@ -160,7 +180,12 @@ export class OrdersController {
     @Body() dto: RefundOrderDto,
   ): Promise<unknown> {
     if (!id) throw new BadRequestException('Order ID is required.');
-    return this.ordersService.refundPaidOrder(user, id, dto.managerPin, dto.reason);
+    return this.ordersService.refundPaidOrder(
+      user,
+      id,
+      dto.managerPin,
+      dto.reason,
+    );
   }
 
   @Post(':id/refund-partial')
@@ -168,7 +193,10 @@ export class OrdersController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Partially refund a paid order using manager PIN' })
   @ApiResponse({ status: 200, description: 'Order partially refunded.' })
-  @ApiResponse({ status: 400, description: 'Order not paid or invalid amount.' })
+  @ApiResponse({
+    status: 400,
+    description: 'Order not paid or invalid amount.',
+  })
   @ApiResponse({ status: 403, description: 'Invalid manager PIN.' })
   @ApiResponse({ status: 404, description: 'Order not found.' })
   async partialRefundOrder(
@@ -204,9 +232,13 @@ export class OrdersController {
   })
   @ApiResponse({
     status: 200,
-    description: 'Payment recorded; returns applied/changeGiven/remaining/paid.',
+    description:
+      'Payment recorded; returns applied/changeGiven/remaining/paid.',
   })
-  @ApiResponse({ status: 400, description: 'Order paid, cancelled, or invalid amount.' })
+  @ApiResponse({
+    status: 400,
+    description: 'Order paid, cancelled, or invalid amount.',
+  })
   @ApiResponse({ status: 404, description: 'Order not found.' })
   async recordPayment(
     @CurrentUser() user: CurrentUserPayload,

@@ -124,6 +124,73 @@ export class OrdersService {
     };
   }
 
+  /**
+   * Header metrics for the POS Transactions hub, scoped to a location and a day:
+   * open (unpaid) count + total, paid sales, and refunds (cancelled/refunded orders).
+   */
+  async getTransactionSummary(
+    user: CurrentUserPayload,
+    locationId: string,
+    dateFrom?: string,
+    dateTo?: string,
+  ) {
+    const orgId = await this.billingService.getRequiredOrg(user);
+
+    const start = dateFrom ? new Date(dateFrom) : new Date();
+    if (!dateFrom) start.setHours(0, 0, 0, 0);
+    const end = dateTo ? new Date(dateTo) : new Date();
+    end.setHours(23, 59, 59, 999);
+
+    const scope = and(
+      eq(schema.orders.organizationId, orgId),
+      eq(schema.orders.locationId, locationId),
+      isNull(schema.orders.deletedAt),
+      gte(schema.orders.createdAt, start),
+      lte(schema.orders.createdAt, end),
+    );
+
+    const [row] = await this.db
+      .select({
+        openCount:
+          sql<number>`count(*) filter (where ${schema.orders.paidAt} is null and ${schema.orders.status} in ('pending','confirmed'))`.mapWith(
+            Number,
+          ),
+        openTotal:
+          sql<number>`coalesce(sum(${schema.orders.totalAmount}) filter (where ${schema.orders.paidAt} is null and ${schema.orders.status} in ('pending','confirmed')), 0)`.mapWith(
+            Number,
+          ),
+        salesTotal:
+          sql<number>`coalesce(sum(${schema.orders.totalAmount}) filter (where ${schema.orders.paidAt} is not null and ${schema.orders.status} <> 'cancelled'), 0)`.mapWith(
+            Number,
+          ),
+        salesCount:
+          sql<number>`count(*) filter (where ${schema.orders.paidAt} is not null and ${schema.orders.status} <> 'cancelled')`.mapWith(
+            Number,
+          ),
+        refundTotal:
+          sql<number>`coalesce(sum(${schema.orders.totalAmount}) filter (where ${schema.orders.status} = 'cancelled'), 0)`.mapWith(
+            Number,
+          ),
+        refundCount:
+          sql<number>`count(*) filter (where ${schema.orders.status} = 'cancelled')`.mapWith(
+            Number,
+          ),
+      })
+      .from(schema.orders)
+      .where(scope);
+
+    return (
+      row ?? {
+        openCount: 0,
+        openTotal: 0,
+        salesTotal: 0,
+        salesCount: 0,
+        refundTotal: 0,
+        refundCount: 0,
+      }
+    );
+  }
+
   async getOrderById(user: CurrentUserPayload, orderId: string) {
     const orgId = await this.billingService.getRequiredOrg(user);
     return this.getOrderByIdForOrg(orgId, orderId);
@@ -850,6 +917,7 @@ export class OrdersService {
       tipAmount?: number;
       discountId?: string;
       promoCode?: string;
+      clientOrderId?: string;
       items: {
         menuItemId: string;
         quantity: number;
@@ -862,6 +930,23 @@ export class OrdersService {
     const orgId = await this.billingService.getRequiredOrg(user);
     if (dto.items.length === 0) {
       throw new BadRequestException('Order must contain at least one item.');
+    }
+
+    if (dto.clientOrderId) {
+      const [existing] = await this.db
+        .select({ id: schema.orders.id })
+        .from(schema.orders)
+        .where(
+          and(
+            eq(schema.orders.organizationId, orgId),
+            eq(schema.orders.clientOrderId, dto.clientOrderId),
+          ),
+        )
+        .limit(1);
+
+      if (existing) {
+        return this.getOrderByIdForOrg(orgId, existing.id);
+      }
     }
 
     // Validate the location belongs to this org and pick up its tax rate.
@@ -927,6 +1012,7 @@ export class OrdersService {
           paymentMethod: dto.paymentMethod ?? null,
           paidAt: dto.paymentMethod ? now : null,
           ticketNumber,
+          clientOrderId: dto.clientOrderId ?? null,
         })
         .returning();
 

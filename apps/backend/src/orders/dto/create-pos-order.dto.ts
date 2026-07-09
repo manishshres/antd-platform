@@ -129,4 +129,13 @@ export class CreatePosOrderDto {
   @ValidateNested({ each: true })
   @Type(() => PosOrderItemDto)
   items: PosOrderItemDto[];
+
+  @ApiProperty({
+    required: false,
+    description: 'Idempotency key for offline POS creation',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  clientOrderId?: string;
 }

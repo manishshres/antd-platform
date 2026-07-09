@@ -26,7 +26,9 @@ export class OrderItemDto {
   @IsNotEmpty()
   quantity: number;
 
-  @ApiPropertyOptional({ description: 'Course number (1 for Appetizer, 2 for Main)' })
+  @ApiPropertyOptional({
+    description: 'Course number (1 for Appetizer, 2 for Main)',
+  })
   @IsNumber()
   @IsOptional()
   course?: number;
