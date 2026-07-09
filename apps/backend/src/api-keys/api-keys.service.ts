@@ -38,7 +38,7 @@ export class ApiKeysService {
       })
       .returning();
 
-    void this.auditService.log({
+    this.auditService.fireAndForget({
       action: 'api_key.create',
       userId,
       organizationId: orgId,
@@ -105,7 +105,7 @@ export class ApiKeysService {
 
     await this.db.delete(schema.apiKeys).where(eq(schema.apiKeys.id, keyId));
 
-    void this.auditService.log({
+    this.auditService.fireAndForget({
       action: 'api_key.revoke',
       userId,
       organizationId: orgId,

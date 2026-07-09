@@ -50,4 +50,18 @@ export class AuditService {
       this.logger.error(`Failed to write audit log: ${msg}`);
     }
   }
+
+  /**
+   * Fire-and-forget wrapper: logs the entry without awaiting or blocking the caller.
+   * Always catches and logs errors internally — never throws to the caller.
+   * Replaces the `void this.auditService.log(...)` anti-pattern.
+   */
+  fireAndForget(options: AuditLogOptions): void {
+    this.log(options).catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(
+        `Audit fire-and-forget failed (secondary catch): ${msg}`,
+      );
+    });
+  }
 }

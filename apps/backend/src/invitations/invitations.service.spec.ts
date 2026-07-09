@@ -26,6 +26,7 @@ const mockMailService = {
 
 const mockAuditService = {
   log: jest.fn(),
+  fireAndForget: jest.fn(),
 };
 
 const mockUsersService = {
@@ -84,7 +85,7 @@ describe('InvitationsService', () => {
         expect.any(String),
         'Test Org',
       );
-      expect(mockAuditService.log).toHaveBeenCalledWith(
+      expect(mockAuditService.fireAndForget).toHaveBeenCalledWith(
         expect.objectContaining({
           action: 'org.invitation.sent',
           organizationId: 'org-1',

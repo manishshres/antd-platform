@@ -292,7 +292,7 @@ export class MenusService {
       })
       .returning();
 
-    void this.auditService.log({
+    this.auditService.fireAndForget({
       action: 'menu.category.create',
       userId: user.id,
       organizationId: orgId,
@@ -336,7 +336,7 @@ export class MenusService {
       .where(eq(schema.categories.id, id))
       .returning();
 
-    void this.auditService.log({
+    this.auditService.fireAndForget({
       action: 'menu.category.update',
       userId: user.id,
       organizationId: orgId,
@@ -386,7 +386,7 @@ export class MenusService {
         .where(eq(schema.categories.id, id));
     });
 
-    void this.auditService.log({
+    this.auditService.fireAndForget({
       action: 'menu.category.delete',
       userId: user.id,
       organizationId: orgId,
@@ -438,7 +438,7 @@ export class MenusService {
       })
       .returning();
 
-    void this.auditService.log({
+    this.auditService.fireAndForget({
       action: 'menu.item.create',
       userId: user.id,
       organizationId: orgId,
@@ -494,7 +494,7 @@ export class MenusService {
       .set({ deletedAt: new Date(), updatedAt: new Date() })
       .where(eq(schema.menuItems.id, id));
 
-    void this.auditService.log({
+    this.auditService.fireAndForget({
       action: 'menu.item.delete',
       userId: user.id,
       organizationId: orgId,
@@ -636,7 +636,7 @@ export class MenusService {
       })
       .returning();
 
-    void this.auditService.log({
+    this.auditService.fireAndForget({
       action: 'menu.modifier_group.create',
       userId: user.id,
       organizationId: orgId,
@@ -778,7 +778,7 @@ export class MenusService {
       .where(eq(schema.menuItems.id, id))
       .returning();
 
-    void this.auditService.log({
+    this.auditService.fireAndForget({
       action: 'menu.item.update',
       userId: user.id,
       organizationId: orgId,

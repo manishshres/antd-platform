@@ -39,6 +39,7 @@ describe('WebhooksManagementService', () => {
 
     auditServiceMock = {
       log: jest.fn().mockResolvedValue(undefined),
+      fireAndForget: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -94,7 +95,7 @@ describe('WebhooksManagementService', () => {
 
       expect(result).toEqual(newWebhook);
       expect(crypto.randomBytes).toHaveBeenCalledWith(32);
-      expect(auditServiceMock.log).toHaveBeenCalledWith({
+      expect(auditServiceMock.fireAndForget).toHaveBeenCalledWith({
         action: 'org.webhook.created',
         organizationId: 'org-1',
         entityId: 'wh-1',
@@ -114,7 +115,7 @@ describe('WebhooksManagementService', () => {
 
       const result = await service.deleteEndpoint('org-1', 'wh-1');
       expect(result).toEqual({ message: 'Webhook deleted successfully.' });
-      expect(auditServiceMock.log).toHaveBeenCalledWith({
+      expect(auditServiceMock.fireAndForget).toHaveBeenCalledWith({
         action: 'org.webhook.deleted',
         organizationId: 'org-1',
         entityId: 'wh-1',

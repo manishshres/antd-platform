@@ -51,6 +51,7 @@ describe('MenusService', () => {
 
     auditServiceMock = {
       log: jest.fn().mockResolvedValue(undefined),
+      fireAndForget: jest.fn(),
     };
 
     cacheManagerMock = {
@@ -199,7 +200,7 @@ describe('MenusService', () => {
         expect.any(Number),
         expect.any(Number),
       );
-      expect(auditServiceMock.log).toHaveBeenCalledWith(
+      expect(auditServiceMock.fireAndForget).toHaveBeenCalledWith(
         expect.objectContaining({
           action: 'menu.category.create',
           entityId: 'cat-1',
@@ -227,7 +228,7 @@ describe('MenusService', () => {
         expect.any(Number),
         expect.any(Number),
       );
-      expect(auditServiceMock.log).toHaveBeenCalledWith(
+      expect(auditServiceMock.fireAndForget).toHaveBeenCalledWith(
         expect.objectContaining({
           action: 'menu.category.delete',
           entityId: 'cat-1',
@@ -259,7 +260,7 @@ describe('MenusService', () => {
         'Tasty',
         1000,
       );
-      expect(auditServiceMock.log).toHaveBeenCalledWith(
+      expect(auditServiceMock.fireAndForget).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'menu.item.create' }),
       );
       expect(cacheManagerMock.set).toHaveBeenCalledWith(
@@ -278,7 +279,7 @@ describe('MenusService', () => {
       dbMock.insert.mockReturnValueOnce(qbInsert);
 
       const result = await service.createModifierGroup('user-1', 'Size');
-      expect(auditServiceMock.log).toHaveBeenCalledWith(
+      expect(auditServiceMock.fireAndForget).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'menu.modifier_group.create' }),
       );
       expect(cacheManagerMock.set).toHaveBeenCalledWith(

@@ -87,7 +87,7 @@ export class DiscountsService {
       })
       .returning();
 
-    void this.auditService.log({
+    this.auditService.fireAndForget({
       action: 'discount.create',
       userId: user.id,
       organizationId: orgId,
@@ -134,7 +134,7 @@ export class DiscountsService {
       .where(eq(schema.discounts.id, id))
       .returning();
 
-    void this.auditService.log({
+    this.auditService.fireAndForget({
       action: 'discount.update',
       userId: user.id,
       organizationId: orgId,
@@ -161,7 +161,7 @@ export class DiscountsService {
       .returning();
     if (!removed) throw new NotFoundException('Discount not found.');
 
-    void this.auditService.log({
+    this.auditService.fireAndForget({
       action: 'discount.delete',
       userId: user.id,
       organizationId: orgId,

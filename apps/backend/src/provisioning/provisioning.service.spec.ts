@@ -28,6 +28,7 @@ const mockTelnyxService = {
 
 const mockAuditService = {
   log: jest.fn(),
+  fireAndForget: jest.fn(),
 };
 
 const mockProvisioningQueue = {
@@ -88,7 +89,7 @@ describe('ProvisioningService', () => {
         },
         { jobId: 'provision-loc-1' },
       );
-      expect(mockAuditService.log).toHaveBeenCalledWith({
+      expect(mockAuditService.fireAndForget).toHaveBeenCalledWith({
         action: 'org.created',
         organizationId: 'org-1',
       });
@@ -112,7 +113,7 @@ describe('ProvisioningService', () => {
       );
       expect(mockTelnyxService.deleteAssistant).toHaveBeenCalledWith('asst-1');
       expect(mockDb.update).toHaveBeenCalledTimes(2); // one for org, one for location
-      expect(mockAuditService.log).toHaveBeenCalledWith({
+      expect(mockAuditService.fireAndForget).toHaveBeenCalledWith({
         action: 'org.deprovisioned',
         organizationId: 'org-1',
       });

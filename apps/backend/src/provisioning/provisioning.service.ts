@@ -106,7 +106,7 @@ export class ProvisioningService {
 
     this.logger.log(`Provisioning started for org ${result.organizationId}`);
 
-    void this.auditService.log({
+    this.auditService.fireAndForget({
       action: 'org.created',
       organizationId: result.organizationId,
     });
@@ -223,7 +223,7 @@ export class ProvisioningService {
       `Provisioning started for location ${result.locationId} in org ${result.organizationId}`,
     );
 
-    void this.auditService.log({
+    this.auditService.fireAndForget({
       action: 'location.created',
       organizationId: result.organizationId,
       entityId: result.locationId,
@@ -428,7 +428,7 @@ export class ProvisioningService {
       .set({ status: 'completed', lastError: null })
       .where(eq(schema.orgProvisioningSteps.id, step.id));
 
-    void this.auditService.log({
+    this.auditService.fireAndForget({
       action: 'org.provisioning.step_skipped',
       organizationId,
       entityId: step.id,
@@ -480,7 +480,7 @@ export class ProvisioningService {
       .set({ status: 'archived', deletedAt: new Date() })
       .where(eq(schema.locations.organizationId, organizationId));
 
-    void this.auditService.log({
+    this.auditService.fireAndForget({
       action: 'org.deprovisioned',
       organizationId,
     });
@@ -498,7 +498,7 @@ export class ProvisioningService {
       .set({ status })
       .where(eq(schema.organizations.id, organizationId));
 
-    void this.auditService.log({
+    this.auditService.fireAndForget({
       action: status === 'suspended' ? 'org.suspended' : 'org.reactivated',
       organizationId,
     });
@@ -525,7 +525,7 @@ export class ProvisioningService {
       .set(allowedUpdates)
       .where(eq(schema.organizations.id, organizationId));
 
-    void this.auditService.log({
+    this.auditService.fireAndForget({
       action: 'org.updated',
       organizationId,
       newValue: allowedUpdates,

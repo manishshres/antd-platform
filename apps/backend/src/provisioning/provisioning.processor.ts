@@ -61,7 +61,7 @@ export class ProvisioningProcessor extends WorkerHost {
 
     const pendingCount = steps.filter((s) => s.status === 'pending').length;
     if (pendingCount > 0) {
-      void this.auditService.log({
+      this.auditService.fireAndForget({
         action: 'org.provisioning.started',
         organizationId,
       });
@@ -123,7 +123,7 @@ export class ProvisioningProcessor extends WorkerHost {
         }
 
         await this.updateStepStatus(step.id, 'completed', metadata);
-        void this.auditService.log({
+        this.auditService.fireAndForget({
           action: 'org.provisioning.step_completed',
           organizationId,
           entityId: step.id,
@@ -135,7 +135,7 @@ export class ProvisioningProcessor extends WorkerHost {
         );
         await this.updateStepStatus(step.id, 'failed', undefined, err.message);
 
-        void this.auditService.log({
+        this.auditService.fireAndForget({
           action: 'org.provisioning.step_failed',
           organizationId,
           entityId: step.id,
@@ -167,7 +167,7 @@ export class ProvisioningProcessor extends WorkerHost {
       `Successfully provisioned org ${organizationId} location ${locationId}`,
     );
 
-    void this.auditService.log({
+    this.auditService.fireAndForget({
       action: 'org.provisioning.completed',
       organizationId,
     });

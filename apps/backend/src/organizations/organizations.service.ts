@@ -47,7 +47,7 @@ export class OrganizationsService {
       .where(eq(schema.organizations.id, org.id))
       .returning();
 
-    void this.auditService.log({
+    this.auditService.fireAndForget({
       action: 'organization.update',
       organizationId: updated.id,
       entityType: 'organization',
@@ -75,7 +75,7 @@ export class OrganizationsService {
       .where(eq(schema.organizations.id, org.id))
       .returning();
 
-    void this.auditService.log({
+    this.auditService.fireAndForget({
       action: 'org.feature_flags.updated',
       organizationId: org.id,
       entityId: org.id,
@@ -123,7 +123,7 @@ export class OrganizationsService {
       })
       .returning();
 
-    void this.auditService.log({
+    this.auditService.fireAndForget({
       action: 'organization.create',
       organizationId: newOrg.id,
       entityType: 'organization',
@@ -146,7 +146,7 @@ export class OrganizationsService {
       .where(eq(schema.organizations.id, org.id))
       .returning();
 
-    void this.auditService.log({
+    this.auditService.fireAndForget({
       action: 'organization.update',
       organizationId: updated.id,
       entityType: 'organization',
@@ -168,7 +168,7 @@ export class OrganizationsService {
       })
       .where(eq(schema.organizations.id, org.id));
 
-    void this.auditService.log({
+    this.auditService.fireAndForget({
       action: 'organization.delete',
       organizationId: org.id,
       entityType: 'organization',

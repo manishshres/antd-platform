@@ -35,7 +35,7 @@ export class WebhooksManagementService {
       })
       .returning();
 
-    void this.auditService.log({
+    this.auditService.fireAndForget({
       action: 'org.webhook.created',
       organizationId,
       entityId: webhook.id,
@@ -61,7 +61,7 @@ export class WebhooksManagementService {
       throw new NotFoundException('Webhook endpoint not found.');
     }
 
-    void this.auditService.log({
+    this.auditService.fireAndForget({
       action: 'org.webhook.deleted',
       organizationId,
       entityId: deleted.id,

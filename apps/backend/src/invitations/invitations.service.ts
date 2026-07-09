@@ -83,7 +83,7 @@ export class InvitationsService {
       org.name,
     );
 
-    void this.auditService.log({
+    this.auditService.fireAndForget({
       action: 'org.invitation.sent',
       organizationId,
       userId: inviterId,
@@ -195,7 +195,7 @@ export class InvitationsService {
       .set({ status: 'revoked' })
       .where(eq(schema.orgInvitations.id, invitationId));
 
-    void this.auditService.log({
+    this.auditService.fireAndForget({
       action: 'org.invitation.revoked',
       organizationId,
       entityId: invitationId,
@@ -287,7 +287,7 @@ export class InvitationsService {
       org?.name || 'an organization',
     );
 
-    void this.auditService.log({
+    this.auditService.fireAndForget({
       action: 'org.invitation.sent',
       organizationId,
       entityId: invitationId,

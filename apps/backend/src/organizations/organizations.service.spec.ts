@@ -37,6 +37,7 @@ describe('OrganizationsService', () => {
 
     auditServiceMock = {
       log: jest.fn().mockResolvedValue(undefined),
+      fireAndForget: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -120,7 +121,7 @@ describe('OrganizationsService', () => {
       });
 
       expect(dbMock.insert).toHaveBeenCalled();
-      expect(auditServiceMock.log).toHaveBeenCalledWith(
+      expect(auditServiceMock.fireAndForget).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'organization.create' }),
       );
       expect(result).toEqual(newOrg);
@@ -147,7 +148,7 @@ describe('OrganizationsService', () => {
       });
 
       expect(result).toEqual(updatedOrg);
-      expect(auditServiceMock.log).toHaveBeenCalledWith(
+      expect(auditServiceMock.fireAndForget).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'organization.update' }),
       );
     });
@@ -176,7 +177,7 @@ describe('OrganizationsService', () => {
       });
 
       expect(result).toEqual(updatedOrg);
-      expect(auditServiceMock.log).toHaveBeenCalledWith(
+      expect(auditServiceMock.fireAndForget).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'org.feature_flags.updated' }),
       );
     });
@@ -202,7 +203,7 @@ describe('OrganizationsService', () => {
       });
 
       expect(result).toEqual(updatedOrg);
-      expect(auditServiceMock.log).toHaveBeenCalledWith(
+      expect(auditServiceMock.fireAndForget).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'organization.update' }),
       );
     });
@@ -227,7 +228,7 @@ describe('OrganizationsService', () => {
       await service.deleteOrganizationGlobal('org-1');
 
       expect(dbMock.update).toHaveBeenCalled();
-      expect(auditServiceMock.log).toHaveBeenCalledWith(
+      expect(auditServiceMock.fireAndForget).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'organization.delete' }),
       );
     });

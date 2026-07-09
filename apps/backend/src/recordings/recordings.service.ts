@@ -148,7 +148,7 @@ export class RecordingsService {
       throw new NotFoundException('Recording not found');
     }
 
-    void this.auditService.log({
+    this.auditService.fireAndForget({
       action: 'recording.delete',
       userId: user.id,
       organizationId: orgId,

@@ -42,7 +42,7 @@ export class CronService {
         .set({ status: 'expired' })
         .where(eq(schema.orgInvitations.id, inv.id));
 
-      void this.auditService.log({
+      this.auditService.fireAndForget({
         action: 'org.invitation.expired',
         organizationId: inv.organizationId,
         entityId: inv.id,
@@ -85,7 +85,7 @@ export class CronService {
         })
         .where(eq(schema.locations.id, step.locationId));
 
-      void this.auditService.log({
+      this.auditService.fireAndForget({
         action: 'org.provisioning.step_failed',
         organizationId: step.organizationId,
         entityId: step.id,
@@ -222,7 +222,7 @@ export class CronService {
         .delete(schema.recordings)
         .where(eq(schema.recordings.id, rec.id));
 
-      void this.auditService.log({
+      this.auditService.fireAndForget({
         action: 'recording.hard_delete',
         organizationId: rec.organizationId,
         entityId: rec.id,

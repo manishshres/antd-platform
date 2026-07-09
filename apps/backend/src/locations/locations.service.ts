@@ -52,7 +52,7 @@ export class LocationsService {
       })
       .returning();
 
-    void this.auditService.log({
+    this.auditService.fireAndForget({
       action: 'location.created',
       organizationId,
       entityId: location.id,
@@ -95,7 +95,7 @@ export class LocationsService {
       .where(eq(schema.locations.id, locationId))
       .returning();
 
-    void this.auditService.log({
+    this.auditService.fireAndForget({
       action: 'location.updated',
       organizationId,
       entityId: locationId,
@@ -157,7 +157,7 @@ export class LocationsService {
       }
     }
 
-    void this.auditService.log({
+    this.auditService.fireAndForget({
       action: 'location.ai_config.updated',
       organizationId,
       entityId: locationId,
@@ -210,7 +210,7 @@ export class LocationsService {
         })
         .where(eq(schema.users.id, existingUser.id));
 
-      void this.auditService.log({
+      this.auditService.fireAndForget({
         action: 'location.manager.assigned',
         organizationId,
         entityId: locationId,
@@ -249,7 +249,7 @@ export class LocationsService {
       .delete(schema.locations)
       .where(eq(schema.locations.id, locationId));
 
-    void this.auditService.log({
+    this.auditService.fireAndForget({
       action: 'location.deleted',
       organizationId,
       entityId: locationId,
