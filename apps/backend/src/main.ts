@@ -47,6 +47,11 @@ async function bootstrap() {
   });
 
   // Enable global validation pipe
+  const {
+    ValidationErrorFilter,
+  } = require('./common/filters/validation-error.filter');
+  app.useGlobalFilters(new ValidationErrorFilter());
+
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
