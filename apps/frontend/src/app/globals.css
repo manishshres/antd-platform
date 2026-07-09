@@ -47,6 +47,18 @@ body {
   flex-shrink: 0;
 }
 
+/* Vertical category rail: fixed narrow column left of the item grid */
+.pos-cat-rail {
+  width: clamp(190px, 18vw, 250px);
+  flex-shrink: 0;
+}
+/* Collapse the rail on phones — the grid + cart take priority */
+@media (max-width: 640px) {
+  .pos-cat-rail {
+    display: none;
+  }
+}
+
 /* Native-app touch feel */
 .pos-tile {
   -webkit-tap-highlight-color: transparent;

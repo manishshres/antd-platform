@@ -10,13 +10,13 @@ import {
   Button,
   Checkbox,
   Divider,
-  Drawer,
   Empty,
   Input,
   InputNumber,
   Modal,
   Radio,
   Segmented,
+  Select,
   Skeleton,
   Space,
   Tag,
@@ -32,9 +32,7 @@ import {
   DollarOutlined,
   EditOutlined,
   HistoryOutlined,
-  LeftOutlined,
   MinusOutlined,
-  RightOutlined,
   PlusOutlined,
   SaveOutlined,
   SearchOutlined,
@@ -47,6 +45,10 @@ import { api } from "@/lib/api";
 import { useLocation } from "@/contexts/LocationContext";
 import PageHeader from "@/components/PageHeader";
 import { EmptyState, ErrorState } from "@/components/PageStates";
+import TransactionDrawer from "@/components/TransactionDrawer";
+import TransactionsListDrawer, {
+  type TxOrder,
+} from "@/components/TransactionsListDrawer";
 
 const { Text, Title } = Typography;
 
@@ -134,6 +136,7 @@ interface FloorTable {
   posX?: number | null;
   posY?: number | null;
   status?: string | null; // 'available' | 'occupied' | 'billed'
+  activeOrderId?: string | null;
   activeOrderTotal?: number | null;
 }
 
@@ -161,6 +164,7 @@ interface ExistingOrder {
   source?: string | null;
   paidAt?: string | null;
   orderType?: string | null;
+  tableId?: string | null;
   specialInstructions?: string | null;
   discountId?: string | null;
   tipAmount?: number | null;
@@ -257,6 +261,10 @@ function PosRegister() {
   // Unpaid orders (AI phone orders awaiting in-store payment, held orders, ...)
   const [openOrders, setOpenOrders] = useState<OpenOrderRow[]>([]);
   const [ordersDrawerOpen, setOrdersDrawerOpen] = useState(false);
+  // Transaction detail drawer — opened from a row in the Transactions list.
+  const [transactionOrderId, setTransactionOrderId] = useState<string | null>(
+    null,
+  );
 
   // Loaded existing order (AI voice handoff / edit mode)
   const [editingOrder, setEditingOrder] = useState<ExistingOrder | null>(null);
@@ -269,7 +277,6 @@ function PosRegister() {
     Record<string, string[]>
   >({});
   const [pickerNotes, setPickerNotes] = useState("");
-  const [pickerCourse, setPickerCourse] = useState<number | undefined>(undefined);
   const [editingLineKey, setEditingLineKey] = useState<string | null>(null);
 
   const loadFloorPlans = () => {
@@ -283,8 +290,11 @@ function PosRegister() {
   };
 
   useEffect(() => {
+    if (!selectedLocationId) return;
+    // Load once so the dine-in table picker has options in menu mode too;
+    // keep live polling only while the floor plan is on screen.
+    loadFloorPlans();
     if (viewMode === "floor_plan") {
-      loadFloorPlans();
       const timer = setInterval(loadFloorPlans, 10000);
       return () => clearInterval(timer);
     }
@@ -379,6 +389,7 @@ function PosRegister() {
         setCustomerName(data.customerName === "Walk-in" ? "" : data.customerName);
         setCustomerId(data.customerId ?? null);
         setOrderType(data.orderType ?? "dine_in");
+        setSelectedTableId(data.tableId ?? null);
         setOrderNotes(data.specialInstructions ?? "");
         setAppliedDiscountId(data.discountId ?? null);
         if (data.tipAmount) {
@@ -467,13 +478,6 @@ function PosRegister() {
       : Math.round((taxableBase * tipPct) / 100);
   const total = taxableBase + taxAmount + tipAmount;
 
-  // Category pill strip: hidden scrollbar, arrow buttons + drag/touch scrolling.
-  const pillsRef = useRef<HTMLDivElement>(null);
-  const drag = useRef({ active: false, startX: 0, startScroll: 0 });
-  const scrollPills = (dir: -1 | 1) => {
-    pillsRef.current?.scrollBy({ left: dir * 280, behavior: "smooth" });
-  };
-
   const resetRegister = () => {
     setCart([]);
     setCustomerName("");
@@ -482,6 +486,7 @@ function PosRegister() {
     setOrderNotes("");
     setOrderType("dine_in");
     setEditingOrder(null);
+    setSelectedTableId(null);
     setAppliedDiscountId(null);
     setTipPct(0);
     setCustomTip(0);
@@ -533,6 +538,33 @@ function PosRegister() {
     // Always open the picker — even items without modifier groups can take
     // per-item kitchen notes ("no onions", "extra spicy", ...).
     openPicker(item, {}, "", null);
+  };
+
+  /** Pick a table for the current order. If the table already has an open
+   * order, load it into the register so it can be added to, split, or paid. */
+  const selectTable = (tableId: string | null) => {
+    setSelectedTableId(tableId);
+    if (!tableId) return;
+    const table = floorPlans
+      .flatMap((fp) => fp.tables ?? [])
+      .find((t) => t.id === tableId);
+    if (table?.activeOrderId && table.activeOrderId !== editingOrder?.id) {
+      setViewMode("menu");
+      router.push(`/pos?orderId=${table.activeOrderId}`);
+    }
+  };
+
+  /** Row tap in the Transactions drawer: an unpaid/open ticket loads into the
+   * register (to add to, split, or take payment); a closed one opens the
+   * read-only detail drawer (status, print, refund). */
+  const handleSelectTransaction = (o: TxOrder) => {
+    const isOpen = !o.paidAt && ["pending", "confirmed"].includes(o.status);
+    if (isOpen) {
+      setOrdersDrawerOpen(false);
+      router.push(`/pos?orderId=${o.id}`);
+    } else {
+      setTransactionOrderId(o.id);
+    }
   };
 
   // Tap a cart line → reopen the picker prefilled with that line's selections.
@@ -721,9 +753,8 @@ function PosRegister() {
       }
     }
     const notes = pickerNotes.trim() || undefined;
-    const course = pickerCourse;
     if (editingLineKey) {
-      const replacement = buildLine(pickerItem, options, notes, course);
+      const replacement = buildLine(pickerItem, options, notes, undefined);
       setCart((prev) =>
         prev.map((l) =>
           l.key === editingLineKey
@@ -732,10 +763,12 @@ function PosRegister() {
         ),
       );
     } else {
-      setCart((prev) => [...prev, buildLine(pickerItem, options, notes, course)]);
+      setCart((prev) => [
+        ...prev,
+        buildLine(pickerItem, options, notes, undefined),
+      ]);
     }
     setPickerItem(null);
-    setPickerCourse(undefined);
     setEditingLineKey(null);
   };
 
@@ -804,6 +837,7 @@ function PosRegister() {
           {
             locationId: selectedLocationId,
             orderType,
+            tableId: orderType === "dine_in" ? selectedTableId ?? undefined : undefined,
             customerName: customerName.trim() || undefined,
           customerId: customerId ?? undefined,
             specialInstructions: orderNotes.trim() || undefined,
@@ -850,6 +884,7 @@ function PosRegister() {
         const res = await api.post<typeof paid>("/orders/pos", {
           locationId: selectedLocationId,
           orderType,
+          tableId: orderType === "dine_in" ? selectedTableId ?? undefined : undefined,
           paymentMethod: method,
           customerName: customerName.trim() || undefined,
           customerId: customerId ?? undefined,
@@ -901,6 +936,7 @@ function PosRegister() {
         const res = await api.post<typeof orderRow>("/orders/pos", {
           locationId: selectedLocationId,
           orderType,
+          tableId: orderType === "dine_in" ? selectedTableId ?? undefined : undefined,
           customerName: customerName.trim() || undefined,
           customerId: customerId ?? undefined,
           specialInstructions: orderNotes.trim() || undefined,
@@ -1064,14 +1100,85 @@ function PosRegister() {
       {/* Height, wrapping, and touch behavior live in globals.css (.pos-*) so they
           can respond to iPad/tablet breakpoints; colors stay tokenized inline. */}
       <div className="pos-register" style={{ gap: token.marginSM }}>
+        {/* Category rail — vertical list of categories (menu mode only) */}
+        {viewMode === "menu" && (
+          <div
+            className="pos-cat-rail pos-scroll"
+            role="tablist"
+            aria-label="Menu categories"
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 4,
+              overflowY: "auto",
+              background: token.colorBgContainer,
+              border: `1px solid ${token.colorBorder}`,
+              borderRadius: token.borderRadiusLG,
+              boxShadow: token.boxShadowTertiary,
+              padding: token.paddingXS,
+            }}
+          >
+            {pills.map((pill) => {
+              const active = pill.id === selectedCatId && !searchQuery;
+              return (
+                <button
+                  key={pill.id}
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => {
+                    setSearch("");
+                    setSelectedCatId(pill.id);
+                  }}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    width: "100%",
+                    textAlign: "left",
+                    border: `1px solid ${active ? token.colorPrimary : "transparent"}`,
+                    cursor: "pointer",
+                    borderRadius: token.borderRadius,
+                    padding: "12px 14px",
+                    background: active ? token.colorPrimaryBg : "transparent",
+                    color: active ? token.colorPrimary : token.colorText,
+                    fontWeight: active ? 600 : 500,
+                    fontSize: 15,
+                    minWidth: 0,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!active)
+                      e.currentTarget.style.background = token.colorFillTertiary;
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!active)
+                      e.currentTarget.style.background = "transparent";
+                  }}
+                >
+                  {pill.icon}
+                  {pill.name}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {/* Items area / Floor plan area */}
         <div
+          className="pos-menu-panel"
           style={{
             flex: 1,
             minWidth: 0,
             display: "flex",
             flexDirection: "column",
             gap: token.marginSM,
+            background: token.colorFillAlter,
+            border: `1px solid ${token.colorBorder}`,
+            borderRadius: token.borderRadiusLG,
+            boxShadow: token.boxShadowTertiary,
+            padding: token.padding,
           }}
         >
           {viewMode === "menu" ? (
@@ -1093,94 +1200,12 @@ function PosRegister() {
                   loadOpenOrders();
                   setOrdersDrawerOpen(true);
                 }}
-                aria-label="View open orders"
+                aria-label="View transactions"
               >
-                Open Orders
+                Transactions
               </Button>
             </Badge>
           </div>
-
-          {/* Category pills — hidden scrollbar; arrows + drag/touch to scroll */}
-          {!searchQuery && (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                flexShrink: 0,
-              }}
-            >
-              <Button
-                shape="circle"
-                icon={<LeftOutlined />}
-                aria-label="Scroll categories left"
-                onClick={() => scrollPills(-1)}
-              />
-              <div
-                ref={pillsRef}
-                className="pos-pill-strip pos-scroll"
-                role="tablist"
-                aria-label="Menu categories"
-                onPointerDown={(e) => {
-                  drag.current = {
-                    active: true,
-                    startX: e.clientX,
-                    startScroll: pillsRef.current?.scrollLeft ?? 0,
-                  };
-                }}
-                onPointerMove={(e) => {
-                  if (!drag.current.active || !pillsRef.current) return;
-                  pillsRef.current.scrollLeft =
-                    drag.current.startScroll -
-                    (e.clientX - drag.current.startX);
-                }}
-                onPointerUp={() => {
-                  drag.current.active = false;
-                }}
-                onPointerLeave={() => {
-                  drag.current.active = false;
-                }}
-                style={{
-                  display: "flex",
-                  gap: 8,
-                  overflowX: "auto",
-                  flex: 1,
-                  minWidth: 0,
-                  cursor: "grab",
-                }}
-              >
-                {pills.map((pill) => {
-                  const active = pill.id === selectedCatId;
-                  return (
-                    <Button
-                      key={pill.id}
-                      role="tab"
-                      aria-selected={active}
-                      type={active ? "primary" : "default"}
-                      shape="round"
-                      size="large"
-                      icon={pill.icon}
-                      onClick={() => setSelectedCatId(pill.id)}
-                      style={{
-                        flexShrink: 0,
-                        fontWeight: active ? 600 : 500,
-                        height: 44,
-                        paddingInline: 20,
-                      }}
-                    >
-                      {pill.name}
-                    </Button>
-                  );
-                })}
-              </div>
-              <Button
-                shape="circle"
-                icon={<RightOutlined />}
-                aria-label="Scroll categories right"
-                onClick={() => scrollPills(1)}
-              />
-            </div>
-          )}
 
           {/* Item grid */}
           <div
@@ -1217,15 +1242,16 @@ function PosRegister() {
                       opacity: item.isAvailable ? 1 : 0.45,
                       userSelect: "none",
                       background: token.colorBgContainer,
-                      border: `1px solid ${token.colorBorderSecondary}`,
+                      border: `1px solid ${token.colorBorder}`,
                       borderRadius: token.borderRadiusLG,
                       padding: token.paddingSM,
-                      minHeight: 92,
+                      minHeight: 104,
                       display: "flex",
                       flexDirection: "column",
                       justifyContent: "flex-start",
                       gap: 6,
                       overflow: "hidden",
+                      boxShadow: token.boxShadowTertiary,
                       transition:
                         "border-color 0.15s, box-shadow 0.15s, transform 0.15s",
                     }}
@@ -1236,12 +1262,12 @@ function PosRegister() {
                       e.currentTarget.style.transform = "translateY(-2px)";
                     }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.borderColor =
-                        token.colorBorderSecondary;
-                      e.currentTarget.style.boxShadow = "none";
+                      e.currentTarget.style.borderColor = token.colorBorder;
+                      e.currentTarget.style.boxShadow = token.boxShadowTertiary;
                       e.currentTarget.style.transform = "none";
                     }}
                   >
+                    {/* Full name always visible — wraps to the next line */}
                     <div
                       style={{
                         display: "flex",
@@ -1260,7 +1286,6 @@ function PosRegister() {
                           }}
                         />
                       )}
-                      {/* Full name always visible — wraps to the next line */}
                       <Text
                         strong
                         style={{
@@ -1282,10 +1307,7 @@ function PosRegister() {
                         marginTop: "auto",
                       }}
                     >
-                      <Text
-                        strong
-                        style={{ fontSize: 14, color: token.colorPrimary }}
-                      >
+                      <Text strong style={{ fontSize: 15, color: token.colorPrimary }}>
                         {fmtMoney(item.price)}
                       </Text>
                       {!item.isAvailable ? (
@@ -1367,8 +1389,9 @@ function PosRegister() {
             display: "flex",
             flexDirection: "column",
             background: token.colorBgContainer,
-            border: `1px solid ${token.colorBorderSecondary}`,
+            border: `1px solid ${token.colorBorder}`,
             borderRadius: token.borderRadiusLG,
+            boxShadow: token.boxShadowTertiary,
             padding: token.paddingSM,
           }}
         >
@@ -1385,7 +1408,7 @@ function PosRegister() {
               <Text strong>
                 {editingOrder
                   ? `Order ${orderLabel(editingOrder)}`
-                  : "Current Order"}
+                  : "New Order"}
               </Text>
               <Badge count={cart.reduce((s, l) => s + l.quantity, 0)} />
             </Space>
@@ -1403,14 +1426,38 @@ function PosRegister() {
 
           <Segmented
             block
+            size="large"
             value={orderType}
             onChange={(v) => setOrderType(v as string)}
             options={[
               { label: "Dine-in", value: "dine_in" },
               { label: "Pickup", value: "pickup" },
+              { label: "Delivery", value: "delivery" },
             ]}
-            style={{ marginBottom: token.marginXS }}
+            style={{ marginBottom: token.marginSM, fontWeight: 600 }}
           />
+          {/* Table picker — dine-in only; options come from the floor plans */}
+          {orderType === "dine_in" && (
+            <Select
+              value={selectedTableId ?? undefined}
+              onChange={(v) => selectTable(v ?? null)}
+              placeholder="Select Table"
+              aria-label="Select table"
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              style={{ width: "100%", marginBottom: token.marginXS }}
+              options={floorPlans.flatMap((fp) =>
+                (fp.tables ?? []).map((t) => ({
+                  value: t.id,
+                  label: `${t.name}${t.capacity ? ` · ${t.capacity} pax` : ""}${
+                    t.activeOrderId ? ` · ${fmtMoney(t.activeOrderTotal ?? 0)}` : ""
+                  }`,
+                })),
+              )}
+              notFoundContent="No tables — add them under Floor Plans"
+            />
+          )}
           {/* Customer + note are one-tap reveals — hidden until needed (Square pattern) */}
           {showCustomer || customerName ? (
             <div
@@ -1633,112 +1680,71 @@ function PosRegister() {
               </Text>
             </div>
           )}
-          <div style={{ display: "flex", gap: 8 }}>
-            <Button
-              type="primary"
-              size="large"
-              disabled={cart.length === 0 || saving}
-              onClick={() => {
-                setPayStep("select");
-                setCashReceived(null);
-                setTenderOpen(true);
-              }}
-              aria-label={`Charge ${fmtMoney(total)}`}
-              style={{ flex: 1, height: 60, fontSize: 18, fontWeight: 600 }}
-            >
-              Charge {cart.length > 0 ? fmtMoney(total) : ""}
-            </Button>
-            <Tooltip title="Save for later — pay from Open Orders">
+          <Button
+            block
+            type="primary"
+            size="large"
+            disabled={cart.length === 0 || saving}
+            onClick={() => {
+              setPayStep("select");
+              setCashReceived(null);
+              setTenderOpen(true);
+            }}
+            aria-label={`Charge ${fmtMoney(total)}`}
+            style={{
+              height: 60,
+              fontSize: 18,
+              fontWeight: 600,
+              boxShadow: token.boxShadow,
+            }}
+          >
+            Charge {cart.length > 0 ? fmtMoney(total) : ""}
+          </Button>
+          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+            <Tooltip title="Fire the ticket to the kitchen and park it in Open Orders">
               <Button
                 size="large"
                 icon={<SaveOutlined />}
                 disabled={cart.length === 0 || charging !== null}
                 loading={saving}
                 onClick={saveOrder}
-                aria-label="Save order without payment"
-                style={{ height: 60, width: 64 }}
-              />
+                aria-label="Send order to kitchen"
+                style={{ flex: 1, height: 48, boxShadow: token.boxShadowTertiary }}
+              >
+                Send to Kitchen
+              </Button>
+            </Tooltip>
+            <Tooltip title="Save this order — pay or edit it later from Transactions">
+              <Button
+                size="large"
+                disabled={cart.length === 0 || charging !== null}
+                loading={saving}
+                onClick={saveOrder}
+                aria-label="Save order for later"
+                style={{ flex: 1, height: 48, boxShadow: token.boxShadowTertiary }}
+              >
+                Save
+              </Button>
             </Tooltip>
           </div>
         </div>
       </div>
 
-      {/* Open orders — unpaid tickets (AI phone orders awaiting payment, holds) */}
-      <Drawer
-        title={`Open Orders (${openOrders.length})`}
-        placement="right"
+      {/* Transactions hub — date range, live totals, open/closed, source filters */}
+      <TransactionsListDrawer
         open={ordersDrawerOpen}
         onClose={() => setOrdersDrawerOpen(false)}
-      >
-        {openOrders.length === 0 ? (
-          <Empty description="No unpaid orders. New AI phone orders appear here." />
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {openOrders.map((o) => (
-              <div
-                key={o.id}
-                role="button"
-                tabIndex={0}
-                aria-label={`Open order ${orderLabel(o)}`}
-                onClick={() => {
-                  setOrdersDrawerOpen(false);
-                  router.push(`/pos?orderId=${o.id}`);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    setOrdersDrawerOpen(false);
-                    router.push(`/pos?orderId=${o.id}`);
-                  }
-                }}
-                style={{
-                  border: `1px solid ${token.colorBorderSecondary}`,
-                  borderRadius: token.borderRadiusLG,
-                  padding: token.paddingSM,
-                  cursor: "pointer",
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                  }}
-                >
-                  <Space size={6}>
-                    <Text strong>{orderLabel(o)}</Text>
-                    {o.source === "ai_phone" ? (
-                      <Tag color="blue" style={{ margin: 0 }}>
-                        AI Phone
-                      </Tag>
-                    ) : (
-                      <Tag style={{ margin: 0 }}>POS</Tag>
-                    )}
-                  </Space>
-                  <Text strong>{fmtMoney(o.totalAmount)}</Text>
-                </div>
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    marginTop: 4,
-                  }}
-                >
-                  <Text type="secondary" style={{ fontSize: 13 }}>
-                    {o.customerName}
-                    {o.customerPhone ? ` · ${o.customerPhone}` : ""}
-                  </Text>
-                  <Text type="secondary" style={{ fontSize: 13 }}>
-                    {new Date(o.createdAt).toLocaleTimeString([], {
-                      hour: "numeric",
-                      minute: "2-digit",
-                    })}
-                  </Text>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </Drawer>
+        locationId={selectedLocationId}
+        onSelect={handleSelectTransaction}
+      />
+
+      {/* Single-transaction detail — status actions, print (opened from a row) */}
+      <TransactionDrawer
+        orderId={transactionOrderId}
+        open={transactionOrderId !== null}
+        onClose={() => setTransactionOrderId(null)}
+        isAdmin={userRole !== "user"}
+      />
 
       {/* Tender step — total, tip, discount, then payment (Square/Toast flow) */}
       <Modal
@@ -2227,17 +2233,7 @@ function PosRegister() {
           onChange={(e) => setPickerNotes(e.target.value)}
           maxLength={500}
           aria-label="Kitchen note"
-          style={{ marginBottom: token.margin }}
         />
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Text strong>Course</Text>
-          <Radio.Group value={pickerCourse} onChange={(e) => setPickerCourse(e.target.value)}>
-            <Radio.Button value={undefined}>None</Radio.Button>
-            <Radio.Button value={1}>1 (Appetizer)</Radio.Button>
-            <Radio.Button value={2}>2 (Main)</Radio.Button>
-            <Radio.Button value={3}>3 (Dessert)</Radio.Button>
-          </Radio.Group>
-        </div>
       </Modal>
 
       {/* Discount picker */}
