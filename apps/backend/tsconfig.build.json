@@ -1,4 +1,9 @@
 {
   "extends": "./tsconfig.json",
+  // Pin the build to src/ only. Stray .ts files at the package root (debug
+  // scripts, drizzle.config.ts) otherwise widen tsc's common root, which
+  // buries the entry point at dist/src/main.js and breaks `node dist/main`
+  // in the Docker image.
+  "include": ["src/**/*"],
   "exclude": ["node_modules", "test", "dist", "**/*spec.ts"]
 }

@@ -181,13 +181,36 @@ no extra work needed for automatic restarts.
 ### 3.4 Run database migrations
 
 The runtime image doesn't include drizzle-kit, so run migrations from the
-checked-out repo against the loopback-published Postgres port:
+checked-out repo against the loopback-published Postgres port.
+
+**First install Node.js 22 on the VPS** (a fresh Ubuntu image has none):
+
+```bash
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt-get install -y nodejs
+node --version    # v22.x
+```
+
+Then install workspace deps and migrate:
 
 ```bash
 cd ~/app && npm ci --workspace apps/backend --include-workspace-root
 cd apps/backend
 DATABASE_URL="postgres://postgres:YOUR_POSTGRES_PASSWORD@127.0.0.1:5432/antd_db" npm run db:migrate
 ```
+
+> ⚠️ **Postgres password gotcha**: `POSTGRES_PASSWORD` is only applied when the
+> data volume is **first initialized**. If `./postgres_data` already exists
+> from an earlier attempt, the old password is still active. Either reset it
+> in place:
+>
+> ```bash
+> docker exec -it antd-postgres psql -U postgres -d antd_db \
+>   -c "ALTER USER postgres WITH PASSWORD 'NEW_PASSWORD_FROM_ENV';"
+> ```
+>
+> or, if the database is empty anyway, wipe and re-init:
+> `docker compose down && sudo rm -rf postgres_data && docker compose up -d`.
 
 ### 3.5 Provision plans + first admin
 

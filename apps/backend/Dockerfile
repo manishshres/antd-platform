@@ -12,6 +12,10 @@ RUN npm ci
 RUN npm run build -w packages/shared-types
 RUN npm run build -w apps/backend
 
+# Fail the image build if the entry point isn't where CMD expects it —
+# a shifted tsc root once shipped an image with dist/src/main.js instead.
+RUN test -f apps/backend/dist/main.js
+
 # Production stage
 FROM node:22-alpine AS production
 WORKDIR /app
