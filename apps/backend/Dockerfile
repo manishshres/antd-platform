@@ -37,5 +37,12 @@ ENV PORT=4000
 
 EXPOSE 4000
 
+# Run unprivileged — the app only needs read access to its own files
+USER node
+
+# Container-level liveness: the version endpoint is dependency-free and cheap
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD wget -qO- http://127.0.0.1:4000/api/v1/health/version || exit 1
+
 # Start the server from the root context
 CMD ["node", "apps/backend/dist/main"]

@@ -3,15 +3,21 @@ services:
     image: postgres:16-alpine
     container_name: antd-postgres
     ports:
-      - '5432:5432'
+      # Bound to loopback: only the host (and the compose network) can reach it.
+      - '127.0.0.1:5432:5432'
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: antd_db
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-antd_db}
     volumes:
       # This maps a "postgres_data" folder in your current directory to the container
       - ./postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-postgres}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
     deploy:
       resources:
         limits:
@@ -21,8 +27,8 @@ services:
     image: eclipse-mosquitto:2.1-alpine
     container_name: antd-mosquitto
     ports:
-      - '51883:1883' # Obscured public port for IoT Printers
-      - '9001:9001'
+      - '51883:1883' # Obscured public port for IoT Printers (must stay public)
+      - '127.0.0.1:9001:9001' # WebSockets — loopback only unless browsers need it
     volumes:
       - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
       - ./mosquitto.passwd:/mosquitto/config/mosquitto.passwd
@@ -36,27 +42,35 @@ services:
     image: redis:7-alpine
     container_name: antd-redis
     ports:
-      - '6379:6379'
+      - '127.0.0.1:6379:6379'
     restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
     deploy:
       resources:
         limits:
           memory: 512M
 
   backend:
-    image: ${DOCKER_REGISTRY:-ghcr.io/your-org}/antd-backend:${BACKEND_VERSION:-latest}
+    image: ${DOCKER_REGISTRY:?set DOCKER_REGISTRY in .env, e.g. docker.io/youruser}/antd-backend:${BACKEND_VERSION:-latest}
     container_name: antd-backend
     ports:
-      - '4000:4000'
+      # Loopback only — Nginx on the host terminates TLS and proxies to :4000
+      - '127.0.0.1:4000:4000'
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/antd_db
+      - DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-antd_db}
       - REDIS_URL=redis://redis:6379
-      - FRONTEND_URL=http://localhost:3000
     env_file:
       - .env
     depends_on:
-      - postgres
-      - redis
-      - mosquitto
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
     restart: unless-stopped
