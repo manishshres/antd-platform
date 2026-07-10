@@ -9,6 +9,7 @@ import {
   UserOutlined,
   SettingOutlined,
   LineChartOutlined,
+  BarChartOutlined,
   SafetyCertificateOutlined,
   BankOutlined,
 } from "@ant-design/icons";
@@ -84,11 +85,19 @@ export const NAV_ITEMS: NavItem[] = [
     icon: LineChartOutlined,
     children: [
       {
-        key: "/analytics/usage",
-        icon: LineChartOutlined,
-        label: "Usage Analytics",
-        allowed: ["platform_admin", "sysadmin", "admin"],
+        key: "/analytics/reports",
+        icon: BarChartOutlined,
+        label: "Sales Reports",
+        allowed: ["platform_admin", "sysadmin", "admin", "manager"],
       },
+      // Usage Analytics is temporarily hidden from the menu (page still exists
+      // at /analytics/usage). Restore this entry when the feature is ready.
+      // {
+      //   key: "/analytics/usage",
+      //   icon: LineChartOutlined,
+      //   label: "Usage Analytics",
+      //   allowed: ["platform_admin", "sysadmin", "admin"],
+      // },
       {
         key: "/audit",
         icon: SafetyCertificateOutlined,

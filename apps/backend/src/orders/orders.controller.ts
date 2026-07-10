@@ -32,6 +32,7 @@ import { RecordPaymentDto } from './dto/record-payment.dto';
 import { UpdateStatusDto } from './dto/update-status.dto';
 import { PrintOrderDto } from './dto/print-order.dto';
 import { GetOrdersDto } from './dto/get-orders.dto';
+import { OrderReportDto, PrintOrderReportDto } from './dto/order-report.dto';
 import { PaginatedResponseDto } from '../common/dto/paginated-response.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import type { Response } from 'express';
@@ -81,6 +82,34 @@ export class OrdersController {
       dateFrom,
       dateTo,
     );
+  }
+
+  @Get('reports')
+  @Roles('manager', 'admin', 'sysadmin', 'platform_admin')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Business report: sales/orders/refunds by day, week, or month',
+  })
+  @ApiResponse({ status: 200, description: 'Report series and breakdowns.' })
+  async getOrderReport(
+    @CurrentUser() user: CurrentUserPayload,
+    @Query() query: OrderReportDto,
+  ): Promise<unknown> {
+    return this.ordersService.getOrderReport(user, query);
+  }
+
+  @Post('reports/print')
+  @Roles('manager', 'admin', 'sysadmin', 'platform_admin')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({
+    summary: 'Print the sales report on the configured receipt printer',
+  })
+  @ApiResponse({ status: 202, description: 'Report queued for printing.' })
+  async printOrderReport(
+    @CurrentUser() user: CurrentUserPayload,
+    @Body() body: PrintOrderReportDto,
+  ): Promise<unknown> {
+    return this.ordersService.printOrderReport(user, body);
   }
 
   @Get('export/csv')

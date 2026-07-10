@@ -1,13 +1,17 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
-import { PrinterService, PrintJobPayload } from '../printer.service';
+import {
+  PrinterService,
+  PrintJobPayload,
+  SalesReportPrintPayload,
+} from '../printer.service';
 import { PrintJobsService } from '../print-jobs.service';
 
 interface PrintJobData {
   orgId: string;
-  type: 'kitchen' | 'receipt';
-  payload: PrintJobPayload;
+  type: 'kitchen' | 'receipt' | 'report';
+  payload: PrintJobPayload | SalesReportPrintPayload;
   printerId?: string;
   printJobId?: string;
 }
@@ -46,7 +50,7 @@ export class PrintQueueProcessor extends WorkerHost {
       if (type === 'kitchen') {
         success = await this.printerService.printKitchenTicket(
           orgId,
-          payload,
+          payload as PrintJobPayload,
           job.data.printerId,
           undefined, // locationId not needed here since we use printerId
           printJobId,
@@ -54,9 +58,17 @@ export class PrintQueueProcessor extends WorkerHost {
       } else if (type === 'receipt') {
         success = await this.printerService.printCustomerReceipt(
           orgId,
-          payload,
+          payload as PrintJobPayload,
           job.data.printerId,
           undefined, // locationId not needed here
+          printJobId,
+        );
+      } else if (type === 'report') {
+        success = await this.printerService.printSalesReport(
+          orgId,
+          payload as SalesReportPrintPayload,
+          job.data.printerId,
+          undefined,
           printJobId,
         );
       } else {
@@ -86,7 +98,11 @@ export class PrintQueueProcessor extends WorkerHost {
         }
       }
 
-      return { success, type, orderId: payload.orderId };
+      return {
+        success,
+        type,
+        orderId: 'orderId' in payload ? payload.orderId : payload.reportId,
+      };
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unknown error';
       const stack = err instanceof Error ? err.stack : undefined;

@@ -27,6 +27,26 @@ export interface PrintJobPayload {
   printerId?: string;
 }
 
+/** Sales-report ticket printed on the receipt printer (jobType 'report'). */
+export interface SalesReportPrintPayload {
+  /** Synthetic id used as the printer packet ticket id. */
+  reportId: string;
+  dateFrom: string; // ISO
+  dateTo: string; // ISO
+  granularity: 'day' | 'week' | 'month';
+  totals: {
+    orders: number;
+    sales: number;
+    refunds: number;
+    refundCount: number;
+    netSales: number;
+    avgOrder: number;
+  };
+  byType: { orderType: string | null; orders: number; sales: number }[];
+  bySource: { source: string | null; orders: number; sales: number }[];
+  topItems: { name: string; quantity: number; sales: number }[];
+}
+
 @Injectable()
 export class PrinterService {
   private readonly logger = new Logger(PrinterService.name);
@@ -393,6 +413,126 @@ export class PrinterService {
     const receiptBytes = this.formatCustomerReceipt(orgName, timezone, payload);
     const packet = this.buildPrinterPacket(payload.orderId, receiptBytes);
 
+    return this.publishPrintPacket(
+      orgId,
+      'receipt',
+      packet,
+      activePrinterTopic,
+      printJobId,
+    );
+  }
+
+  private formatSalesReport(
+    orgName: string,
+    timezone: string,
+    payload: SalesReportPrintPayload,
+  ): Buffer {
+    const builder = new EscPosBuilder();
+    const fmtDate = (iso: string) =>
+      new Intl.DateTimeFormat('en-US', {
+        timeZone: timezone,
+        dateStyle: 'medium',
+      }).format(new Date(iso));
+    const money = (cents: number) => `$${(cents / 100).toFixed(2)}`;
+    const typeLabel: Record<string, string> = {
+      dine_in: 'Dine-in',
+      pickup: 'Pickup',
+      delivery: 'Delivery',
+    };
+    const sourceLabel: Record<string, string> = {
+      pos: 'POS',
+      ai_phone: 'AI Phone',
+      web: 'Web',
+    };
+
+    builder
+      .init()
+      .setPrintArea(MARGIN_DOTS, PRINT_AREA_DOTS)
+      .align('center')
+      .bold(true)
+      .size(2, 2)
+      .line(orgName.toUpperCase())
+      .size(1, 1)
+      .line('SALES REPORT')
+      .bold(false)
+      .line(`${fmtDate(payload.dateFrom)} - ${fmtDate(payload.dateTo)}`)
+      .rule()
+      .align('left')
+      .bold(true)
+      .row('Orders', String(payload.totals.orders))
+      .row('Gross Sales', money(payload.totals.sales))
+      .row(
+        `Refunds (${payload.totals.refundCount})`,
+        `-${money(payload.totals.refunds)}`,
+      )
+      .row('NET SALES', money(payload.totals.netSales))
+      .bold(false)
+      .row('Avg Order', money(payload.totals.avgOrder))
+      .rule();
+
+    if (payload.byType.length > 0) {
+      builder.bold(true).line('BY ORDER TYPE').bold(false);
+      for (const t of payload.byType) {
+        const label = t.orderType
+          ? (typeLabel[t.orderType] ?? t.orderType)
+          : 'Unknown';
+        builder.row(`${label} x${t.orders}`, money(t.sales));
+      }
+      builder.rule();
+    }
+
+    if (payload.bySource.length > 0) {
+      builder.bold(true).line('BY SOURCE').bold(false);
+      for (const s of payload.bySource) {
+        const label = s.source
+          ? (sourceLabel[s.source] ?? s.source)
+          : 'Unknown';
+        builder.row(`${label} x${s.orders}`, money(s.sales));
+      }
+      builder.rule();
+    }
+
+    if (payload.topItems.length > 0) {
+      builder.bold(true).line('TOP ITEMS').bold(false);
+      for (const item of payload.topItems) {
+        builder.row(`${item.name} x${item.quantity}`, money(item.sales));
+      }
+      builder.rule();
+    }
+
+    const printedAt = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      dateStyle: 'short',
+      timeStyle: 'short',
+    }).format(new Date());
+    builder
+      .align('center')
+      .line(`Printed ${printedAt}`)
+      .feed(4)
+      .cut();
+
+    return builder.build();
+  }
+
+  /** Print a sales report to the receipt printer (default or explicit topic). */
+  async printSalesReport(
+    orgId: string,
+    payload: SalesReportPrintPayload,
+    printerTopic?: string,
+    locationId?: string,
+    printJobId?: string,
+  ): Promise<boolean> {
+    const {
+      name: orgName,
+      timezone,
+      printerTopic: orgPrinterTopic,
+    } = await this.loadOrganizationPrinterConfig(orgId, locationId);
+    const activePrinterTopic = printerTopic?.trim() || orgPrinterTopic?.trim();
+
+    const reportBytes = this.formatSalesReport(orgName, timezone, payload);
+    const packet = this.buildPrinterPacket(payload.reportId, reportBytes);
+
+    // Reports come out of the receipt printer — same topic family as receipts.
     return this.publishPrintPacket(
       orgId,
       'receipt',

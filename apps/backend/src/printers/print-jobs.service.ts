@@ -27,7 +27,7 @@ export class PrintJobsService {
   async createPrintJob(options: {
     organizationId: string;
     orderId?: string;
-    jobType: 'kitchen' | 'receipt';
+    jobType: 'kitchen' | 'receipt' | 'report';
     printerId?: string;
     payload: Record<string, unknown>;
   }) {

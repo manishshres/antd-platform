@@ -26,6 +26,7 @@ import {
 import { BillingService } from '../billing/billing.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { GetOrdersDto } from './dto/get-orders.dto';
+import { OrderReportDto, PrintOrderReportDto } from './dto/order-report.dto';
 import { PaginatedResponseDto } from '../common/dto/paginated-response.dto';
 import { PartialRefundDto } from './dto/partial-refund.dto';
 import { AdjustOrderItemsDto } from './dto/adjust-order-items.dto';
@@ -192,6 +193,219 @@ export class OrdersService {
         refundCount: 0,
       }
     );
+  }
+
+  /**
+   * Business report over a date range: a time series bucketed by day/week/month
+   * plus breakdowns. Sales = paid, non-cancelled order totals. Refunds = voided
+   * (cancelled) order totals PLUS partial refunds, which live as negative rows
+   * in the payments table rather than on the order.
+   */
+  async getOrderReport(user: CurrentUserPayload, dto: OrderReportDto) {
+    const orgId = await this.billingService.getRequiredOrg(user);
+    const granularity = dto.granularity ?? 'day';
+
+    const start = dto.dateFrom ? new Date(dto.dateFrom) : new Date();
+    if (!dto.dateFrom) start.setHours(0, 0, 0, 0);
+    const end = dto.dateTo ? new Date(dto.dateTo) : new Date();
+    end.setHours(23, 59, 59, 999);
+
+    const scope = and(
+      eq(schema.orders.organizationId, orgId),
+      eq(schema.orders.locationId, dto.locationId),
+      isNull(schema.orders.deletedAt),
+      gte(schema.orders.createdAt, start),
+      lte(schema.orders.createdAt, end),
+    );
+
+    // granularity is IsIn-whitelisted ('day'|'week'|'month'), so raw interpolation
+    // is safe — and required: a bound parameter would make the SELECT and GROUP BY
+    // copies of this expression distinct placeholders, which Postgres rejects.
+    const bucket = sql<string>`to_char(date_trunc(${sql.raw(`'${granularity}'`)}, ${schema.orders.createdAt}), 'YYYY-MM-DD')`;
+    const isSale = sql`${schema.orders.paidAt} is not null and ${schema.orders.status} <> 'cancelled'`;
+    const isVoid = sql`${schema.orders.status} = 'cancelled'`;
+
+    const buckets = await this.db
+      .select({
+        period: bucket,
+        orders: sql<number>`count(*) filter (where ${isSale})`.mapWith(Number),
+        sales:
+          sql<number>`coalesce(sum(${schema.orders.totalAmount}) filter (where ${isSale}), 0)`.mapWith(
+            Number,
+          ),
+        refunds:
+          sql<number>`coalesce(sum(${schema.orders.totalAmount}) filter (where ${isVoid}), 0)`.mapWith(
+            Number,
+          ),
+        refundCount: sql<number>`count(*) filter (where ${isVoid})`.mapWith(
+          Number,
+        ),
+      })
+      .from(schema.orders)
+      .where(scope)
+      .groupBy(bucket)
+      .orderBy(bucket);
+
+    // Partial refunds: negative payment rows against orders in the same scope.
+    const paymentBucket = sql<string>`to_char(date_trunc(${sql.raw(`'${granularity}'`)}, ${schema.payments.createdAt}), 'YYYY-MM-DD')`;
+    const partialRefunds = await this.db
+      .select({
+        period: paymentBucket,
+        amount:
+          sql<number>`coalesce(abs(sum(${schema.payments.amount})), 0)`.mapWith(
+            Number,
+          ),
+        count: count().mapWith(Number),
+      })
+      .from(schema.payments)
+      .innerJoin(schema.orders, eq(schema.payments.orderId, schema.orders.id))
+      .where(
+        and(
+          eq(schema.payments.organizationId, orgId),
+          eq(schema.orders.locationId, dto.locationId),
+          sql`${schema.payments.amount} < 0`,
+          // Cancelled orders are already counted whole via isVoid above.
+          sql`${schema.orders.status} <> 'cancelled'`,
+          gte(schema.payments.createdAt, start),
+          lte(schema.payments.createdAt, end),
+        ),
+      )
+      .groupBy(paymentBucket);
+
+    // Merge partial refunds into their buckets (a bucket may exist only here,
+    // e.g. a refund issued in a period with no new orders).
+    const byPeriod = new Map(buckets.map((b) => [b.period, { ...b }]));
+    for (const p of partialRefunds) {
+      const b = byPeriod.get(p.period) ?? {
+        period: p.period,
+        orders: 0,
+        sales: 0,
+        refunds: 0,
+        refundCount: 0,
+      };
+      b.refunds += p.amount;
+      b.refundCount += p.count;
+      byPeriod.set(p.period, b);
+    }
+    const series = [...byPeriod.values()].sort((a, b) =>
+      a.period.localeCompare(b.period),
+    );
+
+    const [byType, bySource, topItems] = await Promise.all([
+      this.db
+        .select({
+          orderType: schema.orders.orderType,
+          orders: sql<number>`count(*)`.mapWith(Number),
+          sales:
+            sql<number>`coalesce(sum(${schema.orders.totalAmount}), 0)`.mapWith(
+              Number,
+            ),
+        })
+        .from(schema.orders)
+        .where(and(scope, sql`${isSale}`))
+        .groupBy(schema.orders.orderType),
+      this.db
+        .select({
+          source: schema.orders.source,
+          orders: sql<number>`count(*)`.mapWith(Number),
+          sales:
+            sql<number>`coalesce(sum(${schema.orders.totalAmount}), 0)`.mapWith(
+              Number,
+            ),
+        })
+        .from(schema.orders)
+        .where(and(scope, sql`${isSale}`))
+        .groupBy(schema.orders.source),
+      this.db
+        .select({
+          menuItemId: schema.orderItems.menuItemId,
+          name: schema.menuItems.name,
+          quantity: sql<number>`sum(${schema.orderItems.quantity})`.mapWith(
+            Number,
+          ),
+          sales:
+            sql<number>`coalesce(sum(${schema.orderItems.price} * ${schema.orderItems.quantity}), 0)`.mapWith(
+              Number,
+            ),
+        })
+        .from(schema.orderItems)
+        .innerJoin(schema.orders, eq(schema.orderItems.orderId, schema.orders.id))
+        .innerJoin(
+          schema.menuItems,
+          eq(schema.orderItems.menuItemId, schema.menuItems.id),
+        )
+        .where(and(scope, sql`${isSale}`))
+        .groupBy(schema.orderItems.menuItemId, schema.menuItems.name)
+        .orderBy(sql`sum(${schema.orderItems.price} * ${schema.orderItems.quantity}) desc`)
+        .limit(10),
+    ]);
+
+    const totals = series.reduce(
+      (acc, b) => ({
+        orders: acc.orders + b.orders,
+        sales: acc.sales + b.sales,
+        refunds: acc.refunds + b.refunds,
+        refundCount: acc.refundCount + b.refundCount,
+      }),
+      { orders: 0, sales: 0, refunds: 0, refundCount: 0 },
+    );
+
+    return {
+      granularity,
+      dateFrom: start.toISOString(),
+      dateTo: end.toISOString(),
+      totals: {
+        ...totals,
+        netSales: totals.sales - totals.refunds,
+        avgOrder: totals.orders > 0 ? Math.round(totals.sales / totals.orders) : 0,
+      },
+      series,
+      byType,
+      bySource,
+      topItems,
+    };
+  }
+
+  /**
+   * Print the sales report to the receipt printer via the standard print
+   * queue (jobType 'report'), so it gets retry handling and job history.
+   */
+  async printOrderReport(user: CurrentUserPayload, dto: PrintOrderReportDto) {
+    const orgId = await this.billingService.getRequiredOrg(user);
+    const report = await this.getOrderReport(user, dto);
+
+    const payload = {
+      reportId: `report-${Date.now()}`,
+      dateFrom: report.dateFrom,
+      dateTo: report.dateTo,
+      granularity: report.granularity,
+      totals: report.totals,
+      byType: report.byType,
+      bySource: report.bySource,
+      topItems: report.topItems.map((i) => ({
+        name: i.name,
+        quantity: i.quantity,
+        sales: i.sales,
+      })),
+    };
+
+    const job = await this.printJobsService.createPrintJob({
+      organizationId: orgId,
+      jobType: 'report',
+      printerId: dto.printerId,
+      payload,
+    });
+
+    await this.auditService.log({
+      organizationId: orgId,
+      userId: user.id,
+      action: 'order.report_printed',
+      entityType: 'print_job',
+      entityId: job.id,
+      newValue: { dateFrom: report.dateFrom, dateTo: report.dateTo },
+    });
+
+    return { message: 'Report sent to printer.', printJobId: job.id };
   }
 
   async getOrderById(user: CurrentUserPayload, orderId: string) {
