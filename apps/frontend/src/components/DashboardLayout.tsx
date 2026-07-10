@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { Button, Drawer, Grid, Layout, Menu, Tooltip, ConfigProvider, theme, Space, App, Select, Dropdown, Avatar, Spin, Typography } from "antd";
+import React, { useState, useEffect, memo } from "react";
+import { Button, Drawer, Grid, Layout, Menu, Tooltip, ConfigProvider, theme, Space, App, Spin, Typography } from "antd";
 import type { MenuProps } from "antd";
 import {
   MenuFoldOutlined,
@@ -11,9 +11,6 @@ import {
   SunOutlined,
   MoonOutlined,
   LogoutOutlined,
-  CreditCardOutlined,
-  EnvironmentOutlined,
-  BankOutlined,
   CompassOutlined,
 } from "@ant-design/icons";
 import { usePathname, useRouter } from "next/navigation";
@@ -21,14 +18,14 @@ import { api } from "@/lib/api";
 import { getAccessToken, clearAccessToken, onTokenChange } from "@/lib/token-store";
 import { decodeJwtPayload } from "@/lib/jwt";
 import { LocationProvider, useLocation } from "@/contexts/LocationContext";
-import { SocketProvider, useSocket } from "@/hooks/useSocket";
+import { SocketProvider } from "@/hooks/useSocket";
 import { NotificationsProvider } from "@/contexts/NotificationsContext";
-import NotificationsBell from "./NotificationsBell";
 import CommandPalette from "./CommandPalette";
 import OnboardingTour from "./OnboardingTour";
 import { themeConfig } from "@/lib/theme";
 import { ConeekoLogo } from "./Logo";
 import { NAV_ITEMS, type NavItem } from "@/lib/navigation";
+import { HeaderActions } from "./HeaderActions";
 
 const { Sider, Header, Content, Footer } = Layout;
 const { Text } = Typography;
@@ -148,7 +145,6 @@ function LayoutInner({
   const isMobile = !screens.lg;
   const { token } = theme.useToken();
   const { locations, selectedLocationId, setSelectedLocationId, organizations, selectedOrgId, setSelectedOrgId, loading: locLoading } = useLocation();
-  const { isConnected } = useSocket();
 
   useEffect(() => {
     const handler = () => {
@@ -187,111 +183,6 @@ function LayoutInner({
     window.dispatchEvent(new Event("auth-change"));
     router.push("/login");
   };
-
-  // Build the profile dropdown context panel
-  const renderContextSelectors = () => {
-    return (
-      <div style={{ padding: '12px 16px', borderBottom: `1px solid ${token.colorBorderSecondary}`, minWidth: 250 }}>
-        <Space orientation="vertical" style={{ width: '100%' }}>
-          {isPlatformAdmin && organizations.length > 0 && (
-            <div>
-              <Text type="secondary" style={{ fontSize: 12 }}>Organization</Text>
-              <Select
-                size="small"
-                value={selectedOrgId}
-                onChange={(val) => setSelectedOrgId(val)}
-                style={{ width: '100%', marginTop: 4 }}
-                options={organizations.map(org => ({ label: org.name, value: org.id }))}
-              />
-            </div>
-          )}
-          
-          <div>
-            <Text type="secondary" style={{ fontSize: 12 }}>Location</Text>
-            {isManager ? (
-              <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
-                <EnvironmentOutlined style={{ color: token.colorPrimary }} />
-                <Text strong>{locations.find(l => l.id === selectedLocationId)?.name || 'Loading...'}</Text>
-              </div>
-            ) : (
-              <Select
-                size="small"
-                value={selectedLocationId}
-                onChange={(val) => setSelectedLocationId(val)}
-                style={{ width: '100%', marginTop: 4 }}
-                loading={locLoading}
-                options={locations.map(loc => ({ label: loc.name, value: loc.id }))}
-                placeholder="Select location"
-                disabled={locations.length === 0}
-              />
-            )}
-          </div>
-        </Space>
-      </div>
-    );
-  };
-
-  const profileMenu: MenuProps['items'] = [
-    // Signed-in identity — moved here from the navbar.
-    ...(email
-      ? [
-          {
-            key: 'signed-in-as',
-            label: (
-              <div style={{ padding: '4px 4px 8px' }}>
-                <Text type="secondary" style={{ fontSize: 12 }}>Signed in as</Text>
-                <div>
-                  <Text strong ellipsis style={{ maxWidth: 220, display: 'block' }}>{email}</Text>
-                </div>
-              </div>
-            ),
-            disabled: true,
-            style: { cursor: 'default' },
-          },
-          { type: 'divider' as const },
-        ]
-      : []),
-    // On desktop the tenant switcher lives in the header (E1); keep the compact version in the
-    // profile dropdown only on mobile where header space is tight.
-    ...(isMobile
-      ? [
-          {
-            key: 'context-selectors',
-            label: renderContextSelectors(),
-            disabled: true,
-            style: { cursor: 'default', padding: 0 },
-          },
-        ]
-      : []),
-    {
-      key: 'profile',
-      label: 'My Profile',
-      icon: <UserOutlined />,
-      onClick: () => router.push('/profile'),
-    },
-    {
-      key: 'theme',
-      label: isDarkMode ? 'Light Mode' : 'Dark Mode',
-      icon: isDarkMode ? <SunOutlined /> : <MoonOutlined />,
-      onClick: toggleTheme,
-    },
-    {
-      key: 'tour',
-      label: 'Take a tour',
-      icon: <CompassOutlined />,
-      onClick: () => window.dispatchEvent(new Event('start-onboarding')),
-    },
-    {
-      type: 'divider',
-    },
-    {
-      key: 'logout',
-      label: 'Logout',
-      icon: <LogoutOutlined />,
-      danger: true,
-      onClick: handleLogout,
-    },
-  ];
 
   return (
     <Layout style={{ minHeight: "100vh", background: token.colorBgLayout }}>
@@ -361,62 +252,14 @@ function LayoutInner({
               </Tooltip>
             ) : null}
           </div>
-
-          <Space size={12}>
-            {/* E1: Tenant context switcher, surfaced in the header (right side, next to the
-                avatar) instead of buried in the profile dropdown — the primary control in a
-                multi-tenant, multi-location app. */}
-            {!isMobile && (
-              <Space size={8}>
-                {isPlatformAdmin && organizations.length > 0 && (
-                  <Select
-                    size="middle"
-                    value={selectedOrgId}
-                    onChange={(val) => setSelectedOrgId(val)}
-                    style={{ minWidth: 180 }}
-                    variant="filled"
-                    prefix={<BankOutlined style={{ color: token.colorTextTertiary }} />}
-                    options={organizations.map((org) => ({ label: org.name, value: org.id }))}
-                    placeholder="Organization"
-                  />
-                )}
-                {isManager ? (
-                  <Space size={6} style={{ paddingInline: 8 }}>
-                    <EnvironmentOutlined style={{ color: token.colorPrimary }} />
-                    <Text strong>
-                      {locations.find((l) => l.id === selectedLocationId)?.name || "—"}
-                    </Text>
-                  </Space>
-                ) : (
-                  <Select
-                    size="middle"
-                    value={selectedLocationId}
-                    onChange={(val) => setSelectedLocationId(val)}
-                    style={{ minWidth: 200 }}
-                    variant="filled"
-                    loading={locLoading}
-                    prefix={<EnvironmentOutlined style={{ color: token.colorTextTertiary }} />}
-                    options={locations.map((loc) => ({ label: loc.name, value: loc.id }))}
-                    placeholder="Select location"
-                    disabled={locations.length === 0}
-                  />
-                )}
-              </Space>
-            )}
-
-            <NotificationsBell />
-
-            {/* Profile dropdown — avatar only (email removed from the navbar). */}
-            <Dropdown menu={{ items: profileMenu }} trigger={['click']} placement="bottomRight">
-              <a
-                onClick={(e) => e.preventDefault()}
-                aria-label="Account menu"
-                style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', padding: '0 4px' }}
-              >
-                <Avatar icon={<UserOutlined />} style={{ backgroundColor: token.colorPrimary }} />
-              </a>
-            </Dropdown>
-          </Space>
+          <HeaderActions
+            isMobile={isMobile}
+            isDarkMode={isDarkMode}
+            toggleTheme={toggleTheme}
+            email={email}
+            role={role}
+            onMenuOpen={() => setDrawerOpen(true)}
+          />
         </Header>
 
         <Content style={{ margin: 0, padding: 0, transition: "background 0.3s" }}>

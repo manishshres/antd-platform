@@ -51,6 +51,12 @@ async function doRefresh(): Promise<string | null> {
     scheduleProactiveRefresh(data.access_token);
     return data.access_token;
   } catch {
+    // Refresh failed (expired/revoked session). Drop the now-dead access token so
+    // getAccessToken() reads null — otherwise the /login mount guard sees a stale
+    // token and bounces the user away from the login form (they can't sign back in
+    // without a manual full-page reload).
+    clearAccessToken();
+    delete api.defaults.headers.common.Authorization;
     return null;
   }
 }
@@ -69,9 +75,17 @@ function scheduleProactiveRefresh(token: string) {
   }, delayMs);
 }
 
+let isRefreshing = false;
+let refreshPromise: Promise<string | null> | null = null;
+
 // On page load, try to refresh via the HttpOnly cookie (no localStorage read).
 if (typeof window !== "undefined") {
-  doRefresh().then((token) => {
+  isRefreshing = true;
+  refreshPromise = doRefresh().finally(() => {
+    isRefreshing = false;
+    refreshPromise = null;
+  });
+  refreshPromise.then((token) => {
     if (token) scheduleProactiveRefresh(token);
   });
 }
@@ -80,14 +94,14 @@ if (typeof window !== "undefined") {
 // Request interceptor — inject JWT + proactive refresh if nearly expired
 // ---------------------------------------------------------------------------
 
-let isRefreshing = false;
-let refreshPromise: Promise<string | null> | null = null;
-
 api.interceptors.request.use(async (config) => {
   if (typeof window !== "undefined") {
     let token = getAccessToken();
 
-    if (token && isTokenExpiringSoon(token)) {
+    if (isRefreshing && refreshPromise) {
+      const newToken = await refreshPromise;
+      if (newToken) token = newToken;
+    } else if (token && isTokenExpiringSoon(token)) {
       if (!isRefreshing) {
         isRefreshing = true;
         refreshPromise = doRefresh().finally(() => {
@@ -96,7 +110,9 @@ api.interceptors.request.use(async (config) => {
         });
       }
       const newToken = await refreshPromise;
-      if (newToken) token = newToken;
+      // If the refresh failed, drop the expired token rather than sending it — it
+      // would only 401. A null token lets public requests (e.g. login) proceed clean.
+      token = newToken ?? null;
     }
 
     if (token) {

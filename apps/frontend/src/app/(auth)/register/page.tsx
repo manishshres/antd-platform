@@ -20,9 +20,9 @@ export default function RegisterPage() {
   // If already authenticated, redirect to dashboard
   useEffect(() => {
     if (getAccessToken()) {
-      router.push("/dashboard");
+      window.location.href = "/dashboard";
     }
-  }, [router]);
+  }, []);
 
   const onFinish = async (values: Record<string, string>) => {
     setLoading(true);
@@ -50,7 +50,7 @@ export default function RegisterPage() {
         // Refresh token is set as an HttpOnly cookie by the backend (H2) — do not persist it.
         onLoginSuccess(data.access_token);
         window.dispatchEvent(new Event("auth-change"));
-        router.push("/dashboard");
+        window.location.href = "/dashboard";
       } else {
         router.push("/login");
       }

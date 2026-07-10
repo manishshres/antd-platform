@@ -127,25 +127,31 @@ export default function OrdersPage() {
   const { token } = theme.useToken();
 
   const exportCsv = () => {
-    const headers = ["Order ID", "Customer", "Phone", "Status", "Total", "Created"];
-    const rows = orders.map((o) => [
-      o.id,
-      o.customerName,
-      formatPhone(o.customerPhone),
-      STATUS_LABEL[o.status] || o.status,
-      formatPrice(o.totalAmount),
-      o.createdAt ? new Date(o.createdAt).toLocaleString() : "",
-    ]);
-    const csv = [headers, ...rows]
-      .map((row) => row.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(","))
-      .join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
+    if (!selectedLocationId) return;
+    const params = new URLSearchParams({ locationId: selectedLocationId });
+    if (debouncedQ) params.set("q", debouncedQ);
+    if (statusFilter) params.set("status", statusFilter);
+    if (dateRange?.[0]) params.set("dateFrom", dateRange[0]);
+    if (dateRange?.[1]) params.set("dateTo", dateRange[1]);
+    const token = getAccessToken();
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL || "/api/v1";
+    const url = `${baseUrl}/orders/export/csv?${params.toString()}`;
+    // Create a hidden anchor to trigger download with Bearer auth
     const a = document.createElement("a");
     a.href = url;
     a.download = `orders-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    // For bearer auth, we use a fetch-based download
+    fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+      .then((res) => res.blob())
+      .then((blob) => {
+        const blobUrl = URL.createObjectURL(blob);
+        a.href = blobUrl;
+        a.click();
+        URL.revokeObjectURL(blobUrl);
+      })
+      .catch(() => {
+        message.error("Export failed. Please try again.");
+      });
   };
 
   const load = useCallback(() => {

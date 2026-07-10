@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { onLoginSuccess } from "@/lib/api";
 import { getAccessToken } from "@/lib/token-store";
+import { getTokenExp } from "@/lib/jwt";
 import Link from "next/link";
 
 const { Title, Text } = Typography;
@@ -18,12 +19,18 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // If already authenticated, redirect to dashboard
+  // If already authenticated with a still-valid token, skip the form. Guard against
+  // an expired token: a dead token must not redirect the user off /login (that's the
+  // bounce that left users unable to sign back in without a manual reload).
   useEffect(() => {
-    if (typeof window !== "undefined" && getAccessToken()) {
-      router.push("/dashboard");
+    if (typeof window === "undefined") return;
+    const token = getAccessToken();
+    if (!token) return;
+    const exp = getTokenExp(token);
+    if (exp && Date.now() / 1000 < exp) {
+      window.location.href = "/dashboard";
     }
-  }, [router]);
+  }, []);
 
   const onFinish = async (values: { email: string; password: string; rememberMe?: boolean }) => {
     setLoading(true);
@@ -38,7 +45,7 @@ export default function LoginPage() {
       if (data?.access_token) {
         onLoginSuccess(data.access_token);
         window.dispatchEvent(new Event("auth-change"));
-        router.push("/dashboard");
+        window.location.href = "/dashboard";
       } else {
         setError("Invalid response format from server.");
       }

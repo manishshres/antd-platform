@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, createContext, useContext, useRef } from "react";
+import { useState, createContext, useContext, useRef, useCallback } from "react";
 import { io, Socket } from "socket.io-client";
 import { getAccessToken } from "@/lib/token-store";
 
@@ -24,8 +24,8 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
   const [isConnected, setIsConnected] = useState(false);
   const socketRef = useRef<Socket | null>(null);
 
-  const connect = () => {
-    if (socketRef.current?.connected) return;
+  const connect = useCallback(() => {
+    if (socketRef.current) return;
     if (typeof window === "undefined") return;
 
     const token = getAccessToken();
@@ -51,7 +51,7 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
       socketInstance.disconnect();
       socketRef.current = null;
     };
-  };
+  }, []);
 
   return (
     <SocketContext.Provider value={{ socket, isConnected, connect }}>
