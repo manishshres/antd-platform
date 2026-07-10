@@ -1,6 +1,7 @@
 import { Controller, Get, Inject } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { Public } from '../common/decorators/public.decorator';
+import { getAppVersion } from '../common/version';
 import { DRIZZLE } from '../database/database.module';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../database/schema';
@@ -65,6 +66,7 @@ export class HealthController {
 
     const healthData = {
       status: overallHealthy ? 'UP' : 'DOWN',
+      version: getAppVersion(),
       timestamp: new Date().toISOString(),
       services: {
         database: { status: dbStatus, error: dbError },
@@ -74,6 +76,14 @@ export class HealthController {
     };
 
     return healthData;
+  }
+
+  @Public()
+  @Get('version')
+  @ApiOperation({ summary: 'Get the running API version' })
+  @ApiResponse({ status: 200, description: 'Version info' })
+  getVersion() {
+    return { version: getAppVersion() };
   }
 
   @Public()
