@@ -174,12 +174,10 @@ User submits /login form
   → Redirect to /dashboard
 
 On every route render:
-  DashboardLayout.tsx checks for token
-  → If missing → redirect to /login
-  ⚠️ This is currently the ONLY auth gate — see "Known Issue" in AGENTS.md:
-  the edge-middleware route guard (src/middleware.ts → renamed src/proxy.ts)
-  is not wired up and does nothing. Don't assume unauthenticated requests are
-  blocked before a page renders.
+  src/proxy.ts (Next.js 16 edge Proxy — the renamed middleware convention)
+  → redirects to /login when the refresh_token cookie is absent on protected paths
+  DashboardLayout.tsx provides a second, client-side gate
+  → If token missing → redirect to /login
 
 Proactive refresh (src/lib/api.ts):
   → A timer fires ~5 min before the access token's JWT `exp`
@@ -222,7 +220,7 @@ const { token } = theme.useToken();
 
 | Deprecated Prop        | New Prop                    |
 |------------------------|-----------------------------|
-| `Drawer width={500}`   | `Drawer styles={{ body: { width: 500 } }}` |
+| `Drawer width={500}`   | `Drawer styles={{ wrapper: { width: 500 } }}` |
 | `Alert message={...}`  | `Alert title={...}`         |
 | `Modal destroyOnClose` | `Modal destroyOnHidden`     |
 | `Spin tip={...}`       | `Spin description={...}`    |

@@ -31,18 +31,15 @@ Always consult these vendor documentation files before implementing UI component
 
 ---
 
-## ⚠️ Known Issue — route-guard middleware is currently dead code
+## ⚠️ Route guard — `src/proxy.ts`, NOT `middleware.ts`
 
-`src/middleware.ts` (Next.js edge middleware that redirected unauthenticated
-users away from protected paths) was renamed to `src/proxy.ts`. **Next.js only
-runs middleware from a file literally named `middleware.ts` at the project/src
-root** — `proxy.ts` is not picked up by the framework and nothing imports it,
-so edge-level route protection is currently a no-op. The only remaining gate
-is client-side (`DashboardLayout.tsx` / `LocationContext` checking for a
-token after the page has already rendered). If you're touching auth or
-routing, either restore `middleware.ts` (thin wrapper re-exporting the logic
-in `proxy.ts`) or explicitly decide client-side-only protection is
-acceptable — don't assume `proxy.ts` is doing anything today.
+In Next.js 16 the `middleware` file convention is **deprecated and renamed to
+`proxy`** (see `node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/proxy.md`).
+The edge route guard lives in `src/proxy.ts`, which exports a function named
+`proxy` plus the `config` matcher — this IS picked up and run by the framework.
+Do not create a `middleware.ts`; it triggers a deprecation warning. The guard
+redirects unauthenticated users (no `refresh_token` cookie) away from protected
+paths; `DashboardLayout.tsx` provides a second, client-side gate.
 
 ---
 
@@ -52,7 +49,7 @@ acceptable — don't assume `proxy.ts` is doing anything today.
   - This ensures automatic light/dark mode compatibility.
   - **Never** hardcode hex colors or pixel spacing values.
 - **v6 Deprecations** — always use the new API:
-  - `Drawer width` → `Drawer styles={{ body: { width: 500 } }}`
+  - `Drawer width` → `Drawer styles={{ wrapper: { width: 500 } }}` (`body` is for content padding; `wrapper` sets the panel width)
   - `Alert message` → `Alert title`
   - `Modal destroyOnClose` → `Modal destroyOnHidden`
   - `Spin tip` → `Spin description`
