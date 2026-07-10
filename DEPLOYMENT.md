@@ -3,11 +3,11 @@
 Production topology used by this guide:
 
 ```
-Browser ──► Vercel (Next.js frontend, https://app.yourdomain.com)
+Browser ──► Vercel (Next.js frontend, https://app.coneeko.com)
                │  /api/v1/* rewrite (same-origin proxy)
                ▼
             VPS (Ubuntu 24.04, 2 vCPU / 4 GB)
-               ├── Nginx (TLS, https://api.yourdomain.com → 127.0.0.1:4000)
+               ├── Nginx (TLS, https://api.coneeko.com → 127.0.0.1:4000)
                └── Docker Compose
                      ├── antd-backend   (Docker Hub image)
                      ├── postgres:16    (data in ./postgres_data)
@@ -43,7 +43,7 @@ then `docker login`.
 From the **repo root** (the Dockerfile copies the whole monorepo):
 
 ```bash
-export DOCKER_USER=yourdockerhubuser
+export DOCKER_USER=nilopanda
 export VERSION=$(node -p "require('./package.json').version")
 
 docker build -f apps/backend/Dockerfile \
@@ -132,7 +132,7 @@ without ufw. **Do not** open them.
 ### 3.1 Get the deployment files
 
 ```bash
-git clone https://github.com/YOUR_GH_USER/antd-platform.git ~/app
+git clone https://github.com/manishshres/antd-platform.git ~/app
 cd ~/app/apps/backend
 ```
 
@@ -153,8 +153,8 @@ Set every value. The critical ones:
 |---|---|
 | `NODE_ENV` | `production` |
 | `PORT` | `4000` |
-| `FRONTEND_URL` | `https://app.yourdomain.com` (CORS origin) |
-| `DOCKER_REGISTRY` | `docker.io/yourdockerhubuser` |
+| `FRONTEND_URL` | `https://app.coneeko.com` (CORS origin) |
+| `DOCKER_REGISTRY` | `docker.io/nilopanda` |
 | `BACKEND_VERSION` | the version you pushed, e.g. `0.2.0` |
 | `POSTGRES_PASSWORD` | `openssl rand -hex 24` |
 | `DATABASE_URL` | leave unset — compose builds it from the POSTGRES_* vars |
@@ -193,7 +193,7 @@ DATABASE_URL="postgres://postgres:YOUR_POSTGRES_PASSWORD@127.0.0.1:5432/antd_db"
 
 ```bash
 DATABASE_URL="postgres://postgres:YOUR_POSTGRES_PASSWORD@127.0.0.1:5432/antd_db" \
-ADMIN_EMAIL=you@yourdomain.com ADMIN_PASSWORD='a-strong-password' \
+ADMIN_EMAIL=mr.manishshrestha@gmail.com ADMIN_PASSWORD='a-strong-password' \
 npm run provision
 ```
 
@@ -215,10 +215,10 @@ curl -s http://127.0.0.1:4000/api/v1/health | head -c 300
 
 | Record | Type | Value |
 |---|---|---|
-| `api.yourdomain.com` | A | YOUR_VPS_IP |
-| `app.yourdomain.com` | CNAME | `cname.vercel-dns.com` (Vercel will tell you the exact target) |
+| `api.coneeko.com` | A | YOUR_VPS_IP |
+| `app.coneeko.com` | CNAME | `cname.vercel-dns.com` (Vercel will tell you the exact target) |
 
-Wait for propagation (`dig api.yourdomain.com` should return the VPS IP).
+Wait for propagation (`dig api.coneeko.com` should return the VPS IP).
 
 ### 4.2 Nginx reverse proxy
 
@@ -227,7 +227,7 @@ sudo apt install -y nginx
 sudo tee /etc/nginx/sites-available/api <<'EOF'
 server {
     listen 80;
-    server_name api.yourdomain.com;
+    server_name api.coneeko.com;
 
     location / {
         proxy_pass http://127.0.0.1:4000;
@@ -254,11 +254,11 @@ sudo nginx -t && sudo systemctl reload nginx
 
 ```bash
 sudo apt install -y certbot python3-certbot-nginx
-sudo certbot --nginx -d api.yourdomain.com --redirect -m you@yourdomain.com --agree-tos
+sudo certbot --nginx -d api.coneeko.com --redirect -m mr.manishshrestha@gmail.com --agree-tos
 sudo certbot renew --dry-run     # auto-renewal is installed as a systemd timer
 ```
 
-Verify: `curl -s https://api.yourdomain.com/api/v1/health/version`.
+Verify: `curl -s https://api.coneeko.com/api/v1/health/version`.
 
 ---
 
@@ -271,15 +271,15 @@ Verify: `curl -s https://api.yourdomain.com/api/v1/health/version`.
    | Variable | Value | Why |
    |---|---|---|
    | `NEXT_PUBLIC_API_URL` | *(empty string)* | keeps all API calls same-origin so the HttpOnly refresh cookie works |
-   | `BACKEND_INTERNAL_URL` | `https://api.yourdomain.com` | target of the `/api/v1/*` rewrite proxy |
+   | `BACKEND_INTERNAL_URL` | `https://api.coneeko.com` | target of the `/api/v1/*` rewrite proxy |
 
    Both are consumed at **build time** — changing them requires a redeploy.
-3. Deploy, then add the custom domain `app.yourdomain.com` under
+3. Deploy, then add the custom domain `app.coneeko.com` under
    Settings → Domains (this is where Vercel gives you the CNAME for 4.1).
-4. Set `FRONTEND_URL=https://app.yourdomain.com` in the VPS `.env` (CORS) and
+4. Set `FRONTEND_URL=https://app.coneeko.com` in the VPS `.env` (CORS) and
    `docker compose up -d` to apply — if you hadn't already in 3.2.
 
-The browser only ever talks to `app.yourdomain.com`; Vercel's rewrite proxies
+The browser only ever talks to `app.coneeko.com`; Vercel's rewrite proxies
 `/api/v1/*` to the VPS. The refresh cookie stays first-party, so login,
 silent refresh, and the route guard all work unchanged.
 
@@ -289,14 +289,14 @@ silent refresh, and the route guard all work unchanged.
 
 ```bash
 # API up, correct version, all services healthy
-curl -s https://api.yourdomain.com/api/v1/health | jq
+curl -s https://api.coneeko.com/api/v1/health | jq
 
 # Containers healthy and restarting policy set
 docker compose ps
 docker inspect -f '{{.HostConfig.RestartPolicy.Name}}' antd-backend
 ```
 
-Then in a browser: log in at `https://app.yourdomain.com` with the admin from
+Then in a browser: log in at `https://app.coneeko.com` with the admin from
 3.5, open the POS, place a test order, check Sales Reports, and (if a printer
 is configured on MQTT port 51883) print a receipt. Footer shows the version.
 
@@ -318,7 +318,7 @@ sed -i 's/^BACKEND_VERSION=.*/BACKEND_VERSION=NEW_VERSION/' .env
 docker compose pull backend
 DATABASE_URL="postgres://postgres:PASS@127.0.0.1:5432/antd_db" npm run db:migrate   # if the release has new migrations
 docker compose up -d backend              # recreates only the backend container
-curl -s https://api.yourdomain.com/api/v1/health/version   # confirm new version
+curl -s https://api.coneeko.com/api/v1/health/version   # confirm new version
 ```
 
 **Rollback**: set `BACKEND_VERSION` back to the previous tag and
@@ -373,7 +373,7 @@ sudo tail -f /var/log/nginx/error.log
 | High memory | `docker stats`; Postgres is capped at 2 GB by compose — lower `shared_buffers` via `POSTGRES_INITDB_ARGS` if needed |
 
 External uptime check: point UptimeRobot/BetterStack (free tier) at
-`https://api.yourdomain.com/api/v1/health` — it returns `DOWN` status text if
+`https://api.coneeko.com/api/v1/health` — it returns `DOWN` status text if
 Postgres/Redis/MQTT are unhealthy, and Sentry (already wired via `SENTRY_DSN`)
 captures backend exceptions.
 
