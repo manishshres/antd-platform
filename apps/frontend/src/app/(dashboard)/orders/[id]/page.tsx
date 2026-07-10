@@ -200,7 +200,7 @@ export default function OrderDetailsPage() {
       />
 
       <Card variant="borderless" style={{ maxWidth: 800 }}>
-        <Space direction="vertical" size="large" style={{ width: "100%" }}>
+        <Space orientation="vertical" size="large" style={{ width: "100%" }}>
           <Descriptions column={1} size="small" bordered>
             <Descriptions.Item label="Order ID">
               <Text copyable style={{ fontSize: 12 }}>

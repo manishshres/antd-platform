@@ -43,7 +43,6 @@ import {
 } from "@ant-design/icons";
 import { api } from "@/lib/api";
 import { useLocation } from "@/contexts/LocationContext";
-import PageHeader from "@/components/PageHeader";
 import { EmptyState, ErrorState } from "@/components/PageStates";
 import TransactionDrawer from "@/components/TransactionDrawer";
 import TransactionsListDrawer, {
@@ -1055,47 +1054,53 @@ function PosRegister() {
 
   return (
     <div>
-      <PageHeader
-        title="POS Register"
-        subtitle={
-          editingOrder
-            ? `Editing order ${orderLabel(editingOrder)}`
-            : "Ring up in-store orders"
-        }
-        actions={
-          <Radio.Group
-            value={viewMode}
-            onChange={(e) => setViewMode(e.target.value as "menu" | "floor_plan")}
-            buttonStyle="solid"
-            aria-label="Register view"
-          >
-            <Radio.Button value="menu">Menu</Radio.Button>
-            <Radio.Button value="floor_plan">Floor Plan</Radio.Button>
-          </Radio.Group>
-        }
-      />
-
-      {editingOrder && (
-        <Alert
-          type="info"
-          showIcon
-          title={`Editing order ${orderLabel(editingOrder)}${
-            editingOrder.source === "ai_phone" ? " — placed by AI phone agent" : ""
-          }. It is unpaid; adjust items, then Save or take payment.`}
-          action={
-            <Button
-              size="small"
-              onClick={() => {
-                resetRegister();
-                router.replace("/pos");
-              }}
-            >
-              Cancel edit
-            </Button>
-          }
-          style={{ marginBottom: token.marginSM }}
-        />
-      )}
+      {/* Compact register toolbar — a full PageHeader wastes vertical space the
+          item grid needs on an iPad. Editing state lives here too. */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: token.marginSM,
+          marginBottom: token.marginSM,
+          minHeight: 40,
+        }}
+      >
+        <Title level={4} style={{ margin: 0, whiteSpace: "nowrap" }}>
+          Register
+        </Title>
+        <Radio.Group
+          value={viewMode}
+          onChange={(e) => setViewMode(e.target.value as "menu" | "floor_plan")}
+          buttonStyle="solid"
+          size="large"
+          aria-label="Register view"
+        >
+          <Radio.Button value="menu">Menu</Radio.Button>
+          <Radio.Button value="floor_plan">Floor Plan</Radio.Button>
+        </Radio.Group>
+        <div style={{ flex: 1 }} />
+        {editingOrder && (
+          <Alert
+            type="info"
+            showIcon
+            title={`Editing ${orderLabel(editingOrder)}${
+              editingOrder.source === "ai_phone" ? " (AI phone order)" : ""
+            }`}
+            action={
+              <Button
+                size="small"
+                onClick={() => {
+                  resetRegister();
+                  router.replace("/pos");
+                }}
+              >
+                Cancel edit
+              </Button>
+            }
+            style={{ padding: "4px 12px" }}
+          />
+        )}
+      </div>
 
       {/* Height, wrapping, and touch behavior live in globals.css (.pos-*) so they
           can respond to iPad/tablet breakpoints; colors stay tokenized inline. */}
@@ -1136,12 +1141,16 @@ function PosRegister() {
                     width: "100%",
                     textAlign: "left",
                     border: `1px solid ${active ? token.colorPrimary : "transparent"}`,
+                    // Left accent bar marks the active category (classic register rail)
+                    boxShadow: active
+                      ? `inset 4px 0 0 ${token.colorPrimary}`
+                      : "none",
                     cursor: "pointer",
                     borderRadius: token.borderRadius,
-                    padding: "12px 14px",
+                    padding: "14px 14px",
                     background: active ? token.colorPrimaryBg : "transparent",
                     color: active ? token.colorPrimary : token.colorText,
-                    fontWeight: active ? 600 : 500,
+                    fontWeight: 600,
                     fontSize: 15,
                     minWidth: 0,
                     overflow: "hidden",
@@ -1245,7 +1254,7 @@ function PosRegister() {
                       border: `1px solid ${token.colorBorder}`,
                       borderRadius: token.borderRadiusLG,
                       padding: token.paddingSM,
-                      minHeight: 104,
+                      minHeight: 112,
                       display: "flex",
                       flexDirection: "column",
                       justifyContent: "flex-start",
@@ -1307,7 +1316,14 @@ function PosRegister() {
                         marginTop: "auto",
                       }}
                     >
-                      <Text strong style={{ fontSize: 15, color: token.colorPrimary }}>
+                      <Text
+                        strong
+                        style={{
+                          fontSize: 16,
+                          color: token.colorPrimary,
+                          fontVariantNumeric: "tabular-nums",
+                        }}
+                      >
                         {fmtMoney(item.price)}
                       </Text>
                       {!item.isAvailable ? (
@@ -1395,17 +1411,22 @@ function PosRegister() {
             padding: token.paddingSM,
           }}
         >
+          {/* Panel header strip — bleeds to the panel edges (classic POS ticket header) */}
           <div
             style={{
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
-              marginBottom: token.marginXS,
+              margin: `-${token.paddingSM}px -${token.paddingSM}px ${token.marginXS}px`,
+              padding: `${token.paddingXS}px ${token.paddingSM}px`,
+              background: token.colorFillAlter,
+              borderBottom: `1px solid ${token.colorBorder}`,
+              borderRadius: `${token.borderRadiusLG}px ${token.borderRadiusLG}px 0 0`,
             }}
           >
             <Space>
               <ShoppingCartOutlined style={{ color: token.colorPrimary }} />
-              <Text strong>
+              <Text strong style={{ fontSize: 15 }}>
                 {editingOrder
                   ? `Order ${orderLabel(editingOrder)}`
                   : "New Order"}
@@ -1661,23 +1682,58 @@ function PosRegister() {
             />
           )}
 
+          {/* Receipt-style totals — every line the cashier reads back, tabular digits */}
           {cart.length > 0 && (
             <div
               style={{
+                fontVariantNumeric: "tabular-nums",
+                marginBottom: token.marginXS,
                 display: "flex",
-                justifyContent: "space-between",
-                marginBottom: 2,
+                flexDirection: "column",
+                gap: 2,
               }}
             >
-              <Text type="secondary" style={{ fontSize: 13 }}>
-                Subtotal{" "}
-                {taxRateBps > 0 &&
-                  `· Tax ${(taxRateBps / 100).toFixed(2)}%`}
-                {tipAmount > 0 && ` · Tip ${fmtMoney(tipAmount)}`}
-              </Text>
-              <Text type="secondary" style={{ fontSize: 13 }}>
-                {fmtMoney(subtotal)}
-              </Text>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <Text type="secondary" style={{ fontSize: 13 }}>Subtotal</Text>
+                <Text style={{ fontSize: 13 }}>{fmtMoney(subtotal)}</Text>
+              </div>
+              {discountAmount > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <Text style={{ fontSize: 13, color: token.colorSuccess }}>
+                    {appliedDiscount?.name ?? "Discount"}
+                  </Text>
+                  <Text style={{ fontSize: 13, color: token.colorSuccess }}>
+                    −{fmtMoney(discountAmount)}
+                  </Text>
+                </div>
+              )}
+              {taxRateBps > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <Text type="secondary" style={{ fontSize: 13 }}>
+                    Tax ({(taxRateBps / 100).toFixed(2)}%)
+                  </Text>
+                  <Text style={{ fontSize: 13 }}>{fmtMoney(taxAmount)}</Text>
+                </div>
+              )}
+              {tipAmount > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <Text type="secondary" style={{ fontSize: 13 }}>Tip</Text>
+                  <Text style={{ fontSize: 13 }}>{fmtMoney(tipAmount)}</Text>
+                </div>
+              )}
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "baseline",
+                  borderTop: `1px solid ${token.colorBorder}`,
+                  marginTop: 4,
+                  paddingTop: 6,
+                }}
+              >
+                <Text strong style={{ fontSize: 15 }}>Total</Text>
+                <Text strong style={{ fontSize: 20 }}>{fmtMoney(total)}</Text>
+              </div>
             </div>
           )}
           <Button
@@ -1701,31 +1757,29 @@ function PosRegister() {
             Charge {cart.length > 0 ? fmtMoney(total) : ""}
           </Button>
           <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-            <Tooltip title="Fire the ticket to the kitchen and park it in Open Orders">
+            <Tooltip title="Fire the kitchen ticket and park the order — pay later from Transactions">
               <Button
                 size="large"
                 icon={<SaveOutlined />}
                 disabled={cart.length === 0 || charging !== null}
                 loading={saving}
                 onClick={saveOrder}
-                aria-label="Send order to kitchen"
-                style={{ flex: 1, height: 48, boxShadow: token.boxShadowTertiary }}
+                aria-label="Hold order and send to kitchen"
+                style={{ flex: 1.2, height: 48, boxShadow: token.boxShadowTertiary }}
               >
-                Send to Kitchen
+                Hold Order
               </Button>
             </Tooltip>
-            <Tooltip title="Save this order — pay or edit it later from Transactions">
-              <Button
-                size="large"
-                disabled={cart.length === 0 || charging !== null}
-                loading={saving}
-                onClick={saveOrder}
-                aria-label="Save order for later"
-                style={{ flex: 1, height: 48, boxShadow: token.boxShadowTertiary }}
-              >
-                Save
-              </Button>
-            </Tooltip>
+            <Button
+              size="large"
+              icon={<TagOutlined />}
+              disabled={cart.length === 0}
+              onClick={() => setDiscountModalOpen(true)}
+              aria-label="Apply a discount"
+              style={{ flex: 1, height: 48, boxShadow: token.boxShadowTertiary }}
+            >
+              Discount
+            </Button>
           </div>
         </div>
       </div>
@@ -1744,6 +1798,7 @@ function PosRegister() {
         open={transactionOrderId !== null}
         onClose={() => setTransactionOrderId(null)}
         isAdmin={userRole !== "user"}
+        onChanged={loadOpenOrders}
       />
 
       {/* Tender step — total, tip, discount, then payment (Square/Toast flow) */}

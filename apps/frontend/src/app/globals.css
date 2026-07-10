@@ -26,14 +26,16 @@ body {
   align-items: stretch;
   overflow: hidden;
   min-height: 420px;
-  height: 70vh;
-  height: 70dvh; /* stays correct when the iPad Safari toolbar collapses */
+  /* Fill the viewport below the app header + register toolbar — the grid and
+     cart should own the screen like a native cashier app, not a dashboard card. */
+  height: calc(100vh - 160px);
+  height: calc(100dvh - 160px); /* stays correct when the iPad Safari toolbar collapses */
 }
 
 /* Item tiles wrap automatically; capped at 6 per row on large screens */
 .pos-item-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
 }
 @media (min-width: 1500px) {
   .pos-item-grid {
@@ -49,7 +51,7 @@ body {
 
 /* Vertical category rail: fixed narrow column left of the item grid */
 .pos-cat-rail {
-  width: clamp(190px, 18vw, 250px);
+  width: clamp(150px, 14vw, 210px);
   flex-shrink: 0;
 }
 /* Collapse the rail on phones — the grid + cart take priority */
@@ -71,6 +73,8 @@ body {
   overscroll-behavior: contain; /* no page rubber-banding through panels */
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
+  /* Neutral translucent thumb reads correctly in both light and dark themes */
+  scrollbar-color: rgba(128, 128, 128, 0.45) transparent;
 }
 .pos-register button {
   -webkit-tap-highlight-color: transparent;

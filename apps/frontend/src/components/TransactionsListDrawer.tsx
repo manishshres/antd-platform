@@ -47,6 +47,7 @@ interface Summary {
 
 type RangeKey = "today" | "yesterday" | "7days" | "date";
 type SourceKey = "ALL" | "AI_PHONE" | "POS" | "WEB";
+type TypeKey = "ALL" | "dine_in" | "pickup" | "delivery";
 
 /** An order is "open" while it is unpaid and still in an active status. */
 const isOpenOrder = (o: TxOrder) =>
@@ -71,6 +72,13 @@ const ORDER_TYPE_LABEL: Record<string, string> = {
   pickup: "Pickup",
   delivery: "Delivery",
 };
+
+const TYPE_CHIPS: { key: TypeKey; label: string }[] = [
+  { key: "ALL", label: "All" },
+  { key: "dine_in", label: "Dine-in" },
+  { key: "pickup", label: "Pickup" },
+  { key: "delivery", label: "Delivery" },
+];
 
 function computeRange(
   key: RangeKey,
@@ -115,6 +123,7 @@ export default function TransactionsListDrawer({
   const [customDate, setCustomDate] = useState<Dayjs | null>(dayjs());
   const [tab, setTab] = useState<"open" | "closed">("open");
   const [source, setSource] = useState<SourceKey>("ALL");
+  const [orderType, setOrderType] = useState<TypeKey>("ALL");
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
@@ -175,9 +184,10 @@ export default function TransactionsListDrawer({
       orders.filter((o) => {
         const tabMatch = tab === "open" ? isOpenOrder(o) : !isOpenOrder(o);
         const srcMatch = source === "ALL" || sourceKey(o.source) === source;
-        return tabMatch && srcMatch;
+        const typeMatch = orderType === "ALL" || o.orderType === orderType;
+        return tabMatch && srcMatch && typeMatch;
       }),
-    [orders, tab, source],
+    [orders, tab, source, orderType],
   );
 
   const stat = (label: string, value: string, accent?: string) => (
@@ -207,7 +217,6 @@ export default function TransactionsListDrawer({
       placement="right"
       open={open}
       onClose={onClose}
-      width={452}
       extra={
         <Button
           icon={<ReloadOutlined />}
@@ -218,7 +227,7 @@ export default function TransactionsListDrawer({
           Refresh
         </Button>
       }
-      styles={{ body: { padding: 0, display: "flex", flexDirection: "column" } }}
+      styles={{ wrapper: { width: 452 }, body: { padding: 0, display: "flex", flexDirection: "column" } }}
     >
       {/* Filters header */}
       <div
@@ -298,8 +307,24 @@ export default function TransactionsListDrawer({
           aria-label="Search transactions"
         />
 
-        {/* Source chips */}
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {/* Source chips (where the order came from) */}
+        <div
+          style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}
+          role="group"
+          aria-label="Filter by order source"
+        >
+          <Text
+            type="secondary"
+            style={{
+              fontSize: 11,
+              fontWeight: 600,
+              textTransform: "uppercase",
+              width: 52,
+              whiteSpace: "nowrap",
+            }}
+          >
+            Source
+          </Text>
           {(["ALL", "AI_PHONE", "POS", "WEB"] as SourceKey[]).map((s) => {
             const active = source === s;
             return (
@@ -312,6 +337,41 @@ export default function TransactionsListDrawer({
                 style={{ fontWeight: active ? 600 : 500 }}
               >
                 {SOURCE_TAG[s].label}
+              </Button>
+            );
+          })}
+        </div>
+
+        {/* Order-type chips (how the order is fulfilled) */}
+        <div
+          style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}
+          role="group"
+          aria-label="Filter by order type"
+        >
+          <Text
+            type="secondary"
+            style={{
+              fontSize: 11,
+              fontWeight: 600,
+              textTransform: "uppercase",
+              width: 52,
+              whiteSpace: "nowrap",
+            }}
+          >
+            Type
+          </Text>
+          {TYPE_CHIPS.map(({ key, label }) => {
+            const active = orderType === key;
+            return (
+              <Button
+                key={key}
+                size="small"
+                type={active ? "primary" : "text"}
+                onClick={() => setOrderType(key)}
+                aria-pressed={active}
+                style={{ fontWeight: active ? 600 : 500 }}
+              >
+                {label}
               </Button>
             );
           })}

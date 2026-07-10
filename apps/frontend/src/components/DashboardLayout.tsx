@@ -137,8 +137,13 @@ function LayoutInner({
   toggleTheme: () => void;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
+  // The POS register is a kiosk surface: its panels are the cards, so the
+  // dashboard's outer content card would just double-wrap it and eat width.
+  const isKiosk = pathname?.startsWith("/pos") ?? false;
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [siderCollapsed, setSiderCollapsed] = useState(false);
+  // Kiosk pages start with the sidebar collapsed — the register needs the width.
+  const [siderCollapsed, setSiderCollapsed] = useState(isKiosk);
   const [role, setRole] = useState<string>("user");
   const [email, setEmail] = useState<string>("");
   const screens = Grid.useBreakpoint();
@@ -264,21 +269,31 @@ function LayoutInner({
 
         <Content style={{ margin: 0, padding: 0, transition: "background 0.3s" }}>
           <div
-            style={{
-              margin: `16px ${token.margin}px`,
-              padding: token.paddingLG,
-              background: token.colorBgContainer,
-              borderRadius: token.borderRadiusLG,
-              border: `1px solid ${token.colorBorderSecondary}`,
-              minHeight: "calc(100vh - 130px)",
-              transition: "background 0.3s, border-color 0.3s",
-            }}
+            style={
+              isKiosk
+                ? {
+                    // Kiosk pages (POS register) go edge-to-edge: no card, just
+                    // a slim gutter so the register panels own the screen.
+                    margin: `12px ${token.marginSM}px`,
+                    minHeight: "calc(100vh - 130px)",
+                  }
+                : {
+                    margin: `16px ${token.margin}px`,
+                    padding: token.paddingLG,
+                    background: token.colorBgContainer,
+                    borderRadius: token.borderRadiusLG,
+                    border: `1px solid ${token.colorBorderSecondary}`,
+                    minHeight: "calc(100vh - 130px)",
+                    transition: "background 0.3s, border-color 0.3s",
+                  }
+            }
           >
             {children}
           </div>
         </Content>
         <Footer style={{ textAlign: "center", background: "transparent", padding: "0 0 24px 0", color: token.colorTextDescription }}>
           Copyright © {new Date().getFullYear()} <a href="https://coneeko.com" target="_blank" rel="noopener noreferrer" style={{ color: "inherit", textDecoration: "underline" }}>Coneeko</a>. All rights reserved.
+          {process.env.NEXT_PUBLIC_APP_VERSION ? ` · v${process.env.NEXT_PUBLIC_APP_VERSION}` : null}
         </Footer>
       </Layout>
     </Layout>
@@ -290,22 +305,26 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const [isDarkMode, setIsDarkMode] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('theme');
-      if (stored) return stored === 'dark';
-      return window.matchMedia('(prefers-color-scheme: dark)').matches;
-    }
-    return false;
-  });
+  // Must start with a value the server can also compute (false = light), otherwise the
+  // first client render disagrees with the SSR HTML and React reports a hydration
+  // mismatch. The real preference is read from localStorage/matchMedia after mount.
+  const [isDarkMode, setIsDarkMode] = useState(false);
   const [initialized, setInitialized] = useState(false);
 
   // Mount flag: render the shell only after hydration (avoids a theme/localStorage
-  // mismatch flash). Route protection lives in middleware.ts + the api 401 handler —
+  // mismatch flash). Route protection lives in src/proxy.ts + the api 401 handler —
   // the old localStorage token check here caused a redirect loop with a stale
   // HttpOnly refresh cookie (spinner forever while /login bounced back).
   useEffect(() => {
+    // Microtask defer keeps the linter's cascading-render rule happy and
+    // matches the old init pattern; the visual result is identical.
     Promise.resolve().then(() => {
+      const stored = localStorage.getItem('theme');
+      setIsDarkMode(
+        stored
+          ? stored === 'dark'
+          : window.matchMedia('(prefers-color-scheme: dark)').matches,
+      );
       setInitialized(true);
     });
   }, []);
