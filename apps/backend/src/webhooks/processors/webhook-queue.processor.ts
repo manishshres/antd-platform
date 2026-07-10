@@ -98,7 +98,7 @@ export class WebhookQueueProcessor extends WorkerHost {
 
       if (!menuItemId && item.name) {
         // Resolve by name (case-insensitive) under organization
-        const dbItems = await this.db
+        let dbItems = await this.db
           .select({ id: schema.menuItems.id })
           .from(schema.menuItems)
           .innerJoin(
@@ -112,6 +112,24 @@ export class WebhookQueueProcessor extends WorkerHost {
             ),
           )
           .limit(1);
+
+        // Fallback: prefix match to handle names with trailing tags like "(Spicy)" or "(Vegan)"
+        if (dbItems.length === 0) {
+          dbItems = await this.db
+            .select({ id: schema.menuItems.id })
+            .from(schema.menuItems)
+            .innerJoin(
+              schema.categories,
+              eq(schema.menuItems.categoryId, schema.categories.id),
+            )
+            .where(
+              and(
+                eq(schema.categories.organizationId, orgId),
+                ilike(schema.menuItems.name, `${item.name}%`),
+              ),
+            )
+            .limit(1);
+        }
 
         const foundItem = dbItems[0];
         if (!foundItem) {
