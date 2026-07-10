@@ -14,7 +14,7 @@ export class SeedService implements OnApplicationBootstrap {
   private readonly logger = new Logger(SeedService.name);
 
   constructor(
-    @Inject(DRIZZLE)
+    @Inject('DRIZZLE')
     private readonly db: NodePgDatabase<typeof schema>,
     private readonly configService: ConfigService,
   ) {}

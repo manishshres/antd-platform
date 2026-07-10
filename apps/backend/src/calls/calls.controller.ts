@@ -26,6 +26,7 @@ import {
 } from '../common/decorators/current-user.decorator';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { PaginatedResponseDto } from '../common/dto/paginated-response.dto';
+import { CallListQueryDto } from './dto/call-list-query.dto';
 
 @ApiTags('Calls')
 @ApiBearerAuth()
@@ -44,10 +45,9 @@ export class CallsController {
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   async listCalls(
     @CurrentUser() user: CurrentUserPayload,
-    @Query() pagination: PaginationDto,
-    @Query('search') search?: string,
+    @Query() query: CallListQueryDto,
   ): Promise<PaginatedResponseDto<unknown>> {
-    return this.callsService.listCalls(user, pagination, search);
+    return this.callsService.listCalls(user, query, query.search);
   }
 
   @Get('export')

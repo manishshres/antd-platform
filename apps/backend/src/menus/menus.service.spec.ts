@@ -254,7 +254,7 @@ describe('MenusService', () => {
       dbMock.insert.mockReturnValueOnce(qbInsert);
 
       const result = await service.createMenuItem(
-        'user-1',
+        { id: 'user-id', email: 'test@example.com', role: 'admin', organizationId: 'test-org-id' },
         'cat-1',
         'Burger',
         'Tasty',

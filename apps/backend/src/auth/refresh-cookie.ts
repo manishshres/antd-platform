@@ -36,8 +36,15 @@ export function setRefreshCookie(
   });
 }
 
-export function clearRefreshCookie(res: Response): void {
-  res.clearCookie(REFRESH_COOKIE_NAME, { path: REFRESH_COOKIE_PATH });
+export function clearRefreshCookie(res: Response, nodeEnv?: string): void {
+  // Pass the same security-relevant attributes used in setRefreshCookie so
+  // browsers that store the cookie with Secure=true will actually delete it.
+  res.clearCookie(REFRESH_COOKIE_NAME, {
+    path: REFRESH_COOKIE_PATH,
+    httpOnly: true,
+    secure: isProd(nodeEnv),
+    sameSite: 'lax',
+  });
 }
 
 /** Read the refresh token from the request cookie, if present. */
