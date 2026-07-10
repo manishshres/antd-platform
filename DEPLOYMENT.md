@@ -166,6 +166,23 @@ Set every value. The critical ones:
 
 Then `chmod 600 .env`.
 
+### 3.2b Create the MQTT password file
+
+`mosquitto.passwd` is **gitignored** (it holds credentials), so a fresh clone
+doesn't have it — and compose mounting a missing file makes Docker create a
+directory in its place, which crash-loops mosquitto (`Restarting (13)`).
+Create it before the first `up`:
+
+```bash
+docker run --rm -v "$PWD:/work" eclipse-mosquitto:2.1-alpine \
+  sh -c "mosquitto_passwd -c -b /work/mosquitto.passwd coneeko_printer 'STRONG_MQTT_PASSWORD' && chmod 600 /work/mosquitto.passwd"
+```
+
+Use the same credentials in `.env` (`MQTT_USERNAME` / `MQTT_PASSWORD`) and in
+every physical printer's MQTT config, and set
+`MQTT_BROKER_URL=mqtt://mosquitto:1883` — the Docker service name, **not**
+localhost. Printers on the internet connect to `YOUR_VPS_IP:51883`.
+
 ### 3.3 Pull images and start
 
 ```bash
