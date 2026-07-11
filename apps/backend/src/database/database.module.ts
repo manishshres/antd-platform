@@ -14,11 +14,15 @@ export const DRIZZLE = 'DRIZZLE';
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => {
         const connectionString = configService.get<string>('DATABASE_URL');
-        const isProduction =
-          configService.get<string>('NODE_ENV') === 'production';
 
-        const hasSsl =
-          connectionString?.includes('sslmode=require') || isProduction;
+        // SSL is decided by the connection string (managed Postgres like Neon/RDS
+        // uses ?sslmode=require), optionally overridden by DATABASE_SSL=true/false.
+        // Never force it from NODE_ENV: a self-hosted dockerized Postgres has no
+        // TLS, and forcing SSL there makes every query fail in production.
+        const sslOverride = configService.get<string>('DATABASE_SSL');
+        const hasSsl = sslOverride
+          ? sslOverride === 'true'
+          : (connectionString?.includes('sslmode=require') ?? false);
 
         const pool = new Pool({
           connectionString,

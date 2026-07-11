@@ -123,9 +123,11 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const hasSsl =
-    connectionString.includes('sslmode=require') ||
-    process.env.NODE_ENV === 'production';
+  // SSL follows the connection string (or DATABASE_SSL=true/false override) —
+  // never NODE_ENV, which breaks self-hosted Postgres without TLS.
+  const hasSsl = process.env.DATABASE_SSL
+    ? process.env.DATABASE_SSL === 'true'
+    : connectionString.includes('sslmode=require');
 
   const pool = new Pool({
     connectionString,
