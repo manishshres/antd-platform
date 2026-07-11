@@ -306,14 +306,17 @@ Verify: `curl -s https://api.coneeko.com/api/v1/health/version`.
 
 1. Import the GitHub repo in Vercel → **Root Directory: `apps/frontend`**,
    framework auto-detects Next.js.
-2. Environment variables (Production):
+2. Environment variables (Production) — set exactly **one**:
 
    | Variable | Value | Why |
    |---|---|---|
-   | `NEXT_PUBLIC_API_URL` | *(empty string)* | keeps all API calls same-origin so the HttpOnly refresh cookie works |
    | `BACKEND_INTERNAL_URL` | `https://api.coneeko.com` | target of the `/api/v1/*` rewrite proxy |
 
-   Both are consumed at **build time** — changing them requires a redeploy.
+   Do **not** create `NEXT_PUBLIC_API_URL` (Vercel rejects empty values anyway;
+   unset falls back to same-origin `/api/v1`, which keeps the HttpOnly refresh
+   cookie working). Setting it to a real URL would break auth.
+
+   Consumed at **build time** — changing it requires a redeploy.
 3. Deploy, then add the custom domain `app.coneeko.com` under
    Settings → Domains (this is where Vercel gives you the CNAME for 4.1).
 4. Set `FRONTEND_URL=https://app.coneeko.com` in the VPS `.env` (CORS) and
