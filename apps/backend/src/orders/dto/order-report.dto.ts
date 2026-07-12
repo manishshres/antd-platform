@@ -1,4 +1,10 @@
-import { IsIn, IsOptional, IsString, IsDateString } from 'class-validator';
+import {
+  IsIn,
+  IsOptional,
+  IsString,
+  IsDateString,
+  IsUUID,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 const GRANULARITIES = ['day', 'week', 'month'] as const;
@@ -27,6 +33,16 @@ export class OrderReportDto {
   @IsOptional()
   @IsIn(GRANULARITIES)
   granularity?: ReportGranularity;
+
+  // Consumed by JwtStrategy as the platform-admin tenant override before the
+  // handler runs; declared here only so forbidNonWhitelisted doesn't reject it.
+  @ApiPropertyOptional({
+    description:
+      'Platform admins only: operate within this organization. Ignored for all other roles.',
+  })
+  @IsOptional()
+  @IsUUID()
+  orgId?: string;
 }
 
 export class PrintOrderReportDto extends OrderReportDto {

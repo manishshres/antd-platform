@@ -12,9 +12,9 @@ describe('JwtStrategy', () => {
 
   describe('constructor — JWT_SECRET guard (#27)', () => {
     it('throws when JWT_SECRET is not configured', () => {
-      expect(() => new JwtStrategy(makeConfig(undefined), mockUsersService)).toThrow(
-        /JWT_SECRET is not configured/,
-      );
+      expect(
+        () => new JwtStrategy(makeConfig(undefined), mockUsersService),
+      ).toThrow(/JWT_SECRET is not configured/);
     });
 
     it('throws when JWT_SECRET is an empty string', () => {

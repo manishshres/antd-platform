@@ -505,11 +505,7 @@ export class PrinterService {
       dateStyle: 'short',
       timeStyle: 'short',
     }).format(new Date());
-    builder
-      .align('center')
-      .line(`Printed ${printedAt}`)
-      .feed(4)
-      .cut();
+    builder.align('center').line(`Printed ${printedAt}`).feed(4).cut();
 
     return builder.build();
   }

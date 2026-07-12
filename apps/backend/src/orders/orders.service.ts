@@ -329,14 +329,19 @@ export class OrdersService {
             ),
         })
         .from(schema.orderItems)
-        .innerJoin(schema.orders, eq(schema.orderItems.orderId, schema.orders.id))
+        .innerJoin(
+          schema.orders,
+          eq(schema.orderItems.orderId, schema.orders.id),
+        )
         .innerJoin(
           schema.menuItems,
           eq(schema.orderItems.menuItemId, schema.menuItems.id),
         )
         .where(and(scope, sql`${isSale}`))
         .groupBy(schema.orderItems.menuItemId, schema.menuItems.name)
-        .orderBy(sql`sum(${schema.orderItems.price} * ${schema.orderItems.quantity}) desc`)
+        .orderBy(
+          sql`sum(${schema.orderItems.price} * ${schema.orderItems.quantity}) desc`,
+        )
         .limit(10),
     ]);
 
@@ -357,7 +362,8 @@ export class OrdersService {
       totals: {
         ...totals,
         netSales: totals.sales - totals.refunds,
-        avgOrder: totals.orders > 0 ? Math.round(totals.sales / totals.orders) : 0,
+        avgOrder:
+          totals.orders > 0 ? Math.round(totals.sales / totals.orders) : 0,
       },
       series,
       byType,

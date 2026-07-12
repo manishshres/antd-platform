@@ -1,6 +1,13 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type, Transform } from 'class-transformer';
-import { IsInt, Min, Max, IsOptional, IsBoolean } from 'class-validator';
+import {
+  IsInt,
+  Min,
+  Max,
+  IsOptional,
+  IsBoolean,
+  IsUUID,
+} from 'class-validator';
 
 export class PaginationDto {
   @ApiPropertyOptional({
@@ -40,4 +47,15 @@ export class PaginationDto {
   @IsOptional()
   @Type(() => String)
   locationId?: string;
+
+  // Consumed by JwtStrategy as the platform-admin tenant override before the
+  // handler runs; declared here only so forbidNonWhitelisted doesn't reject it.
+  // Handlers must keep using user.organizationId, never this field.
+  @ApiPropertyOptional({
+    description:
+      'Platform admins only: operate within this organization. Ignored for all other roles.',
+  })
+  @IsOptional()
+  @IsUUID()
+  orgId?: string;
 }
