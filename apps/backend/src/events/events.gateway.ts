@@ -81,7 +81,15 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   emitToOrganization(orgId: string, eventName: string, data: unknown) {
-    this.server.to(`org_${orgId}`).emit(eventName, data);
+    // Fire-and-forget notification — must never throw into the caller (an order
+    // save, a print enqueue, ...). `this.server` can be undefined if the
+    // socket.io adapter hasn't attached; SSE below is the reliable fallback.
+    try {
+      this.server?.to(`org_${orgId}`).emit(eventName, data);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`WS emit "${eventName}" failed (using SSE only): ${msg}`);
+    }
     SseController.emitToOrganization(orgId, eventName, data);
   }
 }
