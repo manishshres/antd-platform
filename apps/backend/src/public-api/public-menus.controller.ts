@@ -8,14 +8,14 @@ import {
 import { ApiKeyAuthGuard } from './guards/api-key-auth.guard';
 import { MenusService } from '../menus/menus.service';
 import { PaginationDto } from '../common/dto/pagination.dto';
-import { ThrottlerGuard, Throttle } from '@nestjs/throttler';
+import { SkipThrottle } from '@nestjs/throttler';
 import { Public } from '../common/decorators/public.decorator';
 
 @ApiTags('Public API - Menus')
 @ApiSecurity('x-api-key')
 @Public() // Authenticated by API key, not JWT (H6).
-@UseGuards(ApiKeyAuthGuard, ThrottlerGuard)
-@Throttle({ default: { limit: 60, ttl: 60000 } })
+@SkipThrottle()
+@UseGuards(ApiKeyAuthGuard)
 @Controller({ version: '2', path: 'menus' })
 export class PublicMenusController {
   constructor(private readonly menusService: MenusService) {}
