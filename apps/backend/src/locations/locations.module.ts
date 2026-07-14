@@ -8,5 +8,6 @@ import { InvitationsModule } from '../invitations/invitations.module';
   imports: [InvitationsModule],
   controllers: [LocationsController],
   providers: [LocationsService],
+  exports: [LocationsService],
 })
 export class LocationsModule {}

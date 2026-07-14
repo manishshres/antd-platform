@@ -9,7 +9,7 @@
  *   npm run release 1.2.3      # set an explicit version
  *   npm run release -- --dry-run   (any of the above; prints, changes nothing)
  *
- * Writes the same version to the root, backend, and frontend package.json,
+ * Writes the same version to the root, backend, frontend, and pos package.json,
  * refreshes the workspace lockfile, then makes a `release: vX.Y.Z` commit
  * containing only those files, tagged `vX.Y.Z`.
  */
@@ -25,6 +25,7 @@ const PKG_PATHS = [
   'package.json',
   'apps/backend/package.json',
   'apps/frontend/package.json',
+  'apps/pos/package.json',
 ].map((p) => join(root, p));
 
 const args = process.argv.slice(2).filter((a) => a !== '--');
@@ -95,6 +96,7 @@ const files = [
   'package-lock.json',
   'apps/backend/package.json',
   'apps/frontend/package.json',
+  'apps/pos/package.json',
 ];
 execSync(`git add ${files.join(' ')}`, { cwd: root });
 execSync(`git commit -m "release: ${tag}" -- ${files.join(' ')}`, {

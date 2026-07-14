@@ -4,11 +4,13 @@ npm-workspaces monorepo for the Coneeko restaurant SaaS platform.
 
 - `apps/backend` — NestJS 11 API (see its `CLAUDE.md` / `AGENTS.md`)
 - `apps/frontend` — Next.js 16 App Router UI (see its `CLAUDE.md` / `AGENTS.md`)
+- `apps/pos` — Expo (React Native Paper) tablet POS app, offline-first via SQLite,
+  talks to the backend's public API (`/api/v2`, `x-api-key`) (see its `AGENTS.md`)
 
 ## Versioning & Releases
 
 The whole platform ships under **one version number**, kept in lockstep across
-the root, backend, and frontend `package.json` files.
+the root, backend, frontend, and pos `package.json` files.
 
 - Backend serves its version at `GET /api/v1/health` and `GET /api/v1/health/version`
   (read at runtime from `package.json` via `src/common/version.ts`).

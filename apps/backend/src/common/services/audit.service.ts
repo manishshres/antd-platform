@@ -15,6 +15,9 @@ export interface AuditLogOptions {
   userAgent?: string;
 }
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 @Injectable()
 export class AuditService {
   private readonly logger = new Logger(AuditService.name);
@@ -36,7 +39,13 @@ export class AuditService {
 
       await this.db.insert(schema.auditLogs).values({
         organizationId: options.organizationId || null,
-        userId: options.userId || null,
+        // user_id is a FK to users; synthetic actors (e.g. the API-key
+        // principal 'public-api') are recorded as system (null) so the row
+        // still lands instead of failing the whole insert.
+        userId:
+          options.userId && UUID_RE.test(options.userId)
+            ? options.userId
+            : null,
         action: options.action,
         entityType: options.entityType || null,
         entityId: options.entityId || null,

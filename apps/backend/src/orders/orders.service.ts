@@ -97,7 +97,9 @@ export class OrdersService {
       conditions.push(or(...searchConds)!);
     }
     if (dateFrom) {
-      conditions.push(gte(schema.orders.createdAt, new Date(dateFrom)));
+      const start = new Date(dateFrom);
+      start.setHours(0, 0, 0, 0);
+      conditions.push(gte(schema.orders.createdAt, start));
     }
     if (dateTo) {
       const end = new Date(dateTo);
@@ -141,7 +143,7 @@ export class OrdersService {
     const orgId = await this.billingService.getRequiredOrg(user);
 
     const start = dateFrom ? new Date(dateFrom) : new Date();
-    if (!dateFrom) start.setHours(0, 0, 0, 0);
+    start.setHours(0, 0, 0, 0);
     const end = dateTo ? new Date(dateTo) : new Date();
     end.setHours(23, 59, 59, 999);
 
@@ -206,7 +208,7 @@ export class OrdersService {
     const granularity = dto.granularity ?? 'day';
 
     const start = dto.dateFrom ? new Date(dto.dateFrom) : new Date();
-    if (!dto.dateFrom) start.setHours(0, 0, 0, 0);
+    start.setHours(0, 0, 0, 0);
     const end = dto.dateTo ? new Date(dto.dateTo) : new Date();
     end.setHours(23, 59, 59, 999);
 

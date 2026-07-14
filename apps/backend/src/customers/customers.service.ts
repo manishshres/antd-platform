@@ -13,6 +13,18 @@ export class CustomersService {
     private readonly billingService: BillingService,
   ) {}
 
+  /** Most recently updated customers, org-scoped — used by POS clients to warm their offline cache. */
+  async listRecentCustomers(user: CurrentUserPayload, limit = 50) {
+    const orgId = await this.billingService.getRequiredOrg(user);
+    const capped = Math.min(Math.max(Math.trunc(limit) || 50, 1), 200);
+    return this.db
+      .select()
+      .from(schema.customers)
+      .where(eq(schema.customers.organizationId, orgId))
+      .orderBy(desc(schema.customers.updatedAt))
+      .limit(capped);
+  }
+
   async searchCustomers(user: CurrentUserPayload, query: string) {
     const orgId = await this.billingService.getRequiredOrg(user);
     if (!query || query.trim().length < 2) return [];
