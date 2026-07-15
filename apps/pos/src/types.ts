@@ -112,6 +112,23 @@ export interface LocalOrder {
   syncedAt: string | null;
 }
 
+/** A cash-drawer shift on this device: opened with a float, closed with a count. */
+export interface DrawerSession {
+  id: string;
+  status: 'open' | 'closed';
+  openedAt: string;
+  closedAt: string | null;
+  /** Cash float counted into the drawer at open. */
+  openingAmount: number;
+  /** Snapshots taken at close; zero/null while the session is open. */
+  cashSales: number;
+  otherSales: number;
+  expectedAmount: number | null;
+  countedAmount: number | null;
+  difference: number | null;
+  remarks: string | null;
+}
+
 /** Server order row as returned by GET /api/v2/orders. */
 export interface ServerOrder {
   id: string;

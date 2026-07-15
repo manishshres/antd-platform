@@ -99,6 +99,21 @@ export function migrate(): void {
       value INTEGER NOT NULL,
       requires_manager INTEGER NOT NULL DEFAULT 0
     );
+
+    CREATE TABLE IF NOT EXISTS drawer_sessions (
+      id TEXT PRIMARY KEY NOT NULL,
+      status TEXT NOT NULL DEFAULT 'open',
+      opened_at TEXT NOT NULL,
+      closed_at TEXT,
+      opening_amount INTEGER NOT NULL,
+      cash_sales INTEGER NOT NULL DEFAULT 0,
+      other_sales INTEGER NOT NULL DEFAULT 0,
+      expected_amount INTEGER,
+      counted_amount INTEGER,
+      difference INTEGER,
+      remarks TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_drawer_status ON drawer_sessions(status);
   `);
 
   // Versioned upgrades for databases created before a column existed.

@@ -16,6 +16,7 @@ import { CustomersScreen } from './src/screens/CustomersScreen';
 import { TablesScreen } from './src/screens/TablesScreen';
 import { PaymentScreen } from './src/screens/PaymentScreen';
 import { HistoryScreen } from './src/screens/HistoryScreen';
+import { DrawerScreen } from './src/screens/DrawerScreen';
 import { ReportsScreen } from './src/screens/ReportsScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import type { ScreenName } from './src/navigation';
@@ -55,6 +56,7 @@ function PosShell() {
                 <PaymentScreen onNavigate={setScreen} onCompleted={setToast} />
               )}
               {screen === 'history' && <HistoryScreen onNavigate={setScreen} />}
+              {screen === 'drawer' && <DrawerScreen />}
               {screen === 'reports' && <ReportsScreen />}
               {screen === 'settings' && <SettingsScreen />}
             </View>
