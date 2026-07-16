@@ -5,6 +5,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  MaxLength,
   ValidateNested,
   Min,
 } from 'class-validator';
@@ -65,6 +66,17 @@ export class CreateOrderDto {
   @IsString()
   @IsOptional()
   customerPhone?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Client-generated idempotency key (unique per organization). Retrying a request ' +
+      'with the same key returns the already-created order instead of a duplicate.',
+    example: 'pos-7f3a2b1c',
+  })
+  @IsString()
+  @IsOptional()
+  @MaxLength(255)
+  clientOrderId?: string;
 
   @ApiProperty({ type: [OrderItemDto], description: 'List of order items' })
   @IsArray()

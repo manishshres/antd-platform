@@ -38,7 +38,10 @@ export class PublicOrdersController {
   constructor(private readonly ordersService: OrdersService) {}
 
   @Get('summary')
-  @ApiOperation({ summary: 'Transaction summary (open, sales, refund totals) for a location and date range' })
+  @ApiOperation({
+    summary:
+      'Transaction summary (open, sales, refund totals) for a location and date range',
+  })
   @ApiResponse({ status: 200, description: 'Order summary.' })
   @ApiResponse({ status: 401, description: 'Unauthorized. Invalid API key.' })
   async getOrderSummary(
@@ -54,7 +57,9 @@ export class PublicOrdersController {
   }
 
   @Get('reports')
-  @ApiOperation({ summary: 'Sales report with time series and breakdowns for a location' })
+  @ApiOperation({
+    summary: 'Sales report with time series and breakdowns for a location',
+  })
   @ApiResponse({ status: 200, description: 'Order report.' })
   @ApiResponse({ status: 401, description: 'Unauthorized. Invalid API key.' })
   async getOrderReport(
@@ -108,7 +113,12 @@ export class PublicOrdersController {
       orgId,
       dto.customerName || 'Walk-in',
       dto.customerPhone || '',
-      dto.items, // Temp cast if needed, will check further later
+      dto.items,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      dto.clientOrderId,
     );
 
     // Report the order's actual status — createOrderForOrg creates 'pending',

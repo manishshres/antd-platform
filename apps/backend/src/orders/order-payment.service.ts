@@ -36,8 +36,11 @@ export class OrderPaymentService {
   ) {}
 
   /** Sum of payments already recorded against an order (cents). */
-  async paidSumFor(orderId: string): Promise<number> {
-    const [row] = await this.db
+  async paidSumFor(
+    orderId: string,
+    db: Pick<NodePgDatabase<typeof schema>, 'select'> = this.db,
+  ): Promise<number> {
+    const [row] = await db
       .select({
         sum: sql<number>`coalesce(sum(${schema.payments.amount}), 0)`.mapWith(
           Number,
@@ -46,6 +49,45 @@ export class OrderPaymentService {
       .from(schema.payments)
       .where(eq(schema.payments.orderId, orderId));
     return row?.sum ?? 0;
+  }
+
+  /**
+   * Serialize concurrent payment/refund writers for one order. Must run inside
+   * the transaction that reads balances and writes payments — Postgres doesn't
+   * allow FOR UPDATE on the SUM aggregates these flows depend on, so without
+   * this two concurrent split-pays (or refunds) both read the same balance and
+   * overpay/double-refund. Namespaced (two-arg form) so it can't collide with
+   * the location lock nextTicketNumber takes.
+   */
+  private async lockOrderRow(
+    tx: Pick<NodePgDatabase<typeof schema>, 'execute'>,
+    orderId: string,
+  ): Promise<void> {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtext('order-payment'), hashtext(${orderId}))`,
+    );
+  }
+
+  /** Load an org-scoped order row inside a transaction (post-lock re-read). */
+  private async orderForUpdate(
+    tx: Pick<NodePgDatabase<typeof schema>, 'select'>,
+    orgId: string,
+    orderId: string,
+  ) {
+    const [order] = await tx
+      .select()
+      .from(schema.orders)
+      .where(
+        and(
+          eq(schema.orders.id, orderId),
+          eq(schema.orders.organizationId, orgId),
+        ),
+      )
+      .limit(1);
+    if (!order) {
+      throw new NotFoundException('Order not found.');
+    }
+    return order;
   }
 
   /**
@@ -71,44 +113,50 @@ export class OrderPaymentService {
     getFullOrder: (orgId: string, orderId: string) => Promise<FullOrder>,
   ) {
     const orgId = await this.billingService.getRequiredOrg(user);
-    const order = await getFullOrder(orgId, orderId);
-    if (order.paidAt) {
-      throw new BadRequestException('This order has already been paid.');
-    }
-    if (order.status === 'cancelled') {
-      throw new BadRequestException('Cancelled orders cannot be paid.');
-    }
+    // Fails fast (404) if the order doesn't exist or belongs to another org.
+    await getFullOrder(orgId, orderId);
 
-    const priorPaid = await this.paidSumFor(orderId);
-    const tip = Math.max(0, Math.round(dto.tipAmount ?? 0));
-    const newTotal = order.totalAmount + tip;
-    const remainingBefore = newTotal - priorPaid;
-    if (remainingBefore <= 0) {
-      throw new BadRequestException('This order has no remaining balance.');
-    }
-
-    const requested =
-      dto.amount != null ? Math.round(dto.amount) : remainingBefore;
-    if (requested <= 0) {
-      throw new BadRequestException('Payment amount must be positive.');
-    }
-    const applied = Math.min(requested, remainingBefore);
-
-    let cashReceived: number | null = null;
-    let changeGiven: number | null = null;
-    if (dto.method === 'cash' && dto.cashReceived != null) {
-      cashReceived = Math.round(dto.cashReceived);
-      if (cashReceived < applied) {
-        throw new BadRequestException(
-          'Cash received is less than the payment amount.',
-        );
+    // Every balance read and guard runs inside the serialized section — two
+    // concurrent split-pays must not both observe the same remaining balance.
+    const outcome = await this.db.transaction(async (tx) => {
+      await this.lockOrderRow(tx, orderId);
+      const order = await this.orderForUpdate(tx, orgId, orderId);
+      if (order.paidAt) {
+        throw new BadRequestException('This order has already been paid.');
       }
-      changeGiven = cashReceived - applied;
-    }
+      if (order.status === 'cancelled') {
+        throw new BadRequestException('Cancelled orders cannot be paid.');
+      }
 
-    const coversTotal = priorPaid + applied >= newTotal;
+      const priorPaid = await this.paidSumFor(orderId, tx);
+      const tip = Math.max(0, Math.round(dto.tipAmount ?? 0));
+      const newTotal = order.totalAmount + tip;
+      const remainingBefore = newTotal - priorPaid;
+      if (remainingBefore <= 0) {
+        throw new BadRequestException('This order has no remaining balance.');
+      }
 
-    await this.db.transaction(async (tx) => {
+      const requested =
+        dto.amount != null ? Math.round(dto.amount) : remainingBefore;
+      if (requested <= 0) {
+        throw new BadRequestException('Payment amount must be positive.');
+      }
+      const applied = Math.min(requested, remainingBefore);
+
+      let cashReceived: number | null = null;
+      let changeGiven: number | null = null;
+      if (dto.method === 'cash' && dto.cashReceived != null) {
+        cashReceived = Math.round(dto.cashReceived);
+        if (cashReceived < applied) {
+          throw new BadRequestException(
+            'Cash received is less than the payment amount.',
+          );
+        }
+        changeGiven = cashReceived - applied;
+      }
+
+      const coversTotal = priorPaid + applied >= newTotal;
+
       await tx.insert(schema.payments).values({
         organizationId: orgId,
         locationId: order.locationId,
@@ -121,7 +169,8 @@ export class OrderPaymentService {
         createdBy: user.id,
       });
 
-      // Which single method (or 'split') describes the order so far?
+      // Which single method (or 'split') describes the order so far? Safe to
+      // read here: the advisory lock serializes concurrent payment writers.
       const methodRows = await tx
         .selectDistinct({ method: schema.payments.method })
         .from(schema.payments)
@@ -144,11 +193,20 @@ export class OrderPaymentService {
           updatedAt: new Date(),
         })
         .where(eq(schema.orders.id, orderId));
+
+      return {
+        applied,
+        tip,
+        cashReceived,
+        changeGiven,
+        coversTotal,
+        remaining: newTotal - priorPaid - applied,
+      };
     });
 
     const fullOrder = await getFullOrder(orgId, orderId);
 
-    if (coversTotal) {
+    if (outcome.coversTotal) {
       await this.printService.printForEvents(orgId, fullOrder, ['paid']);
     }
 
@@ -160,20 +218,20 @@ export class OrderPaymentService {
       entityId: orderId,
       newValue: {
         method: dto.method,
-        applied,
-        tipAmount: tip,
-        cashReceived,
-        changeGiven,
-        paid: coversTotal,
+        applied: outcome.applied,
+        tipAmount: outcome.tip,
+        cashReceived: outcome.cashReceived,
+        changeGiven: outcome.changeGiven,
+        paid: outcome.coversTotal,
       },
     });
     this.eventsGateway.emitToOrganization(orgId, 'order.updated', fullOrder);
 
     return {
-      applied,
-      changeGiven,
-      remaining: newTotal - priorPaid - applied,
-      paid: coversTotal,
+      applied: outcome.applied,
+      changeGiven: outcome.changeGiven,
+      remaining: outcome.remaining,
+      paid: outcome.coversTotal,
       order: fullOrder,
     };
   }
@@ -213,37 +271,32 @@ export class OrderPaymentService {
       throw new ForbiddenException('Invalid manager PIN.');
     }
 
-    // 2. Load order and its payments
-    const orderRes = await this.db
-      .select()
-      .from(schema.orders)
-      .where(
-        and(
-          eq(schema.orders.id, orderId),
-          eq(schema.orders.organizationId, orgId),
-        ),
-      )
-      .limit(1);
-
-    const order = orderRes[0];
-    if (!order) {
-      throw new NotFoundException('Order not found.');
-    }
-
-    if (order.status === 'cancelled') {
-      throw new BadRequestException('Order is already cancelled/refunded.');
-    }
-    if (!order.paidAt && !order.paymentMethod) {
-      throw new BadRequestException('Order is not paid.');
-    }
-
-    const orderPayments = await this.db
-      .select()
-      .from(schema.payments)
-      .where(eq(schema.payments.orderId, order.id));
-
-    // 3. Mark as cancelled and insert negative payments inside a transaction
+    // 2. Guards, reads and writes run in one serialized transaction so two
+    // concurrent refund requests can't both observe a refundable order and
+    // double-refund it.
     await this.db.transaction(async (tx) => {
+      await this.lockOrderRow(tx, orderId);
+      const order = await this.orderForUpdate(tx, orgId, orderId);
+
+      if (order.status === 'cancelled') {
+        throw new BadRequestException('Order is already cancelled/refunded.');
+      }
+      if (!order.paidAt && !order.paymentMethod) {
+        throw new BadRequestException('Order is not paid.');
+      }
+
+      const orderPayments = await tx
+        .select()
+        .from(schema.payments)
+        .where(eq(schema.payments.orderId, order.id));
+
+      // Net amount still refundable: positive payments minus refunds already
+      // issued (including prior partial refunds). Never flip more than this.
+      let remaining = orderPayments.reduce((acc, p) => acc + p.amount, 0);
+      if (remaining <= 0) {
+        throw new BadRequestException('Order has no refundable balance.');
+      }
+
       await tx
         .update(schema.orders)
         .set({
@@ -252,20 +305,31 @@ export class OrderPaymentService {
         })
         .where(eq(schema.orders.id, orderId));
 
+      const refundRows: (typeof schema.payments.$inferInsert)[] = [];
       for (const p of orderPayments) {
-        if (p.amount > 0) {
-          await tx.insert(schema.payments).values({
-            organizationId: p.organizationId,
-            locationId: p.locationId,
-            orderId: p.orderId,
-            method: p.method,
-            amount: -p.amount,
-            tipAmount: -p.tipAmount,
-            cashReceived: p.cashReceived ? -p.cashReceived : null,
-            changeGiven: p.changeGiven ? -p.changeGiven : null,
-            createdBy: manager.id,
-          });
+        if (p.amount <= 0 || remaining <= 0) {
+          continue;
         }
+        const amount = Math.min(p.amount, remaining);
+        remaining -= amount;
+        // Cash/tip details only mirror cleanly when the payment is refunded in
+        // full; a partially-covered payment refunds principal only.
+        const coversPayment = amount === p.amount;
+        refundRows.push({
+          organizationId: p.organizationId,
+          locationId: p.locationId,
+          orderId: p.orderId,
+          method: p.method,
+          amount: -amount,
+          tipAmount: coversPayment ? -p.tipAmount : 0,
+          cashReceived:
+            coversPayment && p.cashReceived ? -p.cashReceived : null,
+          changeGiven: coversPayment && p.changeGiven ? -p.changeGiven : null,
+          createdBy: manager.id,
+        });
+      }
+      if (refundRows.length > 0) {
+        await tx.insert(schema.payments).values(refundRows);
       }
 
       await this.auditService.log({
@@ -283,7 +347,7 @@ export class OrderPaymentService {
     });
 
     this.eventsGateway.emitToOrganization(orgId, 'order.updated', {
-      id: order.id,
+      id: orderId,
       status: 'cancelled',
     });
 
@@ -305,27 +369,27 @@ export class OrderPaymentService {
       throw new ForbiddenException('Invalid manager PIN.');
     }
 
-    const orderRes = await this.db
-      .select()
-      .from(schema.orders)
-      .where(
-        and(
-          eq(schema.orders.id, orderId),
-          eq(schema.orders.organizationId, orgId),
-        ),
-      )
-      .limit(1);
-
-    const order = orderRes[0];
-    if (!order) throw new NotFoundException('Order not found.');
-    if (order.status === 'cancelled') {
-      throw new BadRequestException('Order is cancelled.');
-    }
-    if (!order.paidAt) {
-      throw new BadRequestException('Order is not paid.');
-    }
-
     await this.db.transaction(async (tx) => {
+      // Guards and the balance read run after the lock: concurrent partial
+      // refunds (retry / double-click) must not both pass the cap check.
+      await this.lockOrderRow(tx, orderId);
+      const order = await this.orderForUpdate(tx, orgId, orderId);
+      if (order.status === 'cancelled') {
+        throw new BadRequestException('Order is cancelled.');
+      }
+      if (!order.paidAt) {
+        throw new BadRequestException('Order is not paid.');
+      }
+
+      // Cap the refund at what has actually been paid, net of any refunds
+      // already issued — cumulative refunds can never exceed payments.
+      const netPaid = await this.paidSumFor(order.id, tx);
+      if (dto.amount > netPaid) {
+        throw new BadRequestException(
+          `Refund exceeds the remaining refundable balance of $${(netPaid / 100).toFixed(2)}.`,
+        );
+      }
+
       // Create negative payment record
       await tx.insert(schema.payments).values({
         organizationId: order.organizationId,

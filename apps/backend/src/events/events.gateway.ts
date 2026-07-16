@@ -88,7 +88,9 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.server?.to(`org_${orgId}`).emit(eventName, data);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      this.logger.warn(`WS emit "${eventName}" failed (using SSE only): ${msg}`);
+      this.logger.warn(
+        `WS emit "${eventName}" failed (using SSE only): ${msg}`,
+      );
     }
     SseController.emitToOrganization(orgId, eventName, data);
   }

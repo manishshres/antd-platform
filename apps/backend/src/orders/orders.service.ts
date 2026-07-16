@@ -517,9 +517,19 @@ export class OrdersService {
     locationId?: string,
     orderType?: string,
     specialInstructions?: string,
+    clientOrderId?: string,
   ) {
     if (items.length === 0) {
       throw new BadRequestException('Order must contain at least one item.');
+    }
+
+    // Idempotent replay: a retried request with the same clientOrderId returns
+    // the order it already created instead of inserting a duplicate.
+    if (clientOrderId) {
+      const replayed = await this.findByClientOrderId(orgId, clientOrderId);
+      if (replayed) {
+        return replayed;
+      }
     }
 
     // Resolve menu items (batch query avoiding N+1), scoped to the org via their category and
@@ -590,55 +600,69 @@ export class OrdersService {
     totalAmount = subtotal + taxAmount;
 
     // Insert order and items within a transaction
-    const orderId = await this.db.transaction(async (tx) => {
-      const ticketNumber = resolvedLocationId
-        ? await this.pricingService.nextTicketNumber(tx, resolvedLocationId)
+    let orderId: string;
+    try {
+      orderId = await this.db.transaction(async (tx) => {
+        const ticketNumber = resolvedLocationId
+          ? await this.pricingService.nextTicketNumber(tx, resolvedLocationId)
+          : null;
+        const newOrders = await tx
+          .insert(schema.orders)
+          .values({
+            organizationId: orgId,
+            locationId: resolvedLocationId,
+            customerName,
+            customerPhone,
+            status: 'pending',
+            subtotal,
+            taxAmount,
+            totalAmount,
+            orderType: orderType ?? null,
+            specialInstructions: specialInstructions ?? null,
+            source: 'ai_phone',
+            ticketNumber,
+            clientOrderId: clientOrderId ?? null,
+          })
+          .returning();
+
+        const order = newOrders[0];
+        if (!order) {
+          throw new BadRequestException('Failed to create order.');
+        }
+
+        await tx.insert(schema.orderItems).values(
+          resolvedItems.map((resItem) => ({
+            orderId: order.id,
+            menuItemId: resItem.menuItemId,
+            quantity: resItem.quantity,
+            price: resItem.price,
+            // jsonb column — store the value directly (never pre-stringified), and in the
+            // same snapshot shape as POS orders ({modifier, option, priceAdjustment}) so
+            // the register, kitchen tickets, and reorder flows can all consume it. AI
+            // free-text requests carry no price adjustment.
+            modifiers: resItem.modifiers?.length
+              ? resItem.modifiers.map((name) => ({
+                  modifier: 'Request',
+                  option: name,
+                  priceAdjustment: 0,
+                }))
+              : null,
+          })),
+        );
+
+        return order.id;
+      });
+    } catch (err) {
+      // A concurrent retry can slip between the replay check and the insert;
+      // the unique constraint is the backstop — return the winner's order.
+      const replayed = clientOrderId
+        ? await this.replayOnClientOrderIdConflict(err, orgId, clientOrderId)
         : null;
-      const newOrders = await tx
-        .insert(schema.orders)
-        .values({
-          organizationId: orgId,
-          locationId: resolvedLocationId,
-          customerName,
-          customerPhone,
-          status: 'pending',
-          subtotal,
-          taxAmount,
-          totalAmount,
-          orderType: orderType ?? null,
-          specialInstructions: specialInstructions ?? null,
-          source: 'ai_phone',
-          ticketNumber,
-        })
-        .returning();
-
-      const order = newOrders[0];
-      if (!order) {
-        throw new BadRequestException('Failed to create order.');
+      if (replayed) {
+        return replayed;
       }
-
-      await tx.insert(schema.orderItems).values(
-        resolvedItems.map((resItem) => ({
-          orderId: order.id,
-          menuItemId: resItem.menuItemId,
-          quantity: resItem.quantity,
-          price: resItem.price,
-          // jsonb column — store the value directly (never pre-stringified), and in the
-          // same snapshot shape as POS orders ({modifier, option, priceAdjustment}) so
-          // the register, kitchen tickets, and reorder flows can all consume it. AI
-          // free-text requests carry no price adjustment.
-          modifiers: resItem.modifiers?.length
-            ? resItem.modifiers.map((name) => ({
-                modifier: 'Request',
-                option: name,
-                priceAdjustment: 0,
-              }))
-            : null,
-        })),
-      );
-
-      return order.id;
-    });
+      throw err;
+    }
 
     return this.dispatchOrderSideEffects(orgId, orderId, userId, {
       totalAmount,
@@ -684,19 +708,9 @@ export class OrdersService {
     }
 
     if (dto.clientOrderId) {
-      const [existing] = await this.db
-        .select({ id: schema.orders.id })
-        .from(schema.orders)
-        .where(
-          and(
-            eq(schema.orders.organizationId, orgId),
-            eq(schema.orders.clientOrderId, dto.clientOrderId),
-          ),
-        )
-        .limit(1);
-
-      if (existing) {
-        return this.getOrderByIdForOrg(orgId, existing.id);
+      const replayed = await this.findByClientOrderId(orgId, dto.clientOrderId);
+      if (replayed) {
+        return replayed;
       }
     }
 
@@ -743,56 +757,73 @@ export class OrdersService {
     const totalAmount = taxableBase + taxAmount + tipAmount;
 
     const now = new Date();
-    const orderId = await this.db.transaction(async (tx) => {
-      const ticketNumber = await this.pricingService.nextTicketNumber(
-        tx,
-        dto.locationId,
-      );
-      const [order] = await tx
-        .insert(schema.orders)
-        .values({
-          organizationId: orgId,
-          locationId: dto.locationId,
-          customerId: dto.customerId || null,
-          tableId: dto.tableId || null,
-          customerName: dto.customerName?.trim() || 'Walk-in',
-          customerPhone: dto.customerPhone?.trim() || '',
-          status: 'confirmed',
-          subtotal,
-          taxAmount,
-          tipAmount,
-          discountAmount,
-          discountName: discount?.name ?? null,
-          discountId: discount?.id ?? null,
-          totalAmount,
-          orderType: dto.orderType ?? 'dine_in',
-          specialInstructions: dto.specialInstructions ?? null,
-          source: 'pos',
-          paymentMethod: dto.paymentMethod ?? null,
-          paidAt: dto.paymentMethod ? now : null,
-          ticketNumber,
-          clientOrderId: dto.clientOrderId ?? null,
-        })
-        .returning();
+    let orderId: string;
+    try {
+      orderId = await this.db.transaction(async (tx) => {
+        const ticketNumber = await this.pricingService.nextTicketNumber(
+          tx,
+          dto.locationId,
+        );
+        const [order] = await tx
+          .insert(schema.orders)
+          .values({
+            organizationId: orgId,
+            locationId: dto.locationId,
+            customerId: dto.customerId || null,
+            tableId: dto.tableId || null,
+            customerName: dto.customerName?.trim() || 'Walk-in',
+            customerPhone: dto.customerPhone?.trim() || '',
+            status: 'confirmed',
+            subtotal,
+            taxAmount,
+            tipAmount,
+            discountAmount,
+            discountName: discount?.name ?? null,
+            discountId: discount?.id ?? null,
+            totalAmount,
+            orderType: dto.orderType ?? 'dine_in',
+            specialInstructions: dto.specialInstructions ?? null,
+            source: 'pos',
+            paymentMethod: dto.paymentMethod ?? null,
+            paidAt: dto.paymentMethod ? now : null,
+            ticketNumber,
+            clientOrderId: dto.clientOrderId ?? null,
+          })
+          .returning();
 
-      if (!order) {
-        throw new BadRequestException('Failed to create order.');
+        if (!order) {
+          throw new BadRequestException('Failed to create order.');
+        }
+
+        await tx.insert(schema.orderItems).values(
+          resolvedItems.map((item) => ({
+            orderId: order.id,
+            menuItemId: item.menuItemId,
+            quantity: item.quantity,
+            price: item.price,
+            modifiers: item.modifiers,
+            notes: item.notes,
+            course: item.course,
+          })),
+        );
+
+        return order.id;
+      });
+    } catch (err) {
+      // A concurrent retry can slip between the replay check and the insert;
+      // the unique constraint is the backstop — return the winner's order.
+      const replayed = dto.clientOrderId
+        ? await this.replayOnClientOrderIdConflict(
+            err,
+            orgId,
+            dto.clientOrderId,
+          )
+        : null;
+      if (replayed) {
+        return replayed;
       }
-
-      await tx.insert(schema.orderItems).values(
-        resolvedItems.map((item) => ({
-          orderId: order.id,
-          menuItemId: item.menuItemId,
-          quantity: item.quantity,
-          price: item.price,
-          modifiers: item.modifiers,
-          notes: item.notes,
-          course: item.course,
-        })),
-      );
-
-      return order.id;
-    });
+      throw err;
+    }
 
     return this.dispatchOrderSideEffects(orgId, orderId, user.id, {
       subtotal,
@@ -1124,6 +1155,50 @@ export class OrdersService {
     dto: AdjustOrderItemsDto,
   ) {
     return this.paymentService.adjustOrderItems(user, orderId, dto);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Idempotency (clientOrderId) helpers shared by the creation paths
+  // ---------------------------------------------------------------------------
+
+  /** The already-created order for a client key, or null if this key is new. */
+  private async findByClientOrderId(orgId: string, clientOrderId: string) {
+    const [existing] = await this.db
+      .select({ id: schema.orders.id })
+      .from(schema.orders)
+      .where(
+        and(
+          eq(schema.orders.organizationId, orgId),
+          eq(schema.orders.clientOrderId, clientOrderId),
+        ),
+      )
+      .limit(1);
+    return existing ? this.getOrderByIdForOrg(orgId, existing.id) : null;
+  }
+
+  /**
+   * When an insert lost the race on the (organizationId, clientOrderId) unique
+   * constraint, fetch and return the order the concurrent request created.
+   * Returns null for any other error so the caller rethrows.
+   */
+  private async replayOnClientOrderIdConflict(
+    err: unknown,
+    orgId: string,
+    clientOrderId: string,
+  ) {
+    const isUniqueViolation = [err, (err as { cause?: unknown })?.cause].some(
+      (e) =>
+        typeof e === 'object' &&
+        e !== null &&
+        (e as { code?: string }).code === '23505' &&
+        String((e as { constraint?: string }).constraint ?? '').includes(
+          'idx_orders_org_client_id',
+        ),
+    );
+    if (!isUniqueViolation) {
+      return null;
+    }
+    return this.findByClientOrderId(orgId, clientOrderId);
   }
 
   // ---------------------------------------------------------------------------

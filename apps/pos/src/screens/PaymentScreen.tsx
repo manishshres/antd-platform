@@ -26,6 +26,11 @@ export function PaymentScreen({ onNavigate, onCompleted }: Props) {
   const totals = cart.totals(settings.taxRateBps);
   const [method, setMethod] = useState<PaymentMethod>('cash');
   const [tendered, setTendered] = useState(''); // digits, cents
+  // P7-001: a single finger tap fires onPress once, but a double-tap on a tablet
+  // screen can fire both before the navigation below unmounts. carry out two
+  // saveOrder→syncNow runs, generating two newId() orders on the server. Guard
+  // the path with a one-shot flag.
+  const [confirming, setConfirming] = useState(false);
 
   const tenderedCents = useMemo(
     () => (tendered ? Number.parseInt(tendered, 10) : 0),
@@ -33,6 +38,7 @@ export function PaymentScreen({ onNavigate, onCompleted }: Props) {
   );
   const change = tenderedCents - totals.totalAmount;
   const canConfirm =
+    !confirming &&
     cart.lines.length > 0 &&
     (method === 'card' || tenderedCents >= totals.totalAmount);
 
@@ -63,12 +69,21 @@ export function PaymentScreen({ onNavigate, onCompleted }: Props) {
   const backspace = () => setTendered((prev) => prev.slice(0, -1));
 
   const confirmPayment = () => {
+    if (confirming) return;
+    setConfirming(true);
+
     const order = cart.buildOrder(settings.taxRateBps, {
       status: 'pending_sync',
       paymentMethod: method,
       tenderedAmount: method === 'cash' ? tenderedCents : totals.totalAmount,
       changeAmount: method === 'cash' ? Math.max(change, 0) : 0,
     });
+    // `buildOrder` calls `newId()` internally. Two concurrent invocations
+    // (e.g. a double-tap that fires both onPress before unmount) would mint
+    // two distinct client-order ids and the queue would push both. The
+    // `confirming` flag short-circuits the second tap before that happens.
+    // We intentionally do NOT reset `confirming`: the screen unmounts via
+    // onNavigate below and remounting the next sale gets a fresh state.
     ordersRepo.saveOrder(order);
     syncEngine.refreshCounts();
     cart.clear();

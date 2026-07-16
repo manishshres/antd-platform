@@ -14,17 +14,20 @@ import type {
   OrderType,
   Product,
 } from '../types';
-import { discountAmountFor, taxFor } from '../utils/money';
-import { newId } from '../utils/ids';
-import { getDiscounts } from '../db/catalogRepo';
-
-interface CartTotals {
-  subtotal: number;
-  discountAmount: number;
-  taxAmount: number;
-  totalAmount: number;
-  itemCount: number;
-}
+import {
+  addLine,
+  addLineWithOptions,
+  buildLocalOrder,
+  cartTotals,
+  customerFromOrder,
+  discountFromOrder,
+  linesFromOrder,
+  removeLineFrom,
+  setLineQuantity,
+  tableFromOrder,
+  updateLineDetails,
+  type CartTotals,
+} from './cartOps';
 
 interface CartContextValue {
   lines: CartLine[];
@@ -56,6 +59,10 @@ interface CartContextValue {
 
 const CartContext = createContext<CartContextValue | null>(null);
 
+/**
+ * Thin state wrapper around the pure transitions in `cartOps.ts` — the
+ * provider only wires React state; all cart math/mapping lives there.
+ */
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [lines, setLines] = useState<CartLine[]>([]);
   const [customer, setCustomer] = useState<Customer | null>(null);
@@ -66,59 +73,29 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [resumedOrderId, setResumedOrderId] = useState<string | null>(null);
 
   const addProduct = useCallback((product: Product) => {
-    setLines((prev) => {
-      const existing = prev.find((l) => l.product.id === product.id);
-      if (existing) {
-        return prev.map((l) =>
-          l.product.id === product.id ? { ...l, quantity: l.quantity + 1 } : l,
-        );
-      }
-      return [...prev, { product, quantity: 1 }];
-    });
+    setLines((prev) => addLine(prev, product));
   }, []);
 
   const addProductWithOptions = useCallback(
     (product: Product, quantity: number, notes?: string) => {
-      setLines((prev) => {
-        const idx = prev.findIndex((l) => l.product.id === product.id);
-        if (idx === -1) {
-          return [...prev, { product, quantity, notes }];
-        }
-        return prev.map((l, i) =>
-          i === idx
-            ? { ...l, quantity: l.quantity + quantity, notes: notes || l.notes }
-            : l,
-        );
-      });
+      setLines((prev) => addLineWithOptions(prev, product, quantity, notes));
     },
     [],
   );
 
   const setQuantity = useCallback((productId: string, quantity: number) => {
-    setLines((prev) =>
-      quantity <= 0
-        ? prev.filter((l) => l.product.id !== productId)
-        : prev.map((l) =>
-            l.product.id === productId ? { ...l, quantity } : l,
-          ),
-    );
+    setLines((prev) => setLineQuantity(prev, productId, quantity));
   }, []);
 
   const updateLine = useCallback(
     (productId: string, quantity: number, notes?: string) => {
-      setLines((prev) =>
-        quantity <= 0
-          ? prev.filter((l) => l.product.id !== productId)
-          : prev.map((l) =>
-              l.product.id === productId ? { ...l, quantity, notes } : l,
-            ),
-      );
+      setLines((prev) => updateLineDetails(prev, productId, quantity, notes));
     },
     [],
   );
 
   const removeLine = useCallback((productId: string) => {
-    setLines((prev) => prev.filter((l) => l.product.id !== productId));
+    setLines((prev) => removeLineFrom(prev, productId));
   }, []);
 
   const setTable = useCallback(
@@ -141,132 +118,28 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const loadOrder = useCallback((order: LocalOrder) => {
-    setLines(
-      order.items.map((item) => ({
-        product: {
-          id: item.menuItemId,
-          categoryId: '',
-          name: item.name,
-          description: null,
-          price: item.unitPrice,
-          imageUrl: null,
-          isAvailable: true,
-          isFavorite: false,
-          sortOrder: 0,
-        },
-        quantity: item.quantity,
-        notes: item.notes,
-      })),
-    );
-    setCustomer(
-      order.customerId || order.customerName !== 'Walk-in'
-        ? {
-            id: order.customerId ?? '',
-            name: order.customerName,
-            phone: order.customerPhone || null,
-            email: null,
-            notes: null,
-            dirty: false,
-            updatedAt: order.createdAt,
-          }
-        : null,
-    );
-    setTableState(
-      order.tableId && order.tableName
-        ? {
-            id: order.tableId,
-            floorPlanId: '',
-            floorPlanName: '',
-            name: order.tableName,
-            capacity: order.guests ?? 4,
-            shape: 'rectangle',
-            status: 'vacant',
-            activeOrderId: null,
-            activeOrderTotal: 0,
-          }
-        : null,
-    );
+    setLines(linesFromOrder(order));
+    setCustomer(customerFromOrder(order));
+    setTableState(tableFromOrder(order));
     setGuests(order.guests);
     setOrderType(order.orderType);
-    // Prefer the live cached discount (percent discounts keep scaling when the
-    // resumed cart is edited); fall back to a fixed snapshot of the amount if
-    // it disappeared from the cache while the order was held.
-    setDiscount(
-      order.discountId
-        ? (getDiscounts().find((d) => d.id === order.discountId) ?? {
-            id: order.discountId,
-            name: order.discountName ?? 'Discount',
-            code: null,
-            type: 'fixed',
-            value: order.discountAmount,
-            requiresManager: false,
-          })
-        : null,
-    );
+    setDiscount(discountFromOrder(order));
     setResumedOrderId(order.id);
   }, []);
 
   const totals = useCallback(
-    (taxRateBps: number): CartTotals => {
-      const subtotal = lines.reduce(
-        (sum, l) => sum + l.product.price * l.quantity,
-        0,
-      );
-      // Same tender math as the backend's createPosOrder: discount reduces
-      // the taxable base, tax applies to the discounted subtotal.
-      const discountAmount = discountAmountFor(discount, subtotal);
-      const taxableBase = subtotal - discountAmount;
-      const taxAmount = taxFor(taxableBase, taxRateBps);
-      return {
-        subtotal,
-        discountAmount,
-        taxAmount,
-        totalAmount: taxableBase + taxAmount,
-        itemCount: lines.reduce((sum, l) => sum + l.quantity, 0),
-      };
-    },
+    (taxRateBps: number): CartTotals => cartTotals(lines, discount, taxRateBps),
     [lines, discount],
   );
 
   const buildOrder = useCallback(
-    (taxRateBps: number, overrides?: Partial<LocalOrder>): LocalOrder => {
-      const t = totals(taxRateBps);
-      return {
-        id: resumedOrderId ?? newId(),
-        serverId: null,
-        ticketNumber: null,
-        status: 'held',
-        items: lines.map((l) => ({
-          menuItemId: l.product.id,
-          name: l.product.name,
-          unitPrice: l.product.price,
-          quantity: l.quantity,
-          notes: l.notes,
-        })),
-        customerId: customer?.id || null,
-        customerName: customer?.name || 'Walk-in',
-        customerPhone: customer?.phone || '',
-        tableId: table?.id ?? null,
-        tableName: table?.name ?? null,
-        guests,
-        orderType,
-        subtotal: t.subtotal,
-        discountId: discount?.id ?? null,
-        discountName: discount?.name ?? null,
-        discountAmount: t.discountAmount,
-        taxAmount: t.taxAmount,
-        totalAmount: t.totalAmount,
-        paymentMethod: null,
-        tenderedAmount: null,
-        changeAmount: null,
-        specialInstructions: null,
-        errorMessage: null,
-        createdAt: new Date().toISOString(),
-        syncedAt: null,
-        ...overrides,
-      };
-    },
-    [lines, customer, table, guests, orderType, discount, resumedOrderId, totals],
+    (taxRateBps: number, overrides?: Partial<LocalOrder>): LocalOrder =>
+      buildLocalOrder(
+        { lines, customer, table, guests, orderType, discount, resumedOrderId },
+        taxRateBps,
+        overrides,
+      ),
+    [lines, customer, table, guests, orderType, discount, resumedOrderId],
   );
 
   const value = useMemo(
