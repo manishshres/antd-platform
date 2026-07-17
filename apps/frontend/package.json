@@ -7,7 +7,7 @@
     "prebuild": "npm --prefix ../../packages/shared-types run build",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint",
+    "lint": "eslint --max-warnings=99",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui"
   },
