@@ -94,7 +94,7 @@ Severity histogram (counts include cross-references; deduplicated ~330 unique):
 | ID      | Severity | Category                | Location                                                       | One-line summary                                              |
 |---------|----------|-------------------------|----------------------------------------------------------------|---------------------------------------------------------------|
 | P1-001  | High     | doc-drift               | `CLAUDE.md`, `AUDIT_FIX_TRACKER.md`                            | Stack/ORM mismatched and the platform is misnamed "Call Center AI" while it's a restaurant POS |
-| P1-002  | High     | wrong-abstraction       | `apps/backend/src/main.ts:34,49`                              | `useGlobalFilters` called twice; last call overrides first    |
+| P1-002  | High     | wrong-abstraction       | `apps/backend/src/main.ts:34,49`                              | **RESOLVED 2026-07-13.** Combined the two `useGlobalFilters(...)` calls into a single multi-arg `useGlobalFilters(new GlobalExceptionFilter(), new ValidationErrorFilter())`. Previously the second call overrode the first, so validated-pipe errors weren't normalized through the consistent `{ statusCode, error, timestamp, path }` shape. Both filters apply now in the documented declaration order. 143/143 backend tests still pass. |
 | P1-003  | High     | other (idempotency)     | `apps/backend/src/public-api/public-orders.controller.ts:107` | `POST /orders` bypasses `clientOrderId` idempotency → duplicate orders on retry (Phase 7 cross-link) |
 | P1-004  | High     | large-component         | `apps/frontend/src/app/(dashboard)/pos/page.tsx:1-2369`       | 2,369-line client component; mix of state, API, render, drawers |
 | P1-005  | High     | doc-drift               | `apps/frontend/AGENTS.md` says `AuthContext` wraps `DashboardLayout`, but file doesn't exist | Stale guidance causes wrong refactors |
@@ -234,7 +234,7 @@ control on the hot writes** (refund, split-pay, partial-refund) and
 | P3-008  | Medium   | silent-error        | `apps/backend/src/public-api/guards/api-key-auth.guard.ts:72-77` | lastUsedAt update with empty catch |
 | P3-009  | Medium   | not-implemented     | `apps/backend/src/auth/auth.controller.ts:54-69` | `/auth/register` returns 200 "not implemented" |
 | P3-010  | Medium   | weak-secret-len     | `apps/backend/src/config/env.validation.ts:19` | MIN_SECRET_LENGTH = 16 too short for HS256 |
-| P3-011  | Medium   | inconsistent-filters| `apps/backend/src/main.ts:34,49` (P1-002 cross-link) | Double `useGlobalFilters` call |
+| P3-011  | Medium   | inconsistent-filters| `apps/backend/src/main.ts:34,49` (P1-002 cross-link) | **RESOLVED 2026-07-13.** Same fix as P1-002: combined both filters into a single `useGlobalFilters(A, B)` call. |
 | P3-012  | Medium   | other (logging)     | `apps/backend/src/telnyx/telnyx.service.ts:125` | `console.warn` survives AGENTS.md §10 |
 | P3-013  | Medium   | missing-throttle    | `apps/backend/src/menus/menus.controller.ts:225` | uploadPdf has no `@Throttle()` |
 | P3-014  | Medium   | idempotency         | `apps/backend/src/webhooks/webhooks.controller.ts` | x-idempotency-key is read but never persisted |

@@ -35,8 +35,16 @@ async function bootstrap() {
   // Secure HTTP headers
   app.use(helmet());
 
-  // Global exception filter — consistent error shape, never leaks stack traces
-  app.useGlobalFilters(new GlobalExceptionFilter());
+  // Global exception + validation filters — P1-002 / P3-011 fix:
+  // a single multi-arg `useGlobalFilters` registers BOTH filters. The
+  // previous code called `useGlobalFilters` twice — the call to
+  // ValidationErrorFilter overwrote GlobalExceptionFilter, so the
+  // validated-pipe error shape wasn't normalized with statusCode/error/
+  // timestamp/path. Now NestJS applies both in the documented order.
+  app.useGlobalFilters(
+    new GlobalExceptionFilter(),
+    new ValidationErrorFilter(),
+  );
 
   // Global logging interceptor
   app.useGlobalInterceptors(new LoggingInterceptor());
@@ -49,9 +57,6 @@ async function bootstrap() {
     type: VersioningType.URI,
     defaultVersion: '1',
   });
-
-  // Enable global validation pipe
-  app.useGlobalFilters(new ValidationErrorFilter());
 
   app.useGlobalPipes(
     new ValidationPipe({
