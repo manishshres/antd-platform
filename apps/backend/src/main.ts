@@ -18,6 +18,11 @@ async function bootstrap() {
   });
   app.useLogger(app.get(Logger));
 
+  // P14-002: enable graceful shutdown so SIGTERM/SIGINT let Nest drain BullMQ
+  // workers, close MQTT subscriptions, and flush DB pools before exit.
+  // Without this, in-flight print/refund/webhook jobs are abandoned mid-flight.
+  app.enableShutdownHooks();
+
   const logger = app.get(Logger);
 
   const configService = app.get(ConfigService);

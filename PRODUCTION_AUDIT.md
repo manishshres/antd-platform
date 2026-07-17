@@ -412,7 +412,7 @@ control on the hot writes** (refund, split-pay, partial-refund) and
 | P10-001 | Medium   | missing-corr-id  | logging.interceptor.ts:25-30                                   | No request-id, no user/org context |
 | P10-002 | Medium   | error-empty      | logging.interceptor.ts:27-31 tap                               | Errors don't log duration |
 | P10-003 | Medium   | silent-error     | audit.service.ts:34-60 (P1-014)                                | Audit failures invisible |
-| P10-004 | Medium   | PII              | http-exception.filter.ts:62-72 (P3-020)                         | Raw request.body to Sentry |
+| P10-004 | Medium   | PII              | `apps/backend/src/common/filters/http-exception.filter.ts:62-72` (P3-020) | **RESOLVED 2026-07-13.** New `redactSensitiveFields()` helper replaces any field whose name contains `password`, `pass`, `token`, `refresh`, `secret`, `authorization`, `apikey`, `x-api-key`, or `pin` (case-insensitive substring match) with `***` before the body is forwarded to Sentry. Nested objects / arrays walked recursively. The HTTP response shape is unchanged; only the operator-facing telemetry is redacted. |
 | P10-005 | Medium   | pino-config      | app.module.ts:65-72                                            | ✅ |
 | P10-006 | Medium   | sentry-setup     | main.ts:10                                                    | ✅ |
 | P10-007 | Medium   | health-endpoint  | health.controller.ts:35-79                                     | `/health` leaks DB errors to anonymous callers |
@@ -481,7 +481,7 @@ control on the hot writes** (refund, split-pay, partial-refund) and
 | P13-018 | Low      | clock-skew      | Offline POS clock                                              | Acceptable; document |
 | P13-019 | Low      | long-emoji-stack| Emoji layouts                                                  | Cosmetic |
 | P14-001 | High     | feature-flag-unused | organizations.featureFlags jsonb                             | Schema only; not implemented |
-| P14-002 | High     | graceful-shutdown| main.ts:14-94                                                  | No enableShutdownHooks() |
+| P14-002 | High     | graceful-shutdown| main.ts:14-94                                                  | **RESOLVED 2026-07-13.** Added `app.enableShutdownHooks()` immediately after `useLogger`. |
 | P14-003 | Medium   | readiness        | health.controller.ts                                           | `/health/version` liveness, `/health` readiness |
 | P14-004 | Medium   | backup           | DEPLOYMENT.md Part 9                                            | ✅ |
 | P14-005 | Medium   | rollback         | DEPLOYMENT.md Part 8                                            | ✅ |
@@ -917,7 +917,7 @@ What's **wrong** is two real risks concentrated in:
 | P10-001 | Medium   | missing-corr-id  | `apps/backend/src/common/interceptors/logging.interceptor.ts:25-30`  | Logs `${method} ${url} — ${duration}ms}` only — no request-id, no `req.user.id`, no `req.user.organizationId`, no response status code (tap is on success only; errors are caught by the *Filter, not by tap). Wire: read `req.headers['x-request-id']` or generate a UUID per request, attach to logger scope, echo as a response header. Cross-link P3-006 / P3-020 for Sentry + PII. |
 | P10-002 | Medium   | error-empty      | `apps/backend/src/common/interceptors/logging.interceptor.ts:27-31` `tap` fires on success only — exceptions don't log duration. Fix: use `tap({next: ..., error: ...})` for both paths, or attach a final `finally` to stream. |
 | P10-003 | Medium   | silent-error     | `apps/backend/src/common/services/audit.service.ts:34-60` `log()` already flagged (P1-014). Audit failures are 100% invisible. |
-| P10-004 | Medium   | PII              | `apps/backend/src/common/filters/http-exception.filter.ts:62-72` Sentry capture sends raw `request.body` for non-array 400s (cross-link P3-020). Redact known-sensitive keys (password, token, secret, refresh). |
+| P10-004 | Medium   | PII              | `apps/backend/src/common/filters/http-exception.filter.ts:62-72` Sentry capture sends raw `request.body` for non-array 400s. Redact known-sensitive keys (password, token, secret, refresh). | **RESOLVED 2026-07-13** (cross-link P3-020 / Row 246). |
 | P10-005 | Medium   | pino-config      | `apps/backend/src/app.module.ts:65-72` `LoggerModule.forRoot()` uses pino-pino-pretty in dev. ✅ Production has JSON only. |
 | P10-006 | Medium   | sentry-setup     | `apps/backend/src/main.ts:10` `import {SentryModule}` triggers `SentryExceptionCaptured` on global filter. ✅ |
 | P10-007 | Medium   | health-endpoint  | `apps/backend/src/health/health.controller.ts:35-79` exposes DB/Redis/MQTT status. ✅ Anonymous per `@Public()`. Should this be authenticated in production? Recommend: expose only **`/api/v1/health/version`** publicly and gate `/api/v1/health` to admins. Today both are `@Public()`, and the deep status leaks internal DB errors (`dbError: err.message`) to any anonymous caller. |
@@ -1059,6 +1059,22 @@ The remaining gaps fall into:
 | Low      | ~40  |
 | Info     | ~15  |
 | **Total**| **~184** |
+
+### Remediation progress (as of 2026-07-13, commits `3a86487` and `87f29e1`)
+
+| ID      | Severity | Title                                                   | Status |
+|---------|----------|---------------------------------------------------------|--------|
+| P2-004  | Critical | `refundPartialOrder` retry idempotency                  | **Resolved** via `IdempotencyService` (`apps/backend/src/common/services/idempotency.service.ts`), Redis-backed via `@nestjs/cache-manager`. Header `Idempotency-Key` wired through controller → service. |
+| P2-005  | High     | `adjustOrderItems` tax/discount/tip recompute            | **Resolved.** Now recomputes discount (fixed-amount snapshot re-capped at new subtotal), tax via `pricingService.getTaxRate`, preserves existing tip verbatim. Concurrent edits serialized via the existing advisory-lock helper. |
+| P3-001  | High     | `refresh_token` echoed in login JSON body                | **Resolved.** `auth.controller.login` strips `refresh_token` from the response body by default (HttpOnly cookie is the only carrier). Mobile clients can opt back via `LOGIN_REFRESH_TOKEN_IN_BODY=true`. |
+| P3-002  | Critical | PDF upload unsafe (no MIME / size / type guard)         | **Resolved.** `FileInterceptor` with `fileFilter` (PDF MIME or `application/octet-stream`), `limits.fileSize: 20 MB`, plus magic-byte `%PDF-` sniff. S3 key extension hard-coded `.pdf`; `originalname` ignored. |
+| P7-001  | Critical | POS PaymentScreen double-tap → duplicate order           | **Resolved.** `confirming` state in `PaymentScreen.tsx` short-circuits second tap. Button `disabled={!canConfirm}` chains with the flag. |
+| P14-009 | Medium   | `@nestjs/cache-manager` registered but unused           | **Status changed.** Now in use by the new `IdempotencyService`. |
+| P1-004  | High     | Frontend `/pos` page 2,369 lines                         | **Partial.** Splintered into `cart.ts` + `components/{CartPanel,MenuPanel,TenderModal,DiscountModal,FloorPlanView,ModifierPickerModal}` + `types.ts` + `layout.tsx`. The page itself is now a thin orchestrator. |
+| P1-018  | Medium   | `buildLine` Date.now() collision on rapid double-tap     | **Resolved** — WIP introduced a monotonic `lineSeq` counter in `cart.ts`. |
+| P2-001  | Critical | `recordPayment` race                                    | **Partial.** Advisory-lock helper (`lockOrderRow`) added; `paidSumFor` accepts an injected `db` so the SUM read runs inside the tx. The reading still reuses the lock — needs integration-test coverage. |
+| P2-002  | Critical | `refundPaidOrder` race                                  | **Partial.** Same lock helper now applied. |
+| P2-006  | High     | `summaryMethod` split-detection race                    | **Partial.** Lock scope covers it (tx-wrapped). |
 
 ### Critical release-blockers (must-fix before v0.3.0 production)
 
