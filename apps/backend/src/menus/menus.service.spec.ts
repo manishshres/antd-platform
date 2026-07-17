@@ -8,6 +8,17 @@ import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { getQueueToken } from '@nestjs/bullmq';
 import { TelnyxService } from '../telnyx/telnyx.service';
 import { AnalyticsService } from '../analytics/analytics.service';
+import { CurrentUserPayload } from '../common/decorators/current-user.decorator';
+
+const userPayload = (overrides: Partial<CurrentUserPayload> = {}): CurrentUserPayload => ({
+  id: 'user-1',
+  email: 'user@example.com',
+  role: 'manager',
+  organizationId: 'org-123',
+  locationId: null,
+  isPlatformAdmin: false,
+  ...overrides,
+});
 import { ConfigService } from '@nestjs/config';
 
 describe('MenusService', () => {
@@ -190,9 +201,11 @@ describe('MenusService', () => {
       };
       dbMock.insert.mockReturnValueOnce(qb);
 
-      const result = await service.createCategory('user-1', 'Desserts');
+      const result = await service.createCategory(userPayload(), 'Desserts');
 
-      expect(billingServiceMock.getRequiredOrg).toHaveBeenCalledWith('user-1');
+      expect(billingServiceMock.getRequiredOrg).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'user-1', organizationId: 'org-123' }),
+      );
       expect(dbMock.insert).toHaveBeenCalled();
       // Invalidation bumps the per-org version stamp (no cross-tenant flush / KEYS scan).
       expect(cacheManagerMock.set).toHaveBeenCalledWith(
@@ -220,7 +233,7 @@ describe('MenusService', () => {
       };
       dbMock.select.mockReturnValueOnce(selectQb);
 
-      await service.deleteCategory('user-1', 'cat-1');
+      await service.deleteCategory(userPayload(), 'cat-1');
 
       expect(dbMock.transaction).toHaveBeenCalled();
       expect(cacheManagerMock.set).toHaveBeenCalledWith(
@@ -254,12 +267,7 @@ describe('MenusService', () => {
       dbMock.insert.mockReturnValueOnce(qbInsert);
 
       const result = await service.createMenuItem(
-        {
-          id: 'user-id',
-          email: 'test@example.com',
-          role: 'admin',
-          organizationId: 'test-org-id',
-        },
+        userPayload(),
         'cat-1',
         'Burger',
         'Tasty',
@@ -283,7 +291,7 @@ describe('MenusService', () => {
       };
       dbMock.insert.mockReturnValueOnce(qbInsert);
 
-      const result = await service.createModifierGroup('user-1', 'Size');
+      const result = await service.createModifierGroup(userPayload(), 'Size');
       expect(auditServiceMock.fireAndForget).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'menu.modifier_group.create' }),
       );

@@ -10,10 +10,21 @@ import { AnalyticsService } from '../analytics/analytics.service';
 import { getQueueToken } from '@nestjs/bullmq';
 import { PrintJobsService } from '../printers/print-jobs.service';
 import { AuditService } from '../common/services/audit.service';
+import { CurrentUserPayload } from '../common/decorators/current-user.decorator';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { EventsGateway } from '../events/events.gateway';
 import { UsersService } from '../users/users.service';
+
+const userPayload = (overrides: Partial<CurrentUserPayload> = {}): CurrentUserPayload => ({
+  id: 'user-id',
+  email: 'user@example.com',
+  role: 'manager',
+  organizationId: 'org-id',
+  locationId: 'loc-1',
+  isPlatformAdmin: false,
+  ...overrides,
+});
 
 const mockEventsGateway = {
   emitToOrganization: jest.fn(),
@@ -123,14 +134,14 @@ describe('OrdersService', () => {
     it('should throw NotFoundException if order does not exist', async () => {
       mockDb.where.mockResolvedValueOnce([]); // Order not found
       await expect(
-        service.updateOrderStatus('user-id', 'order-id', 'ready'),
+        service.updateOrderStatus(userPayload(), 'order-id', 'ready'),
       ).rejects.toThrow(NotFoundException);
     });
 
     it('should throw BadRequestException on invalid transition', async () => {
       mockDb.where.mockResolvedValueOnce([{ status: 'completed' }]); // Current status is completed
       await expect(
-        service.updateOrderStatus('user-id', 'order-id', 'pending'),
+        service.updateOrderStatus(userPayload(), 'order-id', 'pending'),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -140,7 +151,7 @@ describe('OrdersService', () => {
       // We stub getOrderById for the return call
       jest.spyOn(service, 'getOrderById').mockResolvedValueOnce({} as any);
 
-      await service.updateOrderStatus('user-id', 'order-id', 'preparing');
+      await service.updateOrderStatus(userPayload(), 'order-id', 'preparing');
 
       expect(mockDb.update).toHaveBeenCalled();
       expect(mockAuditService.fireAndForget).toHaveBeenCalled();
