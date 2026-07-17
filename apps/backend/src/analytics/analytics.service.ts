@@ -230,9 +230,15 @@ export class AnalyticsService {
       .groupBy(sql`1`);
 
     // Group by date, generating the last 7 days safely in postgres
-    const datesRes = await this.db.execute(
+    interface DateBucket {
+      date_str: string;
+      date_label: string;
+    }
+    const datesRes = (await this.db.execute(
       sql`SELECT to_char(date_trunc('day', now() AT TIME ZONE ${tz}) - (i || ' days')::interval, 'YYYY-MM-DD') as date_str, to_char(date_trunc('day', now() AT TIME ZONE ${tz}) - (i || ' days')::interval, 'Dy') as date_label FROM generate_series(6, 0, -1) i`,
-    );
+    )) as
+      | { rows: Array<{ date_str: string; date_label: string }> }
+      | { rows: DateBucket[] };
 
     const trendMap = new Map<
       string,
@@ -240,8 +246,8 @@ export class AnalyticsService {
     >();
 
     for (const row of datesRes.rows) {
-      trendMap.set(row.date_str as string, {
-        date: row.date_label as string,
+      trendMap.set(row.date_str, {
+        date: row.date_label,
         orders: 0,
         calls: 0,
       });

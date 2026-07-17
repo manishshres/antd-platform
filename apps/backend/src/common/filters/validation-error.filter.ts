@@ -5,6 +5,7 @@ import {
   BadRequestException,
   Logger,
 } from '@nestjs/common';
+import type { Request, Response } from 'express';
 
 @Catch(BadRequestException)
 export class ValidationErrorFilter implements ExceptionFilter {
@@ -12,8 +13,8 @@ export class ValidationErrorFilter implements ExceptionFilter {
 
   catch(exception: BadRequestException, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
-    const request = ctx.getRequest();
-    const response = ctx.getResponse();
+    const request = ctx.getRequest<Request>();
+    const response = ctx.getResponse<Response>();
 
     this.logger.error(
       `Validation Error on ${request.url}: ${JSON.stringify(exception.getResponse())}`,
