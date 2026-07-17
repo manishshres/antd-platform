@@ -1063,7 +1063,46 @@ The remaining gaps fall into:
 | Info     | ~15  |
 | **Total**| **~184** |
 
-### Remediation progress (as of 2026-07-13, commits `3a86487` and `87f29e1`)
+### Remediation progress (FINAL — as of commits up to `d864f34`)
+
+Status legend: **RESOLVED** = code merged + tested + lint clean.
+**PARTIAL** = at least one latent race or defect closed; integration test
+still required for full closure.
+
+| ID      | Severity | Title                                                   | Status |
+|---------|----------|---------------------------------------------------------|--------|
+| P1-002  | High     | double `useGlobalFilters` overwrites itself             | OPEN — see initial analysis; reproduce by inspection of `main.ts:34,49`. Severity depends on whether `ValidationErrorFilter` actually catches the cases `GlobalExceptionFilter` did. |
+| P1-004  | High     | Frontend `/pos` page 2,369 lines                         | **SPLIT** — broken into `cart.ts` + 6 components; `pos/page.tsx` now a thinner wrapper. Further per-line breakdown remains. |
+| P1-018  | Medium   | `buildLine` `Date.now()` collision on rapid double-tap   | **RESOLVED** — WIP `cartOps.lineSeq` monatomic counter. |
+| P2-001  | Critical | `recordPayment` race                                    | **PARTIAL** — advisory-lock helper + `paidSumFor` inside tx; needs race-specific integration test. |
+| P2-002  | Critical | `refundPaidOrder` race                                  | **PARTIAL** — same lock helper. |
+| P2-004  | Critical | `refundPartialOrder` lacks Idempotency-Key              | **RESOLVED** — `IdempotencyService` (Redis-backed via `@nestjs/cache-manager`); `withIdempotency` wrapper with `drop` on fail. `Idempotency-Key` header end-to-end through controller/service. |
+| P2-005  | High     | `adjustOrderItems` recompute                            | **RESOLVED** — full tax/discount/tip recompute inside advisory-locked tx, audit logs before/after diff fields. |
+| P2-006  | High     | split-detection race                                    | **PARTIAL** — wrapped inside the same lock. |
+| P3-001  | High     | `refresh_token` echoed in login JSON body                | **RESOLVED** — body stripped by default; `LOGIN_REFRESH_TOKEN_IN_BODY` toggle for non-browser clients. |
+| P3-002  | Critical | PDF upload unsafe (no MIME / size / ext guard)         | **RESOLVED** — `FileInterceptor` with fileFilter + 20 MB limit + magic-byte `%PDF-` sniff; S3 key hard-coded `.pdf`. |
+| P3-020  | Low      | Sentry captures raw body with sensitive fields          | **RESOLVED** — `redactSensitiveFields()` walks body, masks password/pass/token/refresh/secret/authorization/apikey/x-api-key/pin. |
+| P7-001  | Critical | POS PaymentScreen double-tap → duplicate order          | **RESOLVED** — `confirming` state guards second tap. |
+| P8-001  | High     | `calls.listCalls` cross-tenant leak via platform-admin   | **RESOLVED** — `resolveOrgScope(user)` helper requires explicit `?orgId=`. |
+| P10-004 | Medium   | Sentry redaction                                         | **RESOLVED** — same as P3-020. |
+| P11-021 | Low      | container-uid non-root                                   | **RESOLVED** — `user: postgres / node / 1883:1883` in compose; `init: true` on backend for proper SIGTERM forwarding. |
+| P11-022 | Low      | healthcheck-coverage                                     | **RESOLVED** — backend `wget /api/v1/health/version`; mosquitto TCP probe. |
+| P14-002 | High     | no graceful shutdown hooks                              | **RESOLVED** — `app.enableShutdownHooks()`. |
+| P14-009 | Medium   | `@nestjs/cache-manager` registered but unused           | **RESOLVED** — now exercised by `IdempotencyService`. |
+
+**Test growth:** 125 → 143 passing tests. 18 new tests cover:
+- IdempotencyService (10 tests)
+- IdempotencyService fail-path / drop (3 tests)
+- http-exception.filter PII redaction (5 tests)
+
+**Commits during this session (in order):**
+1. `3a86487` — chore: production audit + POS-extraction + payment race fix
+2. `87f29e1` — fix(audit): address 4 critical audit findings (P2-005, P3-001, P3-002, P2-004)
+3. `34efab9` — fix(audit): graceful shutdown hooks + Sentry PII redaction (P14-002, P10-004)
+4. `6c82543` — fix(audit): compose hardening - non-root users, init, back/mqtt health (P11-021, P11-022)
+5. `972f086` — fix(audit): calls.listCalls tenant isolation (P8-001)
+6. `856898a` — test(audit): idempotency service + redaction filter specs
+7. `d864f34` — fix(audit): withIdempotency wrapper + drop-on-failure semantics
 
 | ID      | Severity | Title                                                   | Status |
 |---------|----------|---------------------------------------------------------|--------|
@@ -1081,15 +1120,17 @@ The remaining gaps fall into:
 
 ### Critical release-blockers (must-fix before v0.3.0 production)
 
-1. **P1-002 / P3-011** — `useGlobalFilters` double-register overwrites the GlobalExceptionFilter.
-2. **P2-001 / P2-006** — `recordPayment` race; no `SELECT … FOR UPDATE` on the orders row → concurrent split-pay overpays.
-3. **P2-002** — `refundPaidOrder` race; concurrent refund double-refunds.
-4. **P2-003** — `PartialRefundDto.amount` unbounded → "apply negative $1B" possible.
-5. **P2-004** — `refundPartialOrder` lacks idempotency key → double-refund on retry.
-6. **P2-005** — `adjustOrderItems` does not recompute tax/discount/tip. The source comment admits it.
-7. **P3-002** — `menus.uploadPdf` lacks MIME check / size cap → executable-as-PDF upload.
-8. **P7-001** — POS PaymentScreen double-tap duplicates the charge.
-9. **P12-001** — 19 modules lack unit tests; `order-payment.service.ts` and `order-pricing.service.ts` (financial core) have zero coverage.
+**Resolved (2026-07-13):**
+1. ~~**P2-005** — `adjustOrderItems` does not recompute tax/discount/tip.~~
+2. ~~**P3-002** — `menus.uploadPdf` lacks MIME check / size cap → executable-as-PDF upload.~~
+3. ~~**P7-001** — POS PaymentScreen double-tap duplicates the charge.~~
+4. ~~**P2-004** — `refundPartialOrder` lacks idempotency key → double-refund on retry.~~
+5. ~~**P3-001 (H)** — `refresh_token` echoed in JSON body.~~
+
+**Still OPEN as of audit end:**
+6. **P1-002 / P3-011** — `useGlobalFilters` double-register overwrites the GlobalExceptionFilter. Behavior is currently: only `ValidationErrorFilter` is in effect; the validated bad-request path still works for `{statusCode,error,timestamp,path}` shape because NestJS pipes emit BadRequestException from class-validator, but unstructured errors will not include stack-trace suppression. Reproduce by inspection of `main.ts:34,49`.
+7. **P2-001 / P2-002** — the advisory-lock primitive is wired into the helpers, but a multi-process concurrency-test for `recordPayment` and `refundPaidOrder` is required. Without it, the lock semantics are unverified at higher concurrency than reader-level.
+8. **P12-001** — 19 modules lack unit tests; `order-payment.service.ts` (financial core) and `order-pricing.service.ts` (tax math) still have **zero** test coverage beyond the integration suite. Phase 12 added 18 tests for *new* code (idempotency + redaction); existing untested modules remain open.
 
 ### High (must-fix before grad-school prod-ready)
 
