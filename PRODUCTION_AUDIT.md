@@ -436,10 +436,13 @@ control on the hot writes** (refund, split-pay, partial-refund) and
 | P11-013 | Low      | secrets-in-image | apps/*/Dockerfile                                              | No .env ✅ |
 | P11-014 | Low      | build-context    | apps/backend/Dockerfile COPY . .                               | Confirm .dockerignore |
 | P11-015 | Low      | log-exposure     | apps/backend                                                   | Logging driver not configured |
-| P11-016 | Low      | resource-limits  | docker-compose                                                 | mem/cpu not set |
+| P11-022 | Low      | healthcheck-coverage | `apps/backend/docker-compose.yml` backend + mosquitto         | **RESOLVED 2026-07-13.** backend `wget /api/v1/health/version` 30s/3 retries; mosquitto TCP-probe `(/dev/tcp/127.0.0.1/1883)` (auth-blocking makes `mosquitto_pub` infeasible w/o embedding creds in compose). Postgres / Redis healthchecks already existed. Backend's `depends_on` for mosquitto now requires `service_healthy` instead of `service_started`. |
+| P11-021 | Low      | container-uid    | docker-compose | **RESOLVED 2026-07-13.** `user: postgres / node / 1883:1883` so the daemons don't run as root; `init: true` on backend gives PID 1 = tini. |
+
+## Phase 11 — Docker & Deployment -- end of remediation; same as index row P11-021 and P11-022. |
 | P11-017 | Low      | gitignored-prod  | mosquitto.passwd                                                | ✅ |
 | P11-018 | Low      | backup-strategy  | DEPLOYMENT.md Part 9                                            | ✅ |
-| P11-019 | High     | no-rolling-restart| docker-compose                                                 | restart=unless-stopped acceptable per DEPLOYMENT |
+| P11-019 | High     | no-rolling-restart| docker-compose                                                 | `restart: unless-stopped` is fine for crash-only restart; rolling deploys require backend graceful shutdown. **2026-07-13: now addressed** by `app.enableShutdownHooks()` (cross-link P14-002). |
 | P11-020 | Low      | rollback         | DEPLOYMENT.md Part 8                                            | ✅ |
 | P12-001 | **Critical** | coverage-gap | 19 modules untested                                            | agents/analytics/calls/common/config/cron/discounts/documents/events/export/health/locations/notifications/public-api/queues/seeds/storage/tables |
 | P12-002 | High     | coverage-gap     | order-payment.service.ts                                       | No spec — financial flows untested |

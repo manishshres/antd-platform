@@ -2,6 +2,7 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: antd-postgres
+    user: postgres
     ports:
       # Bound to loopback: only the host (and the compose network) can reach it.
       - '127.0.0.1:5432:5432'
@@ -26,13 +27,29 @@ services:
   mosquitto:
     image: eclipse-mosquitto:2.1-alpine
     container_name: antd-mosquitto
+    user: 1883:1883
     ports:
+      # Public port the receipt printers dial: 51883 is the production value
+      # documented in DEPLOYMENT.md (Loopback-only setups swap to 127.0.0.1,
+      # but the print terminals on the LAN need an Internet-reachable port).
+      # MQTT auth is enforced via mosquitto.passwd; change the port per
+      # deployment's firewall rule rather than over the air.
       - '51883:1883' # Obscured public port for IoT Printers (must stay public)
       - '127.0.0.1:9001:9001' # WebSockets — loopback only unless browsers need it
     volumes:
       - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
       - ./mosquitto.passwd:/mosquitto/config/mosquitto.passwd
     restart: unless-stopped
+    healthcheck:
+      # Allow_anonymous=false blocks unsigned publish, so the healthcheck uses
+      # an unauthenticated TCP connect (broker still accepts on :1883) to
+      # verify the daemon is alive. Per-user auth probes live in the
+      # /health controller (see apps/backend/src/health).
+      test: ['CMD-SHELL', '(echo > /dev/tcp/127.0.0.1/1883) || exit 1']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -57,6 +74,8 @@ services:
   backend:
     image: ${DOCKER_REGISTRY:?set DOCKER_REGISTRY in .env, e.g. docker.io/youruser}/antd-backend:${BACKEND_VERSION:-latest}
     container_name: antd-backend
+    user: node
+    init: true
     ports:
       # Loopback only — Nginx on the host terminates TLS and proxies to :4000
       - '127.0.0.1:4000:4000'
@@ -72,5 +91,15 @@ services:
       redis:
         condition: service_healthy
       mosquitto:
-        condition: service_started
+        condition: service_healthy
     restart: unless-stopped
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:4000/api/v1/health/version || exit 1']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
