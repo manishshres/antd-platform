@@ -153,8 +153,10 @@ export class WebhookQueueProcessor extends WorkerHost {
       });
     }
 
-    // Emit the order to be created (this also triggers printer queue enqueuing in OrdersService listener)
-    const [order] = await this.eventEmitter.emitAsync('order.incoming', {
+    // Emit the order to be created (this also triggers printer queue enqueuing
+    // in OrdersService's listener). `emitAsync` returns a Promise<unknown[]> —
+    // the listener returns the new order, which we read out here.
+    const emitted = await this.eventEmitter.emitAsync('order.incoming', {
       orgId,
       customerName,
       customerPhone,
@@ -162,6 +164,16 @@ export class WebhookQueueProcessor extends WorkerHost {
       orderType,
       specialInstructions,
     });
+    // Narrow the emitted payload to the order shape used downstream. The
+    // listener contract is "return Order from `order.incoming`" (see
+    // OrdersService.handleOrderIncomingEvent).
+    const order =
+      Array.isArray(emitted) && emitted[0]
+        ? (emitted[0] as { id: string; status: string; totalAmount: number })
+        : null;
+    if (!order) {
+      throw new Error('order.incoming returned no order.');
+    }
 
     this.logger.log(
       `Background order processing complete. Order ID: ${order.id}`,
