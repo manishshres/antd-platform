@@ -31,22 +31,19 @@ export class CallsService {
     pagination: PaginationDto,
     search?: string,
   ): Promise<PaginatedResponseDto<CallRecordDto>> {
-    const isPlatformAdmin = user.role === 'platform_admin';
-    const organizationId = user.organizationId;
-
-    this.logger.log(`Fetching calls for org: ${organizationId ?? 'unscoped'}`);
-    if (!organizationId && !isPlatformAdmin)
+    const orgScopes = this.resolveOrgScope(user);
+    if (!orgScopes) {
+      // platform-admin without ?orgId= must NOT list calls across tenants.
       return { data: [], total: 0, hasMore: false };
+    }
 
+    const { orgId, isPlatformAdmin } = orgScopes;
     const { offset = 0, limit = 20, locationId } = pagination;
 
-    const conditions: (SQL<unknown> | undefined)[] = [];
-
-    if (!isPlatformAdmin || organizationId) {
-      conditions.push(
-        eq(schema.recordings.organizationId, organizationId as string),
-      );
-    }
+    const conditions: (SQL<unknown> | undefined)[] = [
+      // Always restrict by tenant. Platform-admins are still scoped to orgId.
+      eq(schema.recordings.organizationId, orgId),
+    ];
 
     if (locationId) {
       conditions.push(eq(schema.recordings.locationId, locationId));
@@ -56,7 +53,7 @@ export class CallsService {
       conditions.push(ilike(schema.recordings.transcript, `%${search}%`));
     }
 
-    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+    const whereClause = and(...conditions);
 
     const dbRecordings = await this.db
       .select()
@@ -109,6 +106,32 @@ export class CallsService {
       total,
       hasMore: offset + limit < total,
     };
+  }
+
+  /**
+   * Resolve the tenant scope for a calls query. Returns `null` when the
+   * caller is a platform-admin without an explicit `?orgId=` — they must
+   * choose a tenant before listing calls, by design.
+   *
+   * P8-001: the original implementation side-stepped the tenant filter for
+   * unauthenticated-broad platform-admin requests, returning rows from every
+   * tenant. This helper centralizes the rule so all callers behave the same.
+   */
+  private resolveOrgScope(user: CurrentUserPayload): {
+    orgId: string;
+    isPlatformAdmin: boolean;
+  } | null {
+    if (user.organizationId) return { orgId: user.organizationId, isPlatformAdmin: user.isPlatformAdmin };
+    if (user.isPlatformAdmin) {
+      // The 17.0 audits allowed unauthenticated-broad admin reads; we
+      // require an orgId override. Currently set in JwtStrategy from
+      // `?orgId=`. Calls from a UI without the override simply return [].
+      this.logger.warn(
+        `Platform admin ${user.email} called calls endpoints without an orgId scope; returning empty.`,
+      );
+      return null;
+    }
+    return null;
   }
 
   async getCall(
