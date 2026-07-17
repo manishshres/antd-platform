@@ -121,6 +121,23 @@ export class IdempotencyService {
   }
 
   /**
+   * Drop an in-flight reservation so the next retry isn't held by the TTL.
+   * Used in the catch-path of `withIdempotency` for callers that fail mid-flight.
+   */
+  async drop(scope: string, key: string): Promise<void> {
+    const k = this.key(scope, key);
+    const client = (this.cache as unknown as { store?: { client?: { del?: (...args: unknown[]) => Promise<unknown> } } })
+      .store?.client;
+    if (client?.del) {
+      await client.del(k);
+      return;
+    }
+    if (typeof (this.cache as unknown as { del?: (k: string) => Promise<unknown> }).del === 'function') {
+      await (this.cache as unknown as { del: (k: string) => Promise<unknown> }).del(k);
+    }
+  }
+
+  /**
    * Throw a 409 ConflictException unless the caller is prepared to handle it.
    * Reserved for endpoints that advertise Idempotency-Key as PART of their
    * contract — currently none in this codebase.

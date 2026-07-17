@@ -357,6 +357,37 @@ export class OrderPaymentService {
     return { success: true, message: 'Order voided and refunded.' };
   }
 
+  /**
+   * Wrap a refund-partial op in an Idempotency-Key reservation if a key was
+   * provided. On exception, the reservation is dropped so a retry can succeed.
+   */
+  private async withIdempotency<T>(
+    scope: string,
+    key: string | undefined,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    if (!key) return fn();
+    const replay = await this.idempotencyService.replay<T>(scope, key);
+    if (replay) return replay.body as T;
+    const won = await this.idempotencyService.begin(scope, key);
+    if (!won) {
+      throw new ConflictException(
+        'A refund with this Idempotency-Key is already in flight.',
+      );
+    }
+    try {
+      const result = await fn();
+      await this.idempotencyService.complete(scope, key, 200, result);
+      return result;
+    } catch (err) {
+      // Drop the in-flight reservation so the client can retry without
+      // waiting 24 h for the TTL to expire. Failures (4xx validation,
+      // 5xx internal) are NOT idempotency-replayable — fresh request.
+      await this.idempotencyService.drop(scope, key);
+      throw err;
+    }
+  }
+
   async refundPartialOrder(
     user: CurrentUserPayload,
     orderId: string,
@@ -365,94 +396,64 @@ export class OrderPaymentService {
   ): Promise<unknown> {
     const orgId = await this.billingService.getRequiredOrg(user);
 
-    // P2-004 / P14-010: when the client supplies Idempotency-Key, a retry replays
-    // the original response instead of running the side effect. Mobile POS
-    // doesn't send the header today (`idempotencyKey === undefined`); receipts
-    // just run their cap check. Web (and any future mobile client) that
-    // opts in gets full retry safety.
-    if (idempotencyKey) {
-      const replay = await this.idempotencyService.replay<{
-        success: boolean;
-        message: string;
-      }>('refund-partial', idempotencyKey);
-      if (replay) return replay.body;
-      const won = await this.idempotencyService.begin(
-        'refund-partial',
-        idempotencyKey,
+    return this.withIdempotency('refund-partial', idempotencyKey, async () => {
+      const manager = await this.usersService.verifyManagerPin(
+        orgId,
+        dto.managerPin,
       );
-      if (!won) {
-        throw new ConflictException(
-          'A refund with this Idempotency-Key is already in flight.',
-        );
-      }
-    }
-
-    const manager = await this.usersService.verifyManagerPin(
-      orgId,
-      dto.managerPin,
-    );
-    if (!manager) {
-      throw new ForbiddenException('Invalid manager PIN.');
-    }
-
-    await this.db.transaction(async (tx) => {
-      // Guards and the balance read run after the lock: concurrent partial
-      // refunds (retry / double-click) must not both pass the cap check.
-      await this.lockOrderRow(tx, orderId);
-      const order = await this.orderForUpdate(tx, orgId, orderId);
-      if (order.status === 'cancelled') {
-        throw new BadRequestException('Order is cancelled.');
-      }
-      if (!order.paidAt) {
-        throw new BadRequestException('Order is not paid.');
+      if (!manager) {
+        throw new ForbiddenException('Invalid manager PIN.');
       }
 
-      // Cap the refund at what has actually been paid, net of any refunds
-      // already issued — cumulative refunds can never exceed payments.
-      const netPaid = await this.paidSumFor(order.id, tx);
-      if (dto.amount > netPaid) {
-        throw new BadRequestException(
-          `Refund exceeds the remaining refundable balance of $${(netPaid / 100).toFixed(2)}.`,
-        );
-      }
+      await this.db.transaction(async (tx) => {
+        // Guards and the balance read run after the lock: concurrent partial
+        // refunds (retry / double-click) must not both pass the cap check.
+        await this.lockOrderRow(tx, orderId);
+        const order = await this.orderForUpdate(tx, orgId, orderId);
+        if (order.status === 'cancelled') {
+          throw new BadRequestException('Order is cancelled.');
+        }
+        if (!order.paidAt) {
+          throw new BadRequestException('Order is not paid.');
+        }
 
-      // Create negative payment record
-      await tx.insert(schema.payments).values({
-        organizationId: order.organizationId,
-        locationId: order.locationId,
-        orderId: order.id,
-        method: order.paymentMethod || 'cash',
-        amount: -dto.amount,
-        tipAmount: 0,
-        createdBy: manager.id,
+        // Cap the refund at what has actually been paid, net of any refunds
+        // already issued — cumulative refunds can never exceed payments.
+        const netPaid = await this.paidSumFor(order.id, tx);
+        if (dto.amount > netPaid) {
+          throw new BadRequestException(
+            `Refund exceeds the remaining refundable balance of $${(netPaid / 100).toFixed(2)}.`,
+          );
+        }
+
+        // Create negative payment record
+        await tx.insert(schema.payments).values({
+          organizationId: order.organizationId,
+          locationId: order.locationId,
+          orderId: order.id,
+          method: order.paymentMethod || 'cash',
+          amount: -dto.amount,
+          tipAmount: 0,
+          createdBy: manager.id,
+        });
+
+        await this.auditService.log({
+          organizationId: orgId,
+          userId: manager.id,
+          action: 'order.refund_partial',
+          entityType: 'order',
+          entityId: order.id,
+          newValue: { amount: dto.amount, reason: dto.reason },
+        });
       });
 
-      await this.auditService.log({
-        organizationId: orgId,
-        userId: manager.id,
-        action: 'order.refund_partial',
-        entityType: 'order',
-        entityId: order.id,
-        newValue: { amount: dto.amount, reason: dto.reason },
-      });
+      return {
+        success: true,
+        message: `Refunded $${(dto.amount / 100).toFixed(2)}`,
+      };
     });
-
-    const responseBody = {
-      success: true,
-      message: `Refunded $${(dto.amount / 100).toFixed(2)}`,
-    };
-
-    if (idempotencyKey) {
-      await this.idempotencyService.complete(
-        'refund-partial',
-        idempotencyKey,
-        200,
-        responseBody,
-      );
-    }
-
-    return responseBody;
   }
+
 
   async adjustOrderItems(
     user: CurrentUserPayload,
