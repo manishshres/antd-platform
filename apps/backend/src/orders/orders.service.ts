@@ -508,6 +508,182 @@ export class OrdersService {
     );
   }
 
+  /**
+   * Create a native Coneeko order imported from a delivery marketplace (via the
+   * aggregator). Unlike the POS/AI paths, prices are NOT recomputed — the marketplace
+   * already charged the customer, so we persist its amounts verbatim. Line items must
+   * arrive pre-resolved to Coneeko menu items (the aggregator maps them via
+   * menu_provider_mappings); modifiers are already in the POS snapshot shape.
+   *
+   * Idempotent on clientOrderId (`"{provider}:{externalOrderId}"`), backed by the
+   * orders unique constraint, so a re-delivered webhook returns the existing order.
+   * Reuses the shared side-effect pipeline (kitchen print, audit, usage, websocket +
+   * `order.created`) so marketplace orders behave exactly like any other new order.
+   */
+  async createMarketplaceOrder(params: {
+    organizationId: string;
+    locationId: string | null;
+    source: string;
+    sourceId: string | null;
+    integrationAccountId: string;
+    externalOrderId: string;
+    clientOrderId: string;
+    customerName: string;
+    customerPhone: string;
+    orderType?: string | null;
+    specialInstructions?: string | null;
+    subtotal?: number | null;
+    taxAmount?: number | null;
+    tipAmount?: number | null;
+    totalAmount: number;
+    items: {
+      menuItemId: string;
+      quantity: number;
+      price: number;
+      modifiers?: unknown;
+      notes?: string | null;
+    }[];
+  }) {
+    const orgId = params.organizationId;
+
+    if (params.items.length === 0) {
+      throw new BadRequestException('Order must contain at least one item.');
+    }
+
+    // Idempotent replay: a re-delivered marketplace webhook returns the existing order.
+    const replayed = await this.findByClientOrderId(
+      orgId,
+      params.clientOrderId,
+    );
+    if (replayed) {
+      return replayed;
+    }
+
+    let orderId: string;
+    try {
+      orderId = await this.db.transaction(async (tx) => {
+        const ticketNumber = params.locationId
+          ? await this.pricingService.nextTicketNumber(tx, params.locationId)
+          : null;
+
+        const newOrders = await tx
+          .insert(schema.orders)
+          .values({
+            organizationId: orgId,
+            locationId: params.locationId,
+            customerName: params.customerName,
+            customerPhone: params.customerPhone,
+            status: 'pending',
+            subtotal: params.subtotal ?? null,
+            taxAmount: params.taxAmount ?? null,
+            tipAmount: params.tipAmount ?? null,
+            totalAmount: params.totalAmount,
+            orderType: params.orderType ?? null,
+            specialInstructions: params.specialInstructions ?? null,
+            source: params.source,
+            sourceId: params.sourceId,
+            integrationAccountId: params.integrationAccountId,
+            externalOrderId: params.externalOrderId,
+            ticketNumber,
+            clientOrderId: params.clientOrderId,
+          })
+          .returning();
+
+        const order = newOrders[0];
+        if (!order) {
+          throw new BadRequestException('Failed to create marketplace order.');
+        }
+
+        await tx.insert(schema.orderItems).values(
+          params.items.map((item) => ({
+            orderId: order.id,
+            menuItemId: item.menuItemId,
+            quantity: item.quantity,
+            price: item.price,
+            modifiers: item.modifiers ?? null,
+            notes: item.notes ?? null,
+          })),
+        );
+
+        return order.id;
+      });
+    } catch (err) {
+      // A concurrent re-delivery can race between the replay check and the insert;
+      // the unique constraint is the backstop — return the winner's order.
+      const winner = await this.replayOnClientOrderIdConflict(
+        err,
+        orgId,
+        params.clientOrderId,
+      );
+      if (winner) {
+        return winner;
+      }
+      throw err;
+    }
+
+    return this.dispatchOrderSideEffects(orgId, orderId, undefined, {
+      totalAmount: params.totalAmount,
+      items: params.items,
+      status: 'pending',
+      source: params.source,
+      externalOrderId: params.externalOrderId,
+    });
+  }
+
+  /**
+   * Apply a status change originating from a marketplace (via the aggregator). The
+   * caller is expected to have validated the transition with
+   * OrderStatusTransitionService; this method performs the write and fires the same
+   * `order.updated` event + websocket broadcast as the interactive path. Kept separate
+   * from updateOrderStatus (which is user/POS-scoped with its own vocabulary) and free
+   * of any aggregator dependency to avoid a circular module reference.
+   */
+  async updateStatusForAggregator(
+    orgId: string,
+    orderId: string,
+    newStatus: string,
+  ) {
+    const orderRes = await this.db
+      .select()
+      .from(schema.orders)
+      .where(
+        and(
+          eq(schema.orders.id, orderId),
+          eq(schema.orders.organizationId, orgId),
+        ),
+      )
+      .limit(1);
+
+    if (orderRes.length === 0) {
+      throw new NotFoundException(`Order ${orderId} not found`);
+    }
+
+    const previousStatus = orderRes[0].status;
+    if (previousStatus === newStatus) {
+      return this.getOrderByIdForOrg(orgId, orderId);
+    }
+
+    await this.db
+      .update(schema.orders)
+      .set({ status: newStatus, updatedAt: new Date() })
+      .where(eq(schema.orders.id, orderId));
+
+    this.auditService.fireAndForget({
+      action: 'order.status_update',
+      organizationId: orgId,
+      entityType: 'order',
+      entityId: orderId,
+      previousValue: { status: previousStatus },
+      newValue: { status: newStatus, via: 'aggregator' },
+    });
+
+    const updatedOrder = await this.getOrderByIdForOrg(orgId, orderId);
+    this.eventsGateway.emitToOrganization(orgId, 'order.updated', updatedOrder);
+    this.eventEmitter.emit('order.updated', { orgId, updatedOrder });
+
+    return updatedOrder;
+  }
+
   async createOrderForOrg(
     orgId: string,
     customerName: string,
