@@ -222,26 +222,57 @@ export class MenusController {
 
   @Post('import/upload-pdf')
   @Roles('platform_admin', 'sysadmin', 'manager')
-  @UseInterceptors(FileInterceptor('file'))
+  // P3-002: a multi-layered upload guard — `fileFilter` enforces MIME at the
+  // multer boundary, `limits.fileSize` caps total bytes (a malicious manager
+  // cannot upload a 4 GB blob), and the controller additionally verifies the
+  // PDF "magic bytes" `%PDF-` before persisting. The S3 object key is
+  // server-assigned with a hard-coded `.pdf` extension — we deliberately drop
+  // the client-supplied extension so `evil.exe` masquerading as `evil.pdf`
+  // doesn't survive the trip to S3.
+  @UseInterceptors(
+    FileInterceptor('file', {
+      fileFilter: (_req, file, cb) => {
+        const looksLikePdf =
+          file.mimetype === 'application/pdf' ||
+          file.mimetype === 'application/octet-stream';
+        if (!looksLikePdf) {
+          return cb(new BadRequestException('Only PDF uploads are allowed.'), false);
+        }
+        cb(null, true);
+      },
+      limits: {
+        fileSize: 20 * 1024 * 1024, // 20 MB
+        files: 1,
+      },
+    }),
+  )
   @ApiOperation({ summary: 'Upload a PDF menu to be imported' })
   async uploadPdf(
     @CurrentUser() user: CurrentUserPayload,
     @UploadedFile() file: Express.Multer.File,
   ): Promise<{ url: string }> {
+    void user; // RBAC already enforced by @Roles guard above
     if (!file) {
       throw new BadRequestException('No file uploaded.');
     }
-    const ext = file.originalname.split('.').pop() || 'pdf';
-    const key = `menus/pdf-${Date.now()}-${Math.random().toString(36).substring(7)}.${ext}`;
+    if (file.size === 0) {
+      throw new BadRequestException('Uploaded file is empty.');
+    }
+    // Magic-byte sniff: PDF files start with `%PDF-` (hex 25 50 44 46 2d).
+    const head = file.buffer.subarray(0, 5);
+    if (!head.equals(Buffer.from('%PDF-'))) {
+      throw new BadRequestException(
+        'Uploaded file does not look like a PDF (magic bytes mismatch).',
+      );
+    }
+    const key = `menus/pdf-${Date.now()}-${Math.random().toString(36).substring(7)}.pdf`;
     const stream = Readable.from(file.buffer);
 
     const s3Key = await this.storageService.uploadStream(
       key,
       stream,
-      file.mimetype,
+      'application/pdf',
     );
-    // Since we need to access this URL in the worker or just return the key for the worker to download:
-    // Let's just return the key, and the frontend can save it as menuImportSource.
     return { url: s3Key };
   }
 

@@ -41,7 +41,6 @@ import {
   CurrentUser,
   CurrentUserPayload,
 } from '../common/decorators/current-user.decorator';
-
 @ApiTags('Authentication')
 @UseGuards(ThrottlerGuard)
 @Controller('auth')
@@ -95,13 +94,25 @@ export class AuthController {
     const rememberMe = loginDto.rememberMe ?? false;
     const result = await this.authService.login(user, rememberMe);
 
-    // Deliver the refresh token as an HttpOnly cookie so the frontend never has to persist it
-    // in localStorage (H2). The token is still in the body for non-browser API clients.
+    // P3-001: the refresh token is now carried only in the HttpOnly cookie.
+    // Stripping it from the JSON body closes the read-by-third-party-code
+    // path (browser extensions, dev-tools disk logs, error reporters) that
+    // negates the HttpOnly defense. Mobile / non-browser clients that
+    // depend on the body token can opt back in via
+    // LOGIN_REFRESH_TOKEN_IN_BODY=true at bootstrap; default is the
+    // cookie-only path.
     const maxAgeMs =
       (rememberMe ? REFRESH_TTL_REMEMBER_ME : REFRESH_TTL_DEFAULT) * 1000;
     setRefreshCookie(res, result.refresh_token, maxAgeMs);
 
-    return result;
+    const exposeRefreshInBody = this.configService.get<boolean>(
+      'LOGIN_REFRESH_TOKEN_IN_BODY',
+      false,
+    );
+    if (exposeRefreshInBody) {
+      return result;
+    }
+    return { access_token: result.access_token, user: result.user };
   }
 
   @Public()

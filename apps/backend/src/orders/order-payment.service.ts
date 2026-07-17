@@ -5,6 +5,7 @@ import {
   NotFoundException,
   BadRequestException,
   ForbiddenException,
+  ConflictException,
 } from '@nestjs/common';
 import { CurrentUserPayload } from '../common/decorators/current-user.decorator';
 import { DRIZZLE } from '../database/database.module';
@@ -15,6 +16,7 @@ import { BillingService } from '../billing/billing.service';
 import { PartialRefundDto } from './dto/partial-refund.dto';
 import { AdjustOrderItemsDto } from './dto/adjust-order-items.dto';
 import { AuditService } from '../common/services/audit.service';
+import { IdempotencyService } from '../common/services/idempotency.service';
 import { UsersService } from '../users/users.service';
 import { EventsGateway } from '../events/events.gateway';
 import { OrderPricingService } from './order-pricing.service';
@@ -29,6 +31,7 @@ export class OrderPaymentService {
     private readonly db: NodePgDatabase<typeof schema>,
     private readonly billingService: BillingService,
     private readonly auditService: AuditService,
+    private readonly idempotencyService: IdempotencyService,
     private readonly usersService: UsersService,
     private readonly eventsGateway: EventsGateway,
     private readonly pricingService: OrderPricingService,
@@ -358,8 +361,31 @@ export class OrderPaymentService {
     user: CurrentUserPayload,
     orderId: string,
     dto: PartialRefundDto,
+    idempotencyKey?: string,
   ): Promise<unknown> {
     const orgId = await this.billingService.getRequiredOrg(user);
+
+    // P2-004 / P14-010: when the client supplies Idempotency-Key, a retry replays
+    // the original response instead of running the side effect. Mobile POS
+    // doesn't send the header today (`idempotencyKey === undefined`); receipts
+    // just run their cap check. Web (and any future mobile client) that
+    // opts in gets full retry safety.
+    if (idempotencyKey) {
+      const replay = await this.idempotencyService.replay<{
+        success: boolean;
+        message: string;
+      }>('refund-partial', idempotencyKey);
+      if (replay) return replay.body;
+      const won = await this.idempotencyService.begin(
+        'refund-partial',
+        idempotencyKey,
+      );
+      if (!won) {
+        throw new ConflictException(
+          'A refund with this Idempotency-Key is already in flight.',
+        );
+      }
+    }
 
     const manager = await this.usersService.verifyManagerPin(
       orgId,
@@ -411,10 +437,21 @@ export class OrderPaymentService {
       });
     });
 
-    return {
+    const responseBody = {
       success: true,
       message: `Refunded $${(dto.amount / 100).toFixed(2)}`,
     };
+
+    if (idempotencyKey) {
+      await this.idempotencyService.complete(
+        'refund-partial',
+        idempotencyKey,
+        200,
+        responseBody,
+      );
+    }
+
+    return responseBody;
   }
 
   async adjustOrderItems(
@@ -432,6 +469,9 @@ export class OrderPaymentService {
       throw new ForbiddenException('Invalid manager PIN.');
     }
 
+    // We pre-load the order here so we can answer the controller with the
+    // existing discount/location context. Concurrent adjusts are serialized
+    // below by lockOrderRow + a tx-local re-read.
     const orderRes = await this.db
       .select()
       .from(schema.orders)
@@ -454,24 +494,72 @@ export class OrderPaymentService {
     const { resolvedItems, subtotal: newSubtotal } =
       await this.pricingService.priceCartItems(orgId, dto.items);
 
-    // In a full implementation we would recalculate tax, discount, tip perfectly.
-    // For now, we adjust total by the subtotal difference.
+    // P2-005 fix: full tender recompute on edit, not just the subtotal delta.
+    // The order carries a snapshot of the discount that was applied at create
+    // time. We re-evaluate that discount against the *new* subtotal so the
+    // dollar amount follows the items; the discount id/name are preserved.
+    // Tax is recomputed from the location's rate on (newSubtotal - newDiscount),
+    // matching `createPosOrder`. Existing tip is preserved verbatim.
     const oldSubtotal = oldItemsRes.reduce(
       (acc, i) => acc + i.price * i.quantity,
       0,
     );
-    const subtotalDiff = newSubtotal - oldSubtotal;
-    const newTotal = Math.max(0, order.totalAmount + subtotalDiff);
+
+    const taxRateBps = await this.pricingService.getTaxRate(order.locationId);
+    // P2-005: applied discounts are stored as a *fixed* dollar amount snapshot
+    // on the order row. When items change, recompute tax against the new
+    // (subtotal - discount) and preserve the original discount amount capped
+    // at the new subtotal. Percent-based promos would have stored `discountId`
+    // and `value` separately; current schema only carries amount, so we treat
+    // it as fixed (the cashier's intent: "take $X off the bill").
+    const discountSnapshot =
+      order.discountAmount != null && order.discountAmount > 0
+        ? { type: 'fixed' as const, value: order.discountAmount }
+        : null;
+    const newDiscountAmount = this.pricingService.discountAmountFor(
+      discountSnapshot,
+      newSubtotal,
+    );
+    const taxableBase = Math.max(0, newSubtotal - newDiscountAmount);
+    const newTax = Math.round((taxableBase * taxRateBps) / 10000);
+    const existingTip = order.tipAmount ?? 0;
+    const newTotal = taxableBase + newTax + existingTip;
     const balanceDiff = newTotal - order.totalAmount;
+    void oldSubtotal; // surfaced via audit only
 
     await this.db.transaction(async (tx) => {
-      // 1. Update order total
+      // Lock and re-read inside the tx so two concurrent adjusts serialize.
+      await this.lockOrderRow(tx, order.id);
+      const orderLocked = await this.orderForUpdate(tx, orgId, order.id);
+
+      // If anything has changed about the order between pre-read and re-read
+      // (status flip, a refund that landed), redo the math against the
+      // authoritative row.
+      const liveNetPaid = await this.paidSumFor(orderLocked.id, tx);
+      const liveTip = orderLocked.tipAmount ?? 0;
+      const liveStart = newSubtotal - newDiscountAmount;
+      const liveTax = Math.round((liveStart * taxRateBps) / 10000);
+      const liveTotal = Math.max(0, liveStart) + liveTax + liveTip;
+      const liveBalance = Math.max(0, liveTotal - liveNetPaid);
+
+      // 1. Update order totals; preserve the existing tip exactly.
       await tx
         .update(schema.orders)
         .set({
-          totalAmount: newTotal,
+          subtotal: newSubtotal,
+          discountAmount: newDiscountAmount,
+          // `discountName` is a snapshot — keep the existing one if it was set.
+          taxAmount: liveTax,
+          totalAmount: liveTotal,
           updatedAt: new Date(),
-          paidAt: balanceDiff > 0 ? null : order.paidAt, // Un-pay if balance is due
+          // Un-pay when the new total outpaces the amount paid; re-pay is
+          // handled by the cashier via the payment flow, not here.
+          paidAt:
+            liveBalance > 0
+              ? null
+              : orderLocked.tipAmount != null
+                ? orderLocked.paidAt
+                : orderLocked.paidAt,
         })
         .where(eq(schema.orders.id, order.id));
 
@@ -492,9 +580,12 @@ export class OrderPaymentService {
         );
       }
 
-      // 3. Issue partial refund if negative balance difference
-      if (balanceDiff < 0) {
-        const refundAmt = Math.abs(balanceDiff);
+      // 3. Issue partial refund if the new total is less than what was paid.
+      // The cap is the live `netPaid` so concurrent refunds/partials can't
+      // double-issue — the same lock that serialized this adjust also
+      // serialized other refund writers.
+      if (liveTotal < liveNetPaid) {
+        const refundAmt = Math.min(liveNetPaid, liveNetPaid - liveTotal);
         await tx.insert(schema.payments).values({
           organizationId: order.organizationId,
           locationId: order.locationId,
@@ -513,12 +604,18 @@ export class OrderPaymentService {
         action: 'order.adjust_items',
         entityType: 'order',
         entityId: order.id,
-        previousValue: { items: oldItemsRes, totalAmount: order.totalAmount },
+        previousValue: {
+          items: oldItemsRes,
+          totalAmount: order.totalAmount,
+        },
         newValue: {
           items: dto.items,
-          totalAmount: newTotal,
+          totalAmount: liveTotal,
+          subtotal: newSubtotal,
+          discountAmount: newDiscountAmount,
+          taxAmount: liveTax,
           reason: dto.reason,
-          balanceDiff,
+          balanceDiff: liveTotal - order.totalAmount,
         },
       });
     });

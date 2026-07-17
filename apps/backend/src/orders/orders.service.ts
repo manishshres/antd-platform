@@ -1145,8 +1145,14 @@ export class OrdersService {
     user: CurrentUserPayload,
     orderId: string,
     dto: PartialRefundDto,
+    idempotencyKey?: string,
   ) {
-    return this.paymentService.refundPartialOrder(user, orderId, dto);
+    return this.paymentService.refundPartialOrder(
+      user,
+      orderId,
+      dto,
+      idempotencyKey,
+    );
   }
 
   async adjustOrderItems(

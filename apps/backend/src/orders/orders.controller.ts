@@ -7,6 +7,7 @@ import {
   Param,
   Body,
   Query,
+  Headers,
   UseGuards,
   HttpCode,
   HttpStatus,
@@ -292,8 +293,9 @@ export class OrdersController {
     @CurrentUser() user: CurrentUserPayload,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: PartialRefundDto,
+    @Headers('idempotency-key') idempotencyKey?: string,
   ): Promise<unknown> {
-    return this.ordersService.refundPartialOrder(user, id, dto);
+    return this.ordersService.refundPartialOrder(user, id, dto, idempotencyKey);
   }
 
   @Put(':id/adjust')
