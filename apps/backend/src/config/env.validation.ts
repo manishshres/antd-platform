@@ -14,6 +14,8 @@ const REQUIRED_IN_PRODUCTION = [
   'DATABASE_URL',
   'FRONTEND_URL',
   'STRIPE_WEBHOOK_SECRET',
+  // AES-256-GCM key for encrypting marketplace integration credentials at rest.
+  'AGGREGATOR_ENCRYPTION_KEY',
 ] as const;
 
 /**
@@ -57,6 +59,10 @@ export function validateEnv(
         value.includes('change-in-production'))
     ) {
       weak.push(key);
+    }
+    // AES-256 requires a key of exactly 32 bytes (CredentialEncryptionService).
+    if (key === 'AGGREGATOR_ENCRYPTION_KEY' && value.length !== 32) {
+      weak.push(`${key} (must be exactly 32 characters)`);
     }
   }
 

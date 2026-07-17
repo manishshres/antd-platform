@@ -505,6 +505,19 @@ export const orders = pgTable(
     // paid ('cash' | 'card' — detailed payment processing lands later), and when. Nullable so
     // pre-POS rows and the AI webhook path stay valid without a backfill.
     source: varchar('source', { length: 20 }),
+    // Normalized channel FK (aggregator). Superset of `source`: also covers marketplace
+    // channels (kitchenhub/doordash/...). `source` varchar is kept populated for backward
+    // compatibility with existing reporting/public API; new code should prefer sourceId.
+    sourceId: uuid('source_id').references(() => orderSources.id, {
+      onDelete: 'set null',
+    }),
+    // Aggregator: the marketplace integration this order arrived through, and the marketplace's
+    // own order id. Nullable — native POS/AI orders leave these unset.
+    integrationAccountId: uuid('integration_account_id').references(
+      () => integrationAccounts.id,
+      { onDelete: 'set null' },
+    ),
+    externalOrderId: varchar('external_order_id', { length: 255 }),
     paymentMethod: varchar('payment_method', { length: 20 }),
     paidAt: timestamp('paid_at'),
     // Human-friendly per-location daily sequence ("Order #47") for tickets and callouts.
@@ -522,7 +535,7 @@ export const orders = pgTable(
     unique('idx_orders_org_client_id').on(t.organizationId, t.clientOrderId),
     check(
       'orders_status_check',
-      sql`${t.status} IN ('pending', 'confirmed', 'preparing', 'ready', 'delivered', 'cancelled')`,
+      sql`${t.status} IN ('pending', 'confirmed', 'preparing', 'ready', 'delivered', 'cancelled', 'refunded')`,
     ),
   ],
 );
@@ -882,6 +895,222 @@ export const webhookEvents = pgTable('webhook_events', {
   eventId: varchar('event_id', { length: 255 }).primaryKey(),
   provider: varchar('provider', { length: 50 }).notNull(),
   status: varchar('status', { length: 50 }).default('pending').notNull(),
+  // Aggregator: the normalized event type ('order.created', 'order.updated', ...) and the
+  // full raw provider payload, retained for audit/replay. Nullable — the AI/Telnyx paths
+  // that predate the aggregator only reserve eventId for idempotency.
+  eventType: varchar('event_type', { length: 100 }),
+  payload: jsonb('payload'),
   receivedAt: timestamp('received_at').defaultNow().notNull(),
   processedAt: timestamp('processed_at'),
 });
+
+// ────────────────────────────────────────────────────────────────────────────
+// Order Aggregator — provider-agnostic marketplace integration layer.
+// See src/modules/aggregator/. Marketplace orders flow: webhook → externalOrders
+// (raw) → normalization → native `orders` row (source = provider). Adding a new
+// marketplace (DoorDash/UberEats/Grubhub) is a new adapter + a `providers` row —
+// no changes to orders/POS/kitchen/reporting.
+// ────────────────────────────────────────────────────────────────────────────
+
+/** A delivery marketplace Coneeko can integrate with (kitchenhub, doordash, ...). */
+export const providers = pgTable('providers', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  name: varchar('name', { length: 255 }).notNull().unique(),
+  isActive: boolean('is_active').default(true).notNull(),
+});
+
+/**
+ * Feature matrix per provider. Drives runtime capability checks — the core never
+ * assumes a provider supports menu sync or refunds just because the interface exists.
+ */
+export const providerCapabilities = pgTable(
+  'provider_capabilities',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    providerId: uuid('provider_id')
+      .references(() => providers.id, { onDelete: 'cascade' })
+      .notNull(),
+    supportsOrders: boolean('supports_orders').default(true).notNull(),
+    supportsMenuSync: boolean('supports_menu_sync').default(false).notNull(),
+    supportsDelivery: boolean('supports_delivery').default(false).notNull(),
+    supportsStatusUpdates: boolean('supports_status_updates')
+      .default(true)
+      .notNull(),
+    supportsRefunds: boolean('supports_refunds').default(false).notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (t) => [unique('uq_provider_capabilities_provider').on(t.providerId)],
+);
+
+/**
+ * A restaurant's connection to one provider (per org, optionally per location).
+ * `credentials` is encrypted at rest via CredentialEncryptionService (AES-256-GCM).
+ */
+export const integrationAccounts = pgTable(
+  'integration_accounts',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    organizationId: uuid('organization_id')
+      .references(() => organizations.id, { onDelete: 'cascade' })
+      .notNull(),
+    locationId: uuid('location_id').references(() => locations.id, {
+      onDelete: 'cascade',
+    }),
+    providerId: uuid('provider_id')
+      .references(() => providers.id, { onDelete: 'cascade' })
+      .notNull(),
+    // Encrypted blob (never store plaintext client_id/client_secret/tokens/webhook secret).
+    credentials: jsonb('credentials'),
+    // The provider-side store id this account maps to (KitchenHub store_id, etc.).
+    providerStoreId: varchar('provider_store_id', { length: 255 }),
+    status: varchar('status', { length: 30 }).default('waiting').notNull(), // waiting_menu | in_progress | waiting | connected | rejected | disabled
+    isOnline: boolean('is_online').default(false).notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (t) => [
+    index('idx_integration_accounts_org').on(t.organizationId),
+    index('idx_integration_accounts_provider').on(t.providerId),
+  ],
+);
+
+/**
+ * Normalized order channel (pos, ai_phone, online, kitchenhub, doordash, ...).
+ * `orders.sourceId` FKs here; extensible for future channels (kiosk/QR/website)
+ * without a schema change.
+ */
+export const orderSources = pgTable('order_sources', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  name: varchar('name', { length: 50 }).notNull().unique(),
+  type: varchar('type', { length: 20 }).default('marketplace').notNull(), // 'internal' | 'marketplace'
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+/**
+ * Raw marketplace order layer — the original provider record, kept verbatim for
+ * reconciliation, replay of failed imports, and dispute/debug. Links to the native
+ * Coneeko order once normalization succeeds.
+ */
+export const externalOrders = pgTable(
+  'external_orders',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    organizationId: uuid('organization_id')
+      .references(() => organizations.id, { onDelete: 'cascade' })
+      .notNull(),
+    locationId: uuid('location_id').references(() => locations.id, {
+      onDelete: 'cascade',
+    }),
+    providerId: uuid('provider_id')
+      .references(() => providers.id, { onDelete: 'cascade' })
+      .notNull(),
+    integrationAccountId: uuid('integration_account_id').references(
+      () => integrationAccounts.id,
+      { onDelete: 'set null' },
+    ),
+    // Filled once the native order is created; null while pending/failed import.
+    internalOrderId: uuid('internal_order_id').references(() => orders.id, {
+      onDelete: 'set null',
+    }),
+    externalOrderId: varchar('external_order_id', { length: 255 }).notNull(),
+    externalStatus: varchar('external_status', { length: 50 }),
+    externalCreatedAt: timestamp('external_created_at'),
+    rawPayload: jsonb('raw_payload').notNull(),
+    syncStatus: varchar('sync_status', { length: 20 })
+      .default('pending')
+      .notNull(), // 'pending' | 'imported' | 'failed'
+    error: varchar('error', { length: 1000 }),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (t) => [
+    index('idx_external_orders_org').on(t.organizationId),
+    index('idx_external_orders_internal_order').on(t.internalOrderId),
+    // Idempotency: a given marketplace order is imported at most once.
+    unique('uq_external_orders_provider_external').on(
+      t.providerId,
+      t.externalOrderId,
+    ),
+  ],
+);
+
+/**
+ * Maps a Coneeko menu item to its id on a provider. Coneeko is the menu source of
+ * truth; this table lets adapters translate outbound menu pushes and inbound order
+ * line items between Coneeko ids and provider ids.
+ */
+export const menuProviderMappings = pgTable(
+  'menu_provider_mappings',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    providerId: uuid('provider_id')
+      .references(() => providers.id, { onDelete: 'cascade' })
+      .notNull(),
+    integrationAccountId: uuid('integration_account_id')
+      .references(() => integrationAccounts.id, { onDelete: 'cascade' })
+      .notNull(),
+    coneekoMenuItemId: uuid('coneeko_menu_item_id')
+      .references(() => menuItems.id, { onDelete: 'cascade' })
+      .notNull(),
+    externalMenuItemId: varchar('external_menu_item_id', { length: 255 }),
+    externalCategoryId: varchar('external_category_id', { length: 255 }),
+    mappingStatus: varchar('mapping_status', { length: 20 })
+      .default('pending')
+      .notNull(), // 'pending' | 'mapped' | 'unmatched' | 'archived'
+    lastSyncedAt: timestamp('last_synced_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (t) => [
+    index('idx_menu_provider_mappings_account').on(t.integrationAccountId),
+    unique('uq_menu_provider_mappings_account_item').on(
+      t.integrationAccountId,
+      t.coneekoMenuItemId,
+    ),
+  ],
+);
+
+/** Tracks async integration jobs (menu sync, order import backfill, location sync). */
+export const integrationSyncJobs = pgTable(
+  'integration_sync_jobs',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    organizationId: uuid('organization_id')
+      .references(() => organizations.id, { onDelete: 'cascade' })
+      .notNull(),
+    providerId: uuid('provider_id')
+      .references(() => providers.id, { onDelete: 'cascade' })
+      .notNull(),
+    integrationAccountId: uuid('integration_account_id').references(
+      () => integrationAccounts.id,
+      { onDelete: 'cascade' },
+    ),
+    type: varchar('type', { length: 30 }).notNull(), // 'MENU_SYNC' | 'ORDER_IMPORT' | 'LOCATION_SYNC'
+    status: varchar('status', { length: 20 }).default('pending').notNull(), // 'pending' | 'running' | 'completed' | 'failed'
+    startedAt: timestamp('started_at'),
+    completedAt: timestamp('completed_at'),
+    error: varchar('error', { length: 1000 }),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (t) => [index('idx_integration_sync_jobs_org').on(t.organizationId)],
+);
+
+/** Per-attempt audit trail for inbound webhook deliveries — proof of receipt/processing. */
+export const webhookDeliveries = pgTable(
+  'webhook_deliveries',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    webhookEventId: varchar('webhook_event_id', { length: 255 }).references(
+      () => webhookEvents.eventId,
+      { onDelete: 'cascade' },
+    ),
+    attemptNumber: integer('attempt_number').default(1).notNull(),
+    responseCode: integer('response_code'),
+    errorMessage: varchar('error_message', { length: 1000 }),
+    receivedAt: timestamp('received_at').defaultNow().notNull(),
+    processedAt: timestamp('processed_at'),
+  },
+  (t) => [index('idx_webhook_deliveries_event').on(t.webhookEventId)],
+);

@@ -106,6 +106,13 @@
       "when": 1783521701091,
       "tag": "0014_awesome_the_santerians",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1784293807746,
+      "tag": "0015_aggregator_tables",
+      "breakpoints": true
     }
   ]
 }

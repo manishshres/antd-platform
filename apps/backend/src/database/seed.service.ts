@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
+import { and, eq, isNull } from 'drizzle-orm';
 import * as schema from './schema';
 import { DRIZZLE } from './database.module';
 
@@ -23,17 +24,153 @@ export class SeedService implements OnApplicationBootstrap {
     const isProduction =
       this.configService.get<string>('NODE_ENV') === 'production';
 
-    // Skip seeding entirely in production when this module is imported.
-    // In non-prod, seed defaults.
+    // Aggregator reference data (providers, capabilities, order sources) is required
+    // for the feature to work at all — seed it in every environment, idempotently.
+    await this.seedAggregatorReferenceData();
+    await this.backfillOrderSources();
+
+    // Skip dev conveniences (default plans + admin user) in production.
     if (isProduction) {
       this.logger.log(
-        'NODE_ENV=production — skipping seed. Provision securely.',
+        'NODE_ENV=production — skipping dev seed. Provision securely.',
       );
       return;
     }
 
     await this.seedPlans();
     await this.seedDefaultUser();
+  }
+
+  /**
+   * Seed marketplace providers, their capability matrix, and normalized order
+   * sources. All inserts are idempotent (onConflictDoNothing on unique name), so
+   * this is safe to run on every boot.
+   */
+  private async seedAggregatorReferenceData() {
+    try {
+      // Order sources: internal channels (existing `orders.source` values) + marketplaces.
+      await this.db
+        .insert(schema.orderSources)
+        .values([
+          { name: 'pos', type: 'internal' },
+          { name: 'ai_phone', type: 'internal' },
+          { name: 'online', type: 'internal' },
+          { name: 'kitchenhub', type: 'marketplace' },
+          { name: 'doordash', type: 'marketplace' },
+          { name: 'ubereats', type: 'marketplace' },
+          { name: 'grubhub', type: 'marketplace' },
+        ])
+        .onConflictDoNothing({ target: schema.orderSources.name });
+
+      // Providers + their capability matrix. KitchenHub is a POS-level integration
+      // that supports the full surface; the direct marketplaces we'll add later start
+      // with conservative defaults, tuned once we have real API access.
+      const providerSeed: {
+        name: string;
+        capabilities: {
+          supportsOrders: boolean;
+          supportsMenuSync: boolean;
+          supportsDelivery: boolean;
+          supportsStatusUpdates: boolean;
+          supportsRefunds: boolean;
+        };
+      }[] = [
+        {
+          name: 'kitchenhub',
+          capabilities: {
+            supportsOrders: true,
+            supportsMenuSync: true,
+            supportsDelivery: true,
+            supportsStatusUpdates: true,
+            supportsRefunds: false,
+          },
+        },
+        {
+          name: 'doordash',
+          capabilities: {
+            supportsOrders: true,
+            supportsMenuSync: false,
+            supportsDelivery: true,
+            supportsStatusUpdates: true,
+            supportsRefunds: false,
+          },
+        },
+        {
+          name: 'ubereats',
+          capabilities: {
+            supportsOrders: true,
+            supportsMenuSync: true,
+            supportsDelivery: true,
+            supportsStatusUpdates: true,
+            supportsRefunds: false,
+          },
+        },
+        {
+          name: 'grubhub',
+          capabilities: {
+            supportsOrders: true,
+            supportsMenuSync: false,
+            supportsDelivery: false,
+            supportsStatusUpdates: true,
+            supportsRefunds: false,
+          },
+        },
+      ];
+
+      for (const p of providerSeed) {
+        await this.db
+          .insert(schema.providers)
+          .values({ name: p.name })
+          .onConflictDoNothing({ target: schema.providers.name });
+
+        const [provider] = await this.db
+          .select({ id: schema.providers.id })
+          .from(schema.providers)
+          .where(eq(schema.providers.name, p.name))
+          .limit(1);
+        if (!provider) continue;
+
+        await this.db
+          .insert(schema.providerCapabilities)
+          .values({ providerId: provider.id, ...p.capabilities })
+          .onConflictDoNothing({
+            target: schema.providerCapabilities.providerId,
+          });
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(
+        `Failed to seed aggregator reference data (database may not be ready): ${message}`,
+      );
+    }
+  }
+
+  /**
+   * One-time (idempotent) backfill: link existing orders' legacy `source` varchar
+   * to the normalized `order_sources` row. Only touches rows where sourceId is still
+   * null, so it converges to a no-op once complete.
+   */
+  private async backfillOrderSources() {
+    try {
+      const sources = await this.db
+        .select({ id: schema.orderSources.id, name: schema.orderSources.name })
+        .from(schema.orderSources);
+
+      for (const source of sources) {
+        await this.db
+          .update(schema.orders)
+          .set({ sourceId: source.id })
+          .where(
+            and(
+              eq(schema.orders.source, source.name),
+              isNull(schema.orders.sourceId),
+            ),
+          );
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`Failed to backfill order sources: ${message}`);
+    }
   }
 
   private async seedPlans() {
