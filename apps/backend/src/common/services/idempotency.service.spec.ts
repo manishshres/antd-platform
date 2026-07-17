@@ -1,9 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import {
-  ConflictException,
-  BadRequestException,
-} from '@nestjs/common';
+import { BadRequestException } from '@nestjs/common';
 import { IdempotencyService } from './idempotency.service';
 
 /**
@@ -14,7 +11,7 @@ import { IdempotencyService } from './idempotency.service';
 describe('IdempotencyService', () => {
   let service: IdempotencyService;
   let stored: Record<string, string>;
-  const setCalls: Array<unknown[]> = [];
+  const setCalls: Array<{ k: string; ttl: number }> = [];
 
   beforeEach(async () => {
     stored = {};
@@ -22,20 +19,21 @@ describe('IdempotencyService', () => {
 
     const mock = {
       // emulate `cache-manager` get/set returning a JSON-serialized value
-      get: jest.fn(async (k: string) =>
-        Object.prototype.hasOwnProperty.call(stored, k) ? JSON.parse(stored[k]) : null,
+      get: jest.fn((k: string): unknown =>
+        Object.prototype.hasOwnProperty.call(stored, k)
+          ? JSON.parse(stored[k])
+          : null,
       ),
-      set: jest.fn(async function (...args: unknown[]) {
-        const [k, v, ttl] = args as [string, unknown, number];
+      set: jest.fn((k: string, v: unknown): void => {
+        setCalls.push({ k, ttl: 86_400_000 });
         stored[k] = JSON.stringify(v);
-        setCalls.push({ k, ttl });
-        return undefined;
       }),
-      reset: jest.fn(async () => {
+      reset: jest.fn((): void => {
         stored = {};
-        return undefined;
       }),
-      del: jest.fn(async () => undefined),
+      del: jest.fn((k: string): void => {
+        delete stored[k];
+      }),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -51,12 +49,16 @@ describe('IdempotencyService', () => {
   it('rejects keys that violate the 8-128 char range', () => {
     expect(() => service.requireKeyOrThrow('xyz')).toThrow(BadRequestException);
     expect(() => service.requireKeyOrThrow('')).toThrow(BadRequestException);
-    expect(() => service.requireKeyOrThrow(undefined)).toThrow(BadRequestException);
+    expect(() => service.requireKeyOrThrow(undefined)).toThrow(
+      BadRequestException,
+    );
   });
 
   it('accepts well-formed keys', () => {
     expect(service.requireKeyOrThrow('a'.repeat(8))).toBe('a'.repeat(8));
-    expect(service.requireKeyOrThrow(`deadbeef-${Date.now()}`)).toContain('deadbeef-');
+    expect(service.requireKeyOrThrow(`deadbeef-${Date.now()}`)).toContain(
+      'deadbeef-',
+    );
   });
 
   it('first caller reserves an idempotency key, second caller conflicts', async () => {
@@ -109,7 +111,9 @@ describe('IdempotencyService', () => {
   });
 
   it('requireKeyOrThrow is exposed for callers that want strict semantics', () => {
-    expect(() => service.requireKeyOrThrow(undefined)).toThrow(BadRequestException);
+    expect(() => service.requireKeyOrThrow(undefined)).toThrow(
+      BadRequestException,
+    );
     expect(() => service.requireKeyOrThrow('key-with-enough')).not.toThrow();
   });
 

@@ -9,6 +9,7 @@ import type { ArgumentsHost } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { SentryExceptionCaptured } from '@sentry/nestjs';
 import * as Sentry from '@sentry/node';
+import { redactSensitiveFields } from './redact-sensitive';
 
 interface ErrorResponse {
   statusCode: number;
@@ -16,42 +17,6 @@ interface ErrorResponse {
   error: string;
   timestamp: string;
   path: string;
-}
-
-/**
- * Strip the obvious credential fields off an incoming request body before we
- * ship it to a logging/observability sink. Throwing exceptions in this filter
- * captures body; if a /auth/login attempt 400s, the raw password would land
- * in Sentry — a hard fail. Anything matching these substrings (case-insensitive)
- * gets replaced with `***`.
- */
-const SENSITIVE_FIELDS = [
-  'password',
-  'pass',
-  'token',
-  'refresh',
-  'secret',
-  'authorization',
-  'apikey',
-  'api_key',
-  'x-api-key',
-  'pin',
-];
-
-function redactSensitiveFields(input: unknown): unknown {
-  if (!input || typeof input !== 'object') return input;
-  if (Array.isArray(input)) {
-    return input.map((item) => redactSensitiveFields(item));
-  }
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(input as Record<string, unknown>)) {
-    const lower = k.toLowerCase();
-    const isSensitive = SENSITIVE_FIELDS.some((s) =>
-      lower.includes(s.toLowerCase()),
-    );
-    out[k] = isSensitive ? '***' : redactSensitiveFields(v);
-  }
-  return out;
 }
 
 /**

@@ -1,6 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { ConflictException } from '@nestjs/common';
 import { IdempotencyService } from './idempotency.service';
 
 /**
@@ -18,24 +17,19 @@ describe('IdempotencyService — failure-path drops reservation', () => {
   beforeEach(async () => {
     stored = {};
     const mock = {
-      get: jest.fn(async (k: string) =>
+      get: jest.fn((k: string): unknown =>
         Object.prototype.hasOwnProperty.call(stored, k)
           ? JSON.parse(stored[k])
           : null,
       ),
-      set: jest.fn(async function (...args: unknown[]) {
-        const [k, v] = args as [string, unknown];
+      set: jest.fn((k: string, v: unknown): void => {
         stored[k] = JSON.stringify(v);
-        return undefined;
       }),
-      reset: jest.fn(async () => {
+      reset: jest.fn((): void => {
         stored = {};
-        return undefined;
       }),
-      del: jest.fn(async function (...args: unknown[]) {
-        const [k] = args as [string];
+      del: jest.fn((k: string): void => {
         delete stored[k];
-        return undefined;
       }),
     };
 
@@ -50,9 +44,7 @@ describe('IdempotencyService — failure-path drops reservation', () => {
 
   it('frees the reservation when drop() is called before TTL expiry', async () => {
     expect(await service.begin('refund-partial', 'kfail')).toBe(true);
-    expect(
-      await service.begin('refund-partial', 'kfail'),
-    ).toBe(false);
+    expect(await service.begin('refund-partial', 'kfail')).toBe(false);
     await service.drop('refund-partial', 'kfail');
     // Without the drop, begin would still return false. Now it succeeds:
     expect(await service.begin('refund-partial', 'kfail')).toBe(true);
@@ -68,19 +60,9 @@ describe('IdempotencyService — failure-path drops reservation', () => {
     expect(await service.begin('s', 'kk')).toBe(true);
     const second = await service.begin('s', 'kk');
     expect(second).toBe(false);
-    // The OmPower wrapping service (OrderPaymentService.withIdempotency)
-    // throws ConflictException when begin() returns false. Verifying the
-    // contract here at the unit level keeps the contract documented.
-    if (!second) {
-      let caught = false;
-      try {
-        throw new ConflictException(
-          'A refund with this Idempotency-Key is already in flight.',
-        );
-      } catch (e) {
-        caught = e instanceof ConflictException;
-      }
-      expect(caught).toBe(true);
-    }
+    // OrderPaymentService.withIdempotency throws ConflictException when
+    // begin() returns false. The contract is documented here at the
+    // unit-spec level so the wrapping service can rely on it.
+    expect(second).toBe(false);
   });
 });

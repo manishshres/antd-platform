@@ -126,14 +126,23 @@ export class IdempotencyService {
    */
   async drop(scope: string, key: string): Promise<void> {
     const k = this.key(scope, key);
-    const client = (this.cache as unknown as { store?: { client?: { del?: (...args: unknown[]) => Promise<unknown> } } })
-      .store?.client;
+    const client = (
+      this.cache as unknown as {
+        store?: { client?: { del?: (...args: unknown[]) => Promise<unknown> } };
+      }
+    ).store?.client;
     if (client?.del) {
       await client.del(k);
       return;
     }
-    if (typeof (this.cache as unknown as { del?: (k: string) => Promise<unknown> }).del === 'function') {
-      await (this.cache as unknown as { del: (k: string) => Promise<unknown> }).del(k);
+    if (
+      typeof (
+        this.cache as unknown as { del?: (k: string) => Promise<unknown> }
+      ).del === 'function'
+    ) {
+      await (
+        this.cache as unknown as { del: (k: string) => Promise<unknown> }
+      ).del(k);
     }
   }
 
