@@ -9,6 +9,8 @@ import { OrderNormalizationService } from './core/services/order-normalization.s
 import { ProviderRegistryService } from './core/services/provider-registry.service';
 import { KitchenHubHttpClient } from './providers/kitchenhub/kitchenhub-http.client';
 import { KitchenHubAdapter } from './providers/kitchenhub/kitchenhub.adapter';
+import { UberEatsHttpClient } from './providers/ubereats/ubereats-http.client';
+import { UberEatsAdapter } from './providers/ubereats/ubereats.adapter';
 import { MenuSyncService } from './sync/menu-sync.service';
 import { AggregatorWebhookController } from './webhooks/aggregator-webhook.controller';
 import { AggregatorWebhookProcessor } from './queues/aggregator-webhook.processor';
@@ -31,6 +33,8 @@ import { AggregatorWebhookProcessor } from './queues/aggregator-webhook.processo
     ProviderRegistryService,
     KitchenHubHttpClient,
     KitchenHubAdapter,
+    UberEatsHttpClient,
+    UberEatsAdapter,
     MenuSyncService,
     AggregatorWebhookProcessor,
   ],

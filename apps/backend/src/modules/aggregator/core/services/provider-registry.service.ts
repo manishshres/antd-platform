@@ -6,6 +6,7 @@ import {
   WebhookOrderExtractor,
 } from '../interfaces/provider-adapter.interface';
 import { KitchenHubAdapter } from '../../providers/kitchenhub/kitchenhub.adapter';
+import { UberEatsAdapter } from '../../providers/ubereats/ubereats.adapter';
 
 type AnyAdapter = Partial<
   OrderProvider & MenuProvider & WebhookProvider & WebhookOrderExtractor
@@ -22,8 +23,12 @@ type AnyAdapter = Partial<
 export class ProviderRegistryService {
   private readonly adapters = new Map<string, AnyAdapter>();
 
-  constructor(kitchenHub: KitchenHubAdapter) {
+  constructor(kitchenHub: KitchenHubAdapter, uberEats: UberEatsAdapter) {
+    // Direct integrations register their own adapter. DoorDash + Grubhub have no direct
+    // adapter — they arrive via KitchenHub and are attributed to their marketplace at
+    // normalization time (NormalizedOrder.sourceChannel).
     this.register(kitchenHub);
+    this.register(uberEats);
   }
 
   private register(adapter: AnyAdapter): void {
