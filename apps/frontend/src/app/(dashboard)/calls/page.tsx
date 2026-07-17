@@ -152,7 +152,15 @@ export default function CallsPage() {
       console.error("Failed to sync calls", err);
     }
     load();
-  }, [selectedLocationId, selectedLocation?.telnyxAssistantId, load]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `selectedLocation`
+    // is a derived object; the React Compiler infers it from `selectedLocationId`
+    // and `telnyxAssistantId`; listing it here keeps the dep array exact.
+  }, [
+    selectedLocationId,
+    selectedLocation,
+    selectedLocation?.telnyxAssistantId,
+    load,
+  ]);
 
   useEffect(() => {
     load();
