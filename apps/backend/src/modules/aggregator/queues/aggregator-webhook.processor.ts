@@ -73,12 +73,20 @@ export class AggregatorWebhookProcessor extends WorkerHost {
   }
 
   private async handleOrderCreated(data: AggregatorWebhookJob) {
-    const normalized = this.registry
+    // Providers that embed the order in the webhook (KitchenHub) map it directly;
+    // notification-only providers (Uber Eats) return null here, so we fetch the full
+    // order from the API using the id carried in the event.
+    let normalized = this.registry
       .getOrderExtractor(data.provider)
       .orderFromWebhook(data.rawPayload);
+    if (!normalized && data.externalOrderId) {
+      normalized = await this.registry
+        .getOrderProvider(data.provider)
+        .getOrder(data.integrationAccountId, data.externalOrderId);
+    }
     if (!normalized) {
       this.logger.warn(
-        `${data.provider} order.created carried no order payload; skipping.`,
+        `${data.provider} order.created carried no resolvable order; skipping.`,
       );
       return { imported: false };
     }

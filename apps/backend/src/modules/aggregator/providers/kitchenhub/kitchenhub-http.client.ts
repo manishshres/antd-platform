@@ -51,6 +51,19 @@ export class KitchenHubHttpClient {
     return body.orders ?? body.data ?? [];
   }
 
+  async getOrder(
+    creds: KitchenHubCredentials,
+    orderId: string,
+  ): Promise<KitchenHubOrder | null> {
+    const res = await this.authedRequest(creds, 'GET', `/orders/${orderId}`);
+    const body = (await this.json(res)) as
+      { order?: KitchenHubOrder; data?: KitchenHubOrder } | KitchenHubOrder;
+    if (!body) return null;
+    if ('order' in body && body.order) return body.order;
+    if ('data' in body && body.data) return body.data;
+    return body as KitchenHubOrder;
+  }
+
   /** action: 'accept' | 'cancel' | 'complete' (KitchenHub status actions). */
   async updateOrderStatus(
     creds: KitchenHubCredentials,

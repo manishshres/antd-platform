@@ -80,6 +80,29 @@ describe('OrderNormalizationService.importOrder', () => {
     );
   });
 
+  it('attributes the order to the underlying marketplace (sourceChannel)', async () => {
+    repo.upsertExternalOrder.mockResolvedValue({
+      row: { id: 'ext-row-1', internalOrderId: null } as never,
+      created: true,
+    });
+    repo.resolveMenuItemIds.mockResolvedValue(
+      new Map([['kh-item-1', 'menu-item-1']]),
+    );
+    repo.findOrderSourceId.mockResolvedValue('src-doordash');
+    orders.createMarketplaceOrder.mockResolvedValue({ id: 'order-2' } as never);
+
+    // A DoorDash order relayed via KitchenHub reports as 'doordash'.
+    await service.importOrder(normalizedOrder({ sourceChannel: 'doordash' }), {
+      ...ctx,
+      providerName: 'kitchenhub',
+    });
+
+    expect(repo.findOrderSourceId).toHaveBeenCalledWith('doordash');
+    expect(orders.createMarketplaceOrder.mock.calls[0][0].source).toBe(
+      'doordash',
+    );
+  });
+
   it('is a no-op when the external order is already imported', async () => {
     repo.upsertExternalOrder.mockResolvedValue({
       row: { id: 'ext-row-1', internalOrderId: 'order-existing' } as never,

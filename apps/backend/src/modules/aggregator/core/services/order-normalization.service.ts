@@ -82,8 +82,11 @@ export class OrderNormalizationService {
         );
       }
 
-      // 3. Resolve the normalized order source (falls back to null if unseeded).
-      const sourceId = await this.repo.findOrderSourceId(ctx.providerName);
+      // 3. Attribute the order to the underlying marketplace for reporting. A DoorDash
+      // order relayed via KitchenHub reports as 'doordash', not 'kitchenhub'; a direct
+      // provider (Uber Eats) just uses its own name. Falls back to the transport adapter.
+      const sourceName = normalized.sourceChannel ?? ctx.providerName;
+      const sourceId = await this.repo.findOrderSourceId(sourceName);
 
       // 4. Create the native Coneeko order (marketplace prices preserved verbatim).
       const items = normalized.items.map((item) => {
@@ -116,7 +119,7 @@ export class OrderNormalizationService {
       const order = await this.ordersService.createMarketplaceOrder({
         organizationId: ctx.organizationId,
         locationId: ctx.locationId,
-        source: ctx.providerName,
+        source: sourceName,
         sourceId,
         integrationAccountId: ctx.integrationAccountId,
         externalOrderId: normalized.externalOrderId,

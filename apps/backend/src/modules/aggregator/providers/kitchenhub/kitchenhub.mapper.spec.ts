@@ -2,6 +2,7 @@ import {
   mapEventType,
   mapOrder,
   mapOrderItem,
+  normalizeMarketplace,
   parseWebhook,
   toCents,
 } from './kitchenhub.mapper';
@@ -93,6 +94,26 @@ describe('kitchenhub.mapper', () => {
         items: [],
       });
       expect(normalized.totalAmount).toBe(1100);
+    });
+  });
+
+  describe('normalizeMarketplace', () => {
+    it('canonicalizes the underlying marketplace label', () => {
+      expect(normalizeMarketplace('DoorDash')).toBe('doordash');
+      expect(normalizeMarketplace('Uber Eats')).toBe('ubereats');
+      expect(normalizeMarketplace('grub_hub')).toBe('grubhub');
+    });
+
+    it('returns undefined for unknown/empty so it falls back to the transport', () => {
+      expect(normalizeMarketplace('something')).toBeUndefined();
+      expect(normalizeMarketplace(undefined)).toBeUndefined();
+    });
+  });
+
+  describe('sourceChannel attribution', () => {
+    it('tags the underlying marketplace on the normalized order', () => {
+      const order = mapOrder({ id: 'k1', provider: 'DoorDash', items: [] });
+      expect(order.sourceChannel).toBe('doordash');
     });
   });
 

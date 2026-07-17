@@ -86,6 +86,15 @@ export class KitchenHubAdapter
     return orders.map(mapOrder);
   }
 
+  async getOrder(
+    connectionId: string,
+    externalOrderId: string,
+  ): Promise<NormalizedOrder | null> {
+    const { creds } = await this.credsFor(connectionId);
+    const order = await this.http.getOrder(creds, externalOrderId);
+    return order ? mapOrder(order) : null;
+  }
+
   async acceptOrder(
     connectionId: string,
     externalOrderId: string,
@@ -202,10 +211,14 @@ export class KitchenHubAdapter
    * `x-kitchenhub-signature` header and compare in constant time.
    */
   validateWebhook(
-    _payload: unknown,
+    _rawBody: string | Buffer,
     headers: Record<string, string>,
-    secret: string,
+    credentials: Record<string, unknown>,
   ): boolean {
+    const secret =
+      typeof credentials.webhookSecret === 'string'
+        ? credentials.webhookSecret
+        : '';
     if (!secret) return false;
     const provided =
       headers['authorization'] ??

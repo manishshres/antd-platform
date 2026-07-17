@@ -19,6 +19,20 @@ export function toCents(value: number | string | undefined | null): number {
   return Math.round(n * 100);
 }
 
+/**
+ * Canonicalize KitchenHub's marketplace label to a Coneeko order source
+ * (doordash / ubereats / grubhub). Returns undefined for anything unrecognized so
+ * normalization falls back to the transport provider name ('kitchenhub').
+ */
+export function normalizeMarketplace(raw?: string): string | undefined {
+  if (!raw) return undefined;
+  const key = raw.toLowerCase().replace(/[\s_-]/g, '');
+  if (key.includes('doordash')) return 'doordash';
+  if (key.includes('ubereats') || key === 'uber') return 'ubereats';
+  if (key.includes('grubhub')) return 'grubhub';
+  return undefined;
+}
+
 function customerName(order: KitchenHubOrder): string | undefined {
   const c = order.customer;
   if (!c) return undefined;
@@ -82,6 +96,8 @@ export function mapOrder(order: KitchenHubOrder): NormalizedOrder {
     externalOrderId: orderExternalId(order),
     externalStatus: order.status ?? 'new',
     externalCreatedAt: order.created_at,
+    // Attribute to the underlying marketplace (KitchenHub relays DoorDash/Grubhub/etc).
+    sourceChannel: normalizeMarketplace(order.provider ?? order.source),
     totalAmount: total,
     subtotal,
     taxAmount,

@@ -6,6 +6,14 @@ export interface NormalizedOrder {
   externalOrderId: string;
   /** Marketplace-side status string (preserved as-is in external_orders.external_status) */
   externalStatus: string;
+  /**
+   * The underlying marketplace this order originated from (doordash / ubereats /
+   * grubhub), used as the Coneeko order `source` for reporting. May differ from the
+   * transport adapter: a DoorDash order relayed through KitchenHub has
+   * sourceChannel='doordash' but arrives via the KitchenHub integration account.
+   * Falls back to the adapter's provider name when the marketplace is unknown.
+   */
+  sourceChannel?: string;
   /** ISO-8601 timestamp from the marketplace (may differ from Coneeko receivedAt) */
   externalCreatedAt?: string;
   totalAmount: number; // cents

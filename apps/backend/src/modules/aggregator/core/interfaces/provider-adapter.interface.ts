@@ -17,6 +17,16 @@ export interface OrderProvider {
     params?: Record<string, any>,
   ): Promise<NormalizedOrder[]>;
 
+  /**
+   * Fetch a single order by its marketplace id. Needed for providers whose webhooks
+   * are notification-only (e.g. Uber Eats sends a resource_href, not the order body).
+   * Returns null if the order can't be found.
+   */
+  getOrder(
+    connectionId: string,
+    externalOrderId: string,
+  ): Promise<NormalizedOrder | null>;
+
   /** Accept / confirm an order on the marketplace side */
   acceptOrder(connectionId: string, externalOrderId: string): Promise<void>;
 
@@ -57,11 +67,18 @@ export interface MenuProvider {
 export interface WebhookProvider {
   readonly providerName: string;
 
-  /** Validate the webhook signature/HMAC. Throws WebhookSignatureInvalidError on failure. */
+  /**
+   * Validate the webhook against the account's decrypted credentials. `rawBody` is the
+   * exact bytes received — required for HMAC-signed providers (Uber Eats, keyed on
+   * clientSecret) where re-serializing the parsed body would change the signature.
+   * Shared-secret providers (KitchenHub) ignore rawBody and compare a header to
+   * credentials.webhookSecret. Each adapter reads the credential field it needs.
+   * Returns false on mismatch.
+   */
   validateWebhook(
-    payload: any,
+    rawBody: string | Buffer,
     headers: Record<string, string>,
-    secret: string,
+    credentials: Record<string, unknown>,
   ): boolean;
 
   /** Parse the raw webhook body into a normalized event envelope. */

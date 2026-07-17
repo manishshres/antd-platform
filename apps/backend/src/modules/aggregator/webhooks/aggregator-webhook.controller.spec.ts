@@ -30,6 +30,9 @@ describe('AggregatorWebhookController', () => {
 
   const headers = { authorization: 'Bearer good-secret' };
   const body = { type: 'Order', order: { id: 'kh-1', status: 'new' } };
+  const req = {
+    rawBody: Buffer.from(JSON.stringify(body)),
+  } as unknown as Parameters<AggregatorWebhookController['handle']>[4];
 
   beforeEach(() => {
     queue = { add: jest.fn().mockResolvedValue({ id: 'job-1' }) };
@@ -80,7 +83,13 @@ describe('AggregatorWebhookController', () => {
   it('validates, reserves, and enqueues a fresh event (202)', async () => {
     mockInsert([{ eventId: 'kitchenhub:evt-1' }]); // reservation won
 
-    const res = await controller.handle('kitchenhub', 'acct-1', body, headers);
+    const res = await controller.handle(
+      'kitchenhub',
+      'acct-1',
+      body,
+      headers,
+      req,
+    );
 
     expect(res).toEqual({ received: true });
     expect(queue.add).toHaveBeenCalledTimes(1);
@@ -93,7 +102,13 @@ describe('AggregatorWebhookController', () => {
   it('dedupes a re-delivered event without enqueuing', async () => {
     mockInsert([]); // conflict → already reserved
 
-    const res = await controller.handle('kitchenhub', 'acct-1', body, headers);
+    const res = await controller.handle(
+      'kitchenhub',
+      'acct-1',
+      body,
+      headers,
+      req,
+    );
 
     expect(res).toEqual({ received: true, duplicate: true });
     expect(queue.add).not.toHaveBeenCalled();
@@ -103,7 +118,7 @@ describe('AggregatorWebhookController', () => {
     webhookProvider.validateWebhook.mockReturnValue(false);
 
     await expect(
-      controller.handle('kitchenhub', 'acct-1', body, headers),
+      controller.handle('kitchenhub', 'acct-1', body, headers, req),
     ).rejects.toThrow(UnauthorizedException);
     expect(queue.add).not.toHaveBeenCalled();
   });
@@ -115,7 +130,7 @@ describe('AggregatorWebhookController', () => {
     });
 
     await expect(
-      controller.handle('kitchenhub', 'acct-1', body, headers),
+      controller.handle('kitchenhub', 'acct-1', body, headers, req),
     ).rejects.toThrow(UnauthorizedException);
   });
 });

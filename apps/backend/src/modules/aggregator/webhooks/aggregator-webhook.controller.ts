@@ -9,6 +9,7 @@ import {
   NotFoundException,
   Param,
   Post,
+  Req,
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
@@ -16,6 +17,7 @@ import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
+import { Request } from 'express';
 import { randomUUID } from 'crypto';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { eq } from 'drizzle-orm';
@@ -29,6 +31,10 @@ import {
   AGGREGATOR_WEBHOOK_QUEUE,
   AggregatorWebhookJob,
 } from '../queues/aggregator-webhook.types';
+
+interface RequestWithRawBody extends Request {
+  rawBody?: Buffer;
+}
 
 /**
  * Unified inbound webhook receiver for every marketplace. The `:accountId` segment
@@ -69,6 +75,7 @@ export class AggregatorWebhookController {
     @Param('accountId') accountId: string,
     @Body() body: Record<string, unknown>,
     @Headers() headers: Record<string, string>,
+    @Req() req: RequestWithRawBody,
   ) {
     if (!this.registry.has(provider)) {
       throw new NotFoundException(`Unknown provider: ${provider}`);
@@ -84,15 +91,16 @@ export class AggregatorWebhookController {
     }
 
     const creds = account.credentials
-      ? this.encryption.decryptJson<{ webhookSecret?: string }>(
+      ? this.encryption.decryptJson<Record<string, unknown>>(
           account.credentials as string,
         )
       : {};
 
-    if (
-      !webhookProvider.validateWebhook(body, headers, creds.webhookSecret ?? '')
-    ) {
-      throw new UnauthorizedException('Invalid webhook secret.');
+    // HMAC providers (Uber Eats) need the exact received bytes; fall back to a
+    // re-serialized body only if the raw buffer wasn't captured.
+    const rawBody = req.rawBody ?? Buffer.from(JSON.stringify(body));
+    if (!webhookProvider.validateWebhook(rawBody, headers, creds)) {
+      throw new UnauthorizedException('Invalid webhook signature.');
     }
 
     const event = webhookProvider.parseEvent(body);
