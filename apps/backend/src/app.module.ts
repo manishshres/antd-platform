@@ -45,6 +45,7 @@ import { ConversationsModule } from './conversations/conversations.module';
 import { DiscountsModule } from './discounts/discounts.module';
 import { CacheModule } from '@nestjs/cache-manager';
 import { AuditLogsModule } from './audit-logs/audit-logs.module';
+import { AggregatorModule } from './modules/aggregator/aggregator.module';
 import * as redisStore from 'cache-manager-ioredis';
 import { validateEnv } from './config/env.validation';
 import { APP_GUARD } from '@nestjs/core';
@@ -151,6 +152,9 @@ import { RolesGuard } from './auth/guards/roles.guard';
     HealthModule,
     CronModule,
     AuditLogsModule,
+
+    // ── Order aggregation (marketplace integrations: KitchenHub, DoorDash, ...)
+    AggregatorModule,
   ],
   controllers: [AppController],
   providers: [
