@@ -39,6 +39,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
       { name: 'provisioning-queue' },
       { name: 'recordings-queue' },
       { name: 'menu-ai-sync-queue' },
+      { name: 'aggregator-webhook-queue' },
     ),
   ],
   exports: [BullModule],
