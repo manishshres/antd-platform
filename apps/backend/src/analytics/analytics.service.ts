@@ -234,11 +234,13 @@ export class AnalyticsService {
       date_str: string;
       date_label: string;
     }
+    // Cast via `unknown` — drizzle's db.execute() return type varies by driver/version
+    // (newer node-postgres typings resolve to QueryResult<Record<string, unknown>>,
+    // which won't direct-cast to DateBucket[]). Routing through unknown is version-proof
+    // and matches the project convention (AGENTS.md).
     const datesRes = (await this.db.execute(
       sql`SELECT to_char(date_trunc('day', now() AT TIME ZONE ${tz}) - (i || ' days')::interval, 'YYYY-MM-DD') as date_str, to_char(date_trunc('day', now() AT TIME ZONE ${tz}) - (i || ' days')::interval, 'Dy') as date_label FROM generate_series(6, 0, -1) i`,
-    )) as
-      | { rows: Array<{ date_str: string; date_label: string }> }
-      | { rows: DateBucket[] };
+    )) as unknown as { rows: DateBucket[] };
 
     const trendMap = new Map<
       string,
