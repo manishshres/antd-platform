@@ -174,11 +174,11 @@ function SortableMenuItem({ item, isAdmin, onEdit, onDelete, onRestore, onToggle
                 <Switch size="small" checked={item.isAvailable} onChange={() => onToggleAvailability(item)} onClick={(_, e) => e.stopPropagation()} />
               </Tooltip>
               {item.deletedAt ? (
-                <Tooltip title="Restore"><Button size="small" type="text" icon={<UndoOutlined />} onClick={(e) => { e.stopPropagation(); onRestore(item.id); }} /></Tooltip>
+                <Tooltip title="Restore"><Button size="small" type="text" icon={<UndoOutlined />} aria-label="Restore item" onClick={(e) => { e.stopPropagation(); onRestore(item.id); }} /></Tooltip>
               ) : (
                 <>
-                  <Tooltip title="Edit"><Button size="small" type="text" icon={<EditOutlined />} onClick={(e) => { e.stopPropagation(); onEdit(item); }} /></Tooltip>
-                  <Tooltip title="Delete"><Button size="small" type="text" danger icon={<DeleteOutlined />} onClick={(e) => { e.stopPropagation(); onDelete(item.id, item.name); }} /></Tooltip>
+                  <Tooltip title="Edit"><Button size="small" type="text" icon={<EditOutlined />} aria-label="Edit item" onClick={(e) => { e.stopPropagation(); onEdit(item); }} /></Tooltip>
+                  <Tooltip title="Delete"><Button size="small" type="text" danger icon={<DeleteOutlined />} aria-label="Delete item" onClick={(e) => { e.stopPropagation(); onDelete(item.id, item.name); }} /></Tooltip>
                 </>
               )}
             </div>
@@ -445,7 +445,7 @@ export default function MenuEditorPage() {
           <div style={{ width: 300, flexShrink: 0, borderRight: `1px solid ${token.colorBorderSecondary}`, background: token.colorBgLayout, display: 'flex', flexDirection: 'column' }}>
             <div style={{ padding: '16px 16px 12px', borderBottom: `1px solid ${token.colorBorderSecondary}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <Text strong style={{ fontSize: 13 }}>Categories</Text>
-              {isAdmin && <Tooltip title="Add Category"><Button size="small" type="text" icon={<PlusOutlined />} onClick={() => setCatModalOpen(true)} /></Tooltip>}
+              {isAdmin && <Tooltip title="Add Category"><Button size="small" type="text" icon={<PlusOutlined />} aria-label="Add category" onClick={() => setCatModalOpen(true)} /></Tooltip>}
             </div>
             <div style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
               {loading ? (
@@ -468,7 +468,7 @@ export default function MenuEditorPage() {
                       </Text>
                       <Badge count={count} style={{ backgroundColor: isActive ? token.colorPrimary : token.colorTextTertiary }} />
                       {isAdmin && (
-                        <Button size="small" type="text" icon={<EllipsisOutlined />} onClick={(e) => {
+                        <Button size="small" type="text" icon={<EllipsisOutlined />} aria-label="Category options" onClick={(e) => {
                           e.stopPropagation(); setEditingCat(cat);
                           editCatForm.setFieldsValue({ name: cat.name, isAvailable: cat.isAvailable });
                           setEditCatModalOpen(true);
@@ -501,12 +501,12 @@ export default function MenuEditorPage() {
                 {isAdmin && selectedCat && !selectedCat.deletedAt && (
                   <>
                     <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditingItem(null); itemForm.resetFields(); itemForm.setFieldsValue({ isAvailable: true }); setItemModalOpen(true); }}>Add Item</Button>
-                    <Tooltip title="Edit category"><Button icon={<EditOutlined />} onClick={() => { setEditingCat(selectedCat); editCatForm.setFieldsValue({ name: selectedCat.name, isAvailable: selectedCat.isAvailable }); setEditCatModalOpen(true); }} /></Tooltip>
-                    <Tooltip title="Delete category"><Button danger icon={<DeleteOutlined />} onClick={() => handleDeleteCategory(selectedCat.id, selectedCat.name)} /></Tooltip>
+                    <Tooltip title="Edit category"><Button icon={<EditOutlined />} aria-label="Edit category" onClick={() => { setEditingCat(selectedCat); editCatForm.setFieldsValue({ name: selectedCat.name, isAvailable: selectedCat.isAvailable }); setEditCatModalOpen(true); }} /></Tooltip>
+                    <Tooltip title="Delete category"><Button danger icon={<DeleteOutlined />} aria-label="Delete category" onClick={() => handleDeleteCategory(selectedCat.id, selectedCat.name)} /></Tooltip>
                   </>
                 )}
                 {selectedCat?.deletedAt && <Button icon={<UndoOutlined />} onClick={() => handleRestoreCategory(selectedCat.id)}>Restore Category</Button>}
-                <Tooltip title="Refresh"><Button icon={<ReloadOutlined />} onClick={load} loading={loading} /></Tooltip>
+                <Tooltip title="Refresh"><Button icon={<ReloadOutlined />} aria-label="Refresh menu" onClick={load} loading={loading} /></Tooltip>
               </Space>
             </div>
             <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
@@ -555,7 +555,7 @@ export default function MenuEditorPage() {
                         )}
                         {isAdmin && (
                           <Popconfirm title="Delete this modifier group?" onConfirm={async () => { await api.delete(`/menus/modifiers/groups/${mg.id}`); load(); }} okText="Delete" okType="danger">
-                            <Button size="small" type="text" danger icon={<DeleteOutlined />} />
+                            <Button size="small" type="text" danger icon={<DeleteOutlined />} aria-label="Delete modifier group" />
                           </Popconfirm>
                         )}
                       </Space>

@@ -325,6 +325,7 @@ export default function PrintersPage() {
             <Button
               type="text"
               icon={<PrinterOutlined />}
+              aria-label="Test print"
               onClick={() => handleTestPrint(record)}
             />
           </Tooltip>
@@ -332,6 +333,7 @@ export default function PrintersPage() {
             <Button
               type="text"
               icon={<ReloadOutlined style={{ color: token.colorWarning }} />}
+              aria-label="Restart printer"
               onClick={() => handleRestartPrinter(record)}
             />
           </Tooltip>
@@ -339,6 +341,7 @@ export default function PrintersPage() {
             <Button
               type="text"
               icon={<HistoryOutlined style={{ color: token.colorPrimary }} />}
+              aria-label="View print queue"
               onClick={() => handleViewQueue(record)}
             />
           </Tooltip>
@@ -355,6 +358,7 @@ export default function PrintersPage() {
               type="text"
               danger
               icon={<DeleteOutlined />}
+              aria-label="Delete printer"
               onClick={() => handleDelete(record)}
             />
           </Tooltip>

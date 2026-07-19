@@ -251,6 +251,7 @@ function LayoutInner({
                 <Button
                   type='text'
                   icon={<MenuOutlined />}
+                  aria-label='Open menu'
                   onClick={() => setDrawerOpen(true)}
                   style={{ fontSize: 16 }}
                 />

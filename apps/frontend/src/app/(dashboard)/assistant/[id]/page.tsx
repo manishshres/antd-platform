@@ -184,7 +184,7 @@ export default function AssistantDetailPage({
       <PageHeader
         title={
           <Space size={8}>
-            <Button size="small" type='text' icon={<ArrowLeftOutlined />} onClick={() => router.push("/assistant")} />
+            <Button size="small" type='text' icon={<ArrowLeftOutlined />} aria-label='Back to assistants' onClick={() => router.push("/assistant")} />
             {agent.name}
             <Tag color='blue'>{agent.model}</Tag>
           </Space>

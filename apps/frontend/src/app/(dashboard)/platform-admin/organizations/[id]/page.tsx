@@ -361,7 +361,7 @@ export default function OrganizationDetailPage() {
         }
         title={
           <Space size={8}>
-            <Button size="small" icon={<ArrowLeftOutlined />} onClick={() => router.push("/platform-admin")} />
+            <Button size="small" icon={<ArrowLeftOutlined />} aria-label="Back to platform admin" onClick={() => router.push("/platform-admin")} />
             {org.name}
           </Space>
         }

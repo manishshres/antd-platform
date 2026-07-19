@@ -90,7 +90,7 @@ export default function EditUserPage() {
         }
         title={
           <Space size={8}>
-            <Button size="small" icon={<ArrowLeftOutlined />} onClick={() => router.push("/users")} />
+            <Button size="small" icon={<ArrowLeftOutlined />} aria-label='Back to users' onClick={() => router.push("/users")} />
             Edit User
           </Space>
         }

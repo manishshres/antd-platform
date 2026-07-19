@@ -472,6 +472,7 @@ export default function CallsPage() {
             <Tooltip title='Refresh'>
               <Button
                 icon={<ReloadOutlined />}
+                aria-label='Refresh'
                 onClick={handleRefresh}
                 loading={loading}
               />

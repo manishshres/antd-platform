@@ -228,15 +228,15 @@ export default function UsersPage() {
         <Space>
           <Tooltip title="Force Logout (Revoke Sessions)">
             <Popconfirm title="Force logout this user?" onConfirm={() => handleForceLogout(record.id)}>
-              <Button size="small" icon={<LogoutOutlined />} />
+              <Button size="small" icon={<LogoutOutlined />} aria-label="Force logout user" />
             </Popconfirm>
           </Tooltip>
           <Tooltip title="Edit User">
-            <Button size="small" icon={<EditOutlined />} onClick={() => message.info("Edit user coming soon")} />
+            <Button size="small" icon={<EditOutlined />} aria-label="Edit user" onClick={() => message.info("Edit user coming soon")} />
           </Tooltip>
           <Tooltip title="Delete User">
             <Popconfirm title="Are you sure you want to delete this user?" onConfirm={() => handleDeleteUser(record.id)} okText="Yes" cancelText="No">
-              <Button size="small" danger icon={<DeleteOutlined />} />
+              <Button size="small" danger icon={<DeleteOutlined />} aria-label="Delete user" />
             </Popconfirm>
           </Tooltip>
         </Space>

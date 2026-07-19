@@ -214,7 +214,7 @@ export default function PlatformAdminDashboard() {
 
         return (
           <Dropdown menu={{ items: actionMenu }} trigger={['click']}>
-            <Button size="small" icon={<MoreOutlined />} />
+            <Button size="small" icon={<MoreOutlined />} aria-label="More actions" />
           </Dropdown>
         );
       },

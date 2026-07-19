@@ -246,6 +246,7 @@ export default function DocumentationPage() {
           type='text'
           danger
           icon={<DeleteOutlined />}
+          aria-label='Delete document'
           onClick={() => handleDelete(doc)}
         />
       ),

@@ -367,7 +367,7 @@ export default function SettingsHubPage() {
             Edit
           </Button>
           <Popconfirm title="Delete this location?" onConfirm={() => handleDeleteLocation(record.id)} okText="Yes" cancelText="No">
-            <Button size="small" danger icon={<DeleteOutlined />} />
+            <Button size="small" danger icon={<DeleteOutlined />} aria-label="Delete location" />
           </Popconfirm>
         </Space>
       ),
@@ -384,7 +384,7 @@ export default function SettingsHubPage() {
       key: "actions",
       render: (_: any, record: ApiKey) => (
         <Popconfirm title="Delete API key?" onConfirm={() => handleDeleteApiKey(record.id)} okText="Yes" cancelText="No">
-          <Button size="small" danger icon={<DeleteOutlined />} />
+          <Button size="small" danger icon={<DeleteOutlined />} aria-label="Delete API key" />
         </Popconfirm>
       ),
     },
@@ -415,7 +415,7 @@ export default function SettingsHubPage() {
       key: "actions",
       render: (_: any, record: OrgWebhook) => (
         <Popconfirm title="Delete Webhook?" onConfirm={() => handleDeleteWebhook(record.id)} okText="Yes" cancelText="No">
-          <Button size="small" danger icon={<DeleteOutlined />} />
+          <Button size="small" danger icon={<DeleteOutlined />} aria-label="Delete webhook" />
         </Popconfirm>
       ),
     },
@@ -826,6 +826,7 @@ export default function SettingsHubPage() {
                   <Input value={newlyGeneratedKey} readOnly />
                   <Button
                     icon={<CopyOutlined />}
+                    aria-label="Copy API key"
                     onClick={() => {
                       navigator.clipboard.writeText(newlyGeneratedKey);
                       message.success("Copied to clipboard!");

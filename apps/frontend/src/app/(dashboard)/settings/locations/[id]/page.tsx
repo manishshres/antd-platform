@@ -139,7 +139,7 @@ export default function EditLocationPage() {
         }
         title={
           <Space size={8}>
-            <Button size="small" icon={<ArrowLeftOutlined />} onClick={() => router.push("/settings")} />
+            <Button size="small" icon={<ArrowLeftOutlined />} aria-label='Back to settings' onClick={() => router.push("/settings")} />
             Edit Location
           </Space>
         }

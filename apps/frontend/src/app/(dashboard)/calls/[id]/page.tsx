@@ -342,6 +342,7 @@ function AudioPlayer({
           <Button
             shape='circle'
             icon={<BackwardOutlined />}
+            aria-label='Back 10 seconds'
             onClick={() => skip(-10)}
             disabled={loading}
           />
@@ -351,6 +352,7 @@ function AudioPlayer({
           shape='circle'
           size='large'
           icon={playing ? <PauseOutlined /> : <PlayCircleOutlined />}
+          aria-label={playing ? "Pause" : "Play"}
           onClick={toggle}
           disabled={loading}
           style={{ width: 48, height: 48 }}
@@ -359,6 +361,7 @@ function AudioPlayer({
           <Button
             shape='circle'
             icon={<ForwardOutlined />}
+            aria-label='Forward 10 seconds'
             onClick={() => skip(10)}
             disabled={loading}
           />
