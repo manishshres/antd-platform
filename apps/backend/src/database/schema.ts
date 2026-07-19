@@ -26,9 +26,13 @@ export const organizations = pgTable(
     brandingColor: varchar('branding_color', { length: 50 }),
     settings: jsonb('settings'),
     featureFlags: jsonb('feature_flags').default({}).notNull(),
-    deletedAt: timestamp('deleted_at'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [
     check(
@@ -68,21 +72,29 @@ export const locations = pgTable(
     telnyxAssistantId: varchar('telnyx_assistant_id', { length: 255 }),
     // When the menu was last published to this location's Telnyx AI knowledge base. Null until the
     // first sync. Lets the UI show freshness and lets auto-sync target already-published locations.
-    menuLastSyncedAt: timestamp('menu_last_synced_at'),
+    menuLastSyncedAt: timestamp('menu_last_synced_at', { withTimezone: true }),
     masterAgentId: varchar('master_agent_id', { length: 255 }),
     // Provisioning state
     status: varchar('status', { length: 50 }).default('draft').notNull(),
     provisioningError: varchar('provisioning_error', { length: 2048 }),
-    provisioningStartedAt: timestamp('provisioning_started_at'),
-    provisioningCompletedAt: timestamp('provisioning_completed_at'),
+    provisioningStartedAt: timestamp('provisioning_started_at', {
+      withTimezone: true,
+    }),
+    provisioningCompletedAt: timestamp('provisioning_completed_at', {
+      withTimezone: true,
+    }),
     // Webhook
     webhookApiKey: varchar('webhook_api_key', { length: 255 }),
     // Menu Sync
     menuImportSource: varchar('menu_import_source', { length: 1024 }),
     // Soft delete
-    deletedAt: timestamp('deleted_at'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [
     index('idx_locations_organization_id').on(t.organizationId),
@@ -109,10 +121,12 @@ export const orgInvitations = pgTable(
     tokenHash: varchar('token_hash', { length: 255 }).notNull().unique(),
     status: varchar('status', { length: 50 }).default('pending').notNull(),
     // 'pending' | 'accepted' | 'expired' | 'revoked'
-    expiresAt: timestamp('expires_at').notNull(),
-    acceptedAt: timestamp('accepted_at'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    acceptedAt: timestamp('accepted_at', { withTimezone: true }),
     invitedByUserId: uuid('invited_by_user_id'), // Will reference users.id below
-    createdAt: timestamp('created_at').defaultNow().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [
     index('idx_org_invitations_organization_id').on(t.organizationId),
@@ -145,9 +159,11 @@ export const orgProvisioningSteps = pgTable(
     attempts: integer('attempts').default(0).notNull(),
     lastError: varchar('last_error', { length: 2048 }),
     metadata: jsonb('metadata'), // stores IDs, phone numbers, etc. from each step
-    startedAt: timestamp('started_at'),
-    completedAt: timestamp('completed_at'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [
     index('idx_provisioning_steps_location_id').on(t.locationId),
@@ -166,11 +182,13 @@ export const users = pgTable(
     lastName: varchar('last_name', { length: 255 }),
     phoneNumber: varchar('phone_number', { length: 50 }),
     companyName: varchar('company_name', { length: 255 }),
-    emailVerifiedAt: timestamp('email_verified_at'),
-    onboardingCompletedAt: timestamp('onboarding_completed_at'),
+    emailVerifiedAt: timestamp('email_verified_at', { withTimezone: true }),
+    onboardingCompletedAt: timestamp('onboarding_completed_at', {
+      withTimezone: true,
+    }),
     failedLoginAttempts: integer('failed_login_attempts').default(0).notNull(),
-    lockedUntil: timestamp('locked_until'),
-    lastLoginAt: timestamp('last_login_at'),
+    lockedUntil: timestamp('locked_until', { withTimezone: true }),
+    lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
     organizationId: uuid('organization_id').references(() => organizations.id, {
       onDelete: 'set null',
     }),
@@ -178,9 +196,13 @@ export const users = pgTable(
       onDelete: 'set null',
     }),
     posPinHash: varchar('pos_pin_hash', { length: 255 }),
-    deletedAt: timestamp('deleted_at'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [
     index('idx_users_email').on(t.email),
@@ -203,8 +225,10 @@ export const refreshTokens = pgTable(
       .notNull(),
     /** TTL in seconds chosen at login (rememberMe or default). Preserved across rotations (M2). */
     ttlSecs: integer('ttl_secs').notNull().default(604800),
-    expiresAt: timestamp('expires_at').notNull(),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [index('idx_refresh_tokens_user_id').on(t.userId)],
 );
@@ -219,8 +243,12 @@ export const plans = pgTable('plans', {
   kbSizeLimit: integer('kb_size_limit').notNull(), // in MB
   websiteImportsLimit: integer('website_imports_limit').notNull(),
   orderVolumeLimit: integer('order_volume_limit').notNull(),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .defaultNow()
+    .notNull(),
 });
 
 export const subscriptions = pgTable(
@@ -241,10 +269,14 @@ export const subscriptions = pgTable(
     }).unique(),
     stripeCustomerId: varchar('stripe_customer_id', { length: 255 }),
     status: varchar('status', { length: 50 }).notNull(), // 'active', 'trialing', 'past_due', 'canceled', etc.
-    currentPeriodEnd: timestamp('current_period_end'),
+    currentPeriodEnd: timestamp('current_period_end', { withTimezone: true }),
     cancelAtPeriodEnd: boolean('cancel_at_period_end').default(false).notNull(),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [
     index('idx_subscriptions_organization_id').on(t.organizationId),
@@ -261,10 +293,14 @@ export const apiKeys = pgTable(
       .notNull(),
     name: varchar('name', { length: 255 }).notNull(),
     keyHash: varchar('key_hash', { length: 255 }).notNull(),
-    lastUsedAt: timestamp('last_used_at'),
-    expiresAt: timestamp('expires_at'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [index('idx_api_keys_organization_id').on(t.organizationId)],
 );
@@ -282,9 +318,13 @@ export const categories = pgTable(
     }),
     isAvailable: boolean('is_available').default(true).notNull(),
     sortOrder: integer('sort_order').default(0).notNull(),
-    deletedAt: timestamp('deleted_at'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [
     index('idx_categories_organization_id').on(t.organizationId),
@@ -311,9 +351,13 @@ export const menuItems = pgTable(
     imageUrl: varchar('image_url', { length: 1024 }),
     sortOrder: integer('sort_order').default(0).notNull(),
     availabilitySchedule: jsonb('availability_schedule'), // e.g. [{ day: 1, startTime: '09:00', endTime: '17:00' }]
-    deletedAt: timestamp('deleted_at'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [
     index('idx_menu_items_category_id').on(t.categoryId),
@@ -335,9 +379,13 @@ export const menuModifiers = pgTable(
     isRequired: boolean('is_required').default(false).notNull(),
     multiSelect: boolean('multi_select').default(false).notNull(),
     maxSelections: integer('max_selections'),
-    deletedAt: timestamp('deleted_at'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [
     index('idx_menu_modifiers_organization_id').on(t.organizationId),
@@ -352,9 +400,13 @@ export const menuItemModifiers = pgTable('menu_item_modifiers', {
     .notNull(),
   name: varchar('name', { length: 255 }).notNull(),
   priceAdjustment: integer('price_adjustment').default(0).notNull(), // in cents
-  deletedAt: timestamp('deleted_at'),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .defaultNow()
+    .notNull(),
 });
 
 export const menuItemToModifiers = pgTable(
@@ -389,9 +441,13 @@ export const discounts = pgTable(
     // Requires a manager/admin role to apply (e.g. "Manager Discount", "Employee Meal").
     requiresManager: boolean('requires_manager').default(false).notNull(),
     active: boolean('active').default(true).notNull(),
-    deletedAt: timestamp('deleted_at'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [
     index('idx_discounts_organization_id').on(t.organizationId),
@@ -410,8 +466,12 @@ export const customers = pgTable(
     phone: varchar('phone', { length: 50 }),
     email: varchar('email', { length: 255 }),
     notes: text('notes'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
     index('idx_customers_org').on(table.organizationId),
@@ -431,8 +491,12 @@ export const floorPlans = pgTable(
     name: varchar('name', { length: 255 }).notNull(),
     width: integer('width').default(1000).notNull(),
     height: integer('height').default(1000).notNull(),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
     index('idx_floor_plans_org').on(table.organizationId),
@@ -455,8 +519,12 @@ export const tables = pgTable(
     posX: integer('pos_x').default(0).notNull(),
     posY: integer('pos_y').default(0).notNull(),
     shape: varchar('shape', { length: 50 }).default('rectangle').notNull(), // 'rectangle', 'circle'
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
     index('idx_tables_org').on(table.organizationId),
@@ -519,13 +587,17 @@ export const orders = pgTable(
     ),
     externalOrderId: varchar('external_order_id', { length: 255 }),
     paymentMethod: varchar('payment_method', { length: 20 }),
-    paidAt: timestamp('paid_at'),
+    paidAt: timestamp('paid_at', { withTimezone: true }),
     // Human-friendly per-location daily sequence ("Order #47") for tickets and callouts.
     ticketNumber: integer('ticket_number'),
     clientOrderId: varchar('client_order_id', { length: 255 }),
-    deletedAt: timestamp('deleted_at'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [
     index('idx_orders_organization_id').on(t.organizationId),
@@ -559,7 +631,9 @@ export const orderItems = pgTable(
     modifiers: jsonb('modifiers'),
     notes: varchar('notes', { length: 500 }),
     course: integer('course'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [
     index('idx_order_items_order_id').on(t.orderId),
@@ -601,7 +675,9 @@ export const payments = pgTable(
     createdBy: uuid('created_by').references(() => users.id, {
       onDelete: 'set null',
     }),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [
     index('idx_payments_order_id').on(t.orderId),
@@ -632,8 +708,12 @@ export const printJobs = pgTable(
     attempts: integer('attempts').default(0).notNull(),
     lastError: varchar('last_error', { length: 1024 }),
     payload: jsonb('payload').notNull(),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [
     index('idx_print_jobs_organization_id').on(t.organizationId),
@@ -660,7 +740,9 @@ export const auditLogs = pgTable(
     newValue: jsonb('new_value'),
     ipAddress: varchar('ip_address', { length: 45 }),
     userAgent: varchar('user_agent', { length: 500 }),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [
     index('idx_audit_logs_organization_id').on(t.organizationId),
@@ -685,9 +767,13 @@ export const orgAgents = pgTable(
     name: varchar('name', { length: 255 }).notNull(),
     status: varchar('status', { length: 50 }).default('active'),
     config: jsonb('config'),
-    deletedAt: timestamp('deleted_at'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [
     index('idx_org_agents_organization_id').on(t.organizationId),
@@ -706,8 +792,10 @@ export const orgDocuments = pgTable(
     externalId: varchar('external_id', { length: 255 }).notNull(), // Telnyx document ID
     filename: varchar('filename', { length: 255 }).notNull(),
     mimeType: varchar('mime_type', { length: 100 }),
-    deletedAt: timestamp('deleted_at'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [index('idx_org_documents_organization_id').on(t.organizationId)],
 );
@@ -726,9 +814,13 @@ export const orgPhoneNumbers = pgTable(
     phoneNumber: varchar('phone_number', { length: 50 }).notNull(),
     externalId: varchar('external_id', { length: 255 }), // Telnyx phone number ID
     name: varchar('name', { length: 255 }),
-    deletedAt: timestamp('deleted_at'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [
     index('idx_org_phone_numbers_organization_id').on(t.organizationId),
@@ -754,13 +846,17 @@ export const printers = pgTable(
     type: varchar('type', { length: 50 }).notNull().default('kitchen'),
     locationName: varchar('location_name', { length: 255 }),
     isOnline: boolean('is_online').default(false).notNull(),
-    lastHeartbeatAt: timestamp('last_heartbeat_at'),
+    lastHeartbeatAt: timestamp('last_heartbeat_at', { withTimezone: true }),
     ipAddress: varchar('ip_address', { length: 45 }),
     model: varchar('model', { length: 100 }),
     notes: varchar('notes', { length: 500 }),
-    deletedAt: timestamp('deleted_at'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [
     index('idx_printers_organization_id').on(t.organizationId),
@@ -776,10 +872,12 @@ export const passwordResetTokens = pgTable('password_reset_tokens', {
     .notNull(),
   /** SHA-256 hash of the raw token sent in the email */
   tokenHash: varchar('token_hash', { length: 255 }).notNull().unique(),
-  expiresAt: timestamp('expires_at').notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   /** Set when consumed — prevents reuse */
-  usedAt: timestamp('used_at'),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
+  usedAt: timestamp('used_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .defaultNow()
+    .notNull(),
 });
 
 // Email verification tokens — single-use (Phase 7)
@@ -790,8 +888,10 @@ export const emailVerificationTokens = pgTable('email_verification_tokens', {
     .notNull(),
   /** SHA-256 hash of the raw token sent in the email */
   tokenHash: varchar('token_hash', { length: 255 }).notNull().unique(),
-  expiresAt: timestamp('expires_at').notNull(),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .defaultNow()
+    .notNull(),
 });
 
 // Call Recordings & Transcripts (Phase 11)
@@ -818,10 +918,14 @@ export const recordings = pgTable(
     callOutcome: varchar('call_outcome', { length: 255 }),
     tags: jsonb('tags'), // Array of tags
     status: varchar('status', { length: 50 }).default('pending').notNull(),
-    expiresAt: timestamp('expires_at'),
-    deletedAt: timestamp('deleted_at'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [
     index('idx_recordings_organization_id').on(t.organizationId),
@@ -848,8 +952,12 @@ export const conversations = pgTable(
       .notNull(),
     callSessionId: varchar('call_session_id', { length: 255 }).notNull(),
     messages: jsonb('messages').notNull(), // Array of { role, text, sentAt }
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [
     index('idx_conversations_organization_id').on(t.organizationId),
@@ -871,7 +979,9 @@ export const usageEvents = pgTable(
     eventType: varchar('event_type', { length: 100 }).notNull(), // e.g. 'call_minutes', 'call_count', 'sms_count', 'storage_kb', 'api_request', 'ai_summary', 'ai_transcription'
     amount: integer('amount').notNull(), // amount of usage (e.g. minutes, bytes, or count)
     metadata: jsonb('metadata'), // e.g. { callSessionId: "..." }
-    createdAt: timestamp('created_at').defaultNow().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [
     index('idx_usage_events_organization_id').on(t.organizationId),
@@ -896,8 +1006,12 @@ export const orgWebhooks = pgTable(
     events: jsonb('events').notNull(), // array of strings e.g. ['order.created', 'order.updated']
     isActive: boolean('is_active').default(true).notNull(),
     secret: varchar('secret', { length: 255 }).notNull(), // HMAC signature secret
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [index('idx_org_webhooks_organization_id').on(t.organizationId)],
 );
@@ -912,8 +1026,10 @@ export const webhookEvents = pgTable('webhook_events', {
   // that predate the aggregator only reserve eventId for idempotency.
   eventType: varchar('event_type', { length: 100 }),
   payload: jsonb('payload'),
-  receivedAt: timestamp('received_at').defaultNow().notNull(),
-  processedAt: timestamp('processed_at'),
+  receivedAt: timestamp('received_at', { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  processedAt: timestamp('processed_at', { withTimezone: true }),
 });
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -949,8 +1065,12 @@ export const providerCapabilities = pgTable(
       .default(true)
       .notNull(),
     supportsRefunds: boolean('supports_refunds').default(false).notNull(),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [unique('uq_provider_capabilities_provider').on(t.providerId)],
 );
@@ -978,8 +1098,12 @@ export const integrationAccounts = pgTable(
     providerStoreId: varchar('provider_store_id', { length: 255 }),
     status: varchar('status', { length: 30 }).default('waiting').notNull(), // waiting_menu | in_progress | waiting | connected | rejected | disabled
     isOnline: boolean('is_online').default(false).notNull(),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [
     index('idx_integration_accounts_org').on(t.organizationId),
@@ -996,7 +1120,9 @@ export const orderSources = pgTable('order_sources', {
   id: uuid('id').defaultRandom().primaryKey(),
   name: varchar('name', { length: 50 }).notNull().unique(),
   type: varchar('type', { length: 20 }).default('marketplace').notNull(), // 'internal' | 'marketplace'
-  createdAt: timestamp('created_at').defaultNow().notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .defaultNow()
+    .notNull(),
 });
 
 /**
@@ -1027,14 +1153,18 @@ export const externalOrders = pgTable(
     }),
     externalOrderId: varchar('external_order_id', { length: 255 }).notNull(),
     externalStatus: varchar('external_status', { length: 50 }),
-    externalCreatedAt: timestamp('external_created_at'),
+    externalCreatedAt: timestamp('external_created_at', { withTimezone: true }),
     rawPayload: jsonb('raw_payload').notNull(),
     syncStatus: varchar('sync_status', { length: 20 })
       .default('pending')
       .notNull(), // 'pending' | 'imported' | 'failed'
     error: varchar('error', { length: 1000 }),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [
     index('idx_external_orders_org').on(t.organizationId),
@@ -1070,9 +1200,13 @@ export const menuProviderMappings = pgTable(
     mappingStatus: varchar('mapping_status', { length: 20 })
       .default('pending')
       .notNull(), // 'pending' | 'mapped' | 'unmatched' | 'archived'
-    lastSyncedAt: timestamp('last_synced_at'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+    lastSyncedAt: timestamp('last_synced_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [
     index('idx_menu_provider_mappings_account').on(t.integrationAccountId),
@@ -1100,11 +1234,15 @@ export const integrationSyncJobs = pgTable(
     ),
     type: varchar('type', { length: 30 }).notNull(), // 'MENU_SYNC' | 'ORDER_IMPORT' | 'LOCATION_SYNC'
     status: varchar('status', { length: 20 }).default('pending').notNull(), // 'pending' | 'running' | 'completed' | 'failed'
-    startedAt: timestamp('started_at'),
-    completedAt: timestamp('completed_at'),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
     error: varchar('error', { length: 1000 }),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [index('idx_integration_sync_jobs_org').on(t.organizationId)],
 );
@@ -1121,8 +1259,10 @@ export const webhookDeliveries = pgTable(
     attemptNumber: integer('attempt_number').default(1).notNull(),
     responseCode: integer('response_code'),
     errorMessage: varchar('error_message', { length: 1000 }),
-    receivedAt: timestamp('received_at').defaultNow().notNull(),
-    processedAt: timestamp('processed_at'),
+    receivedAt: timestamp('received_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    processedAt: timestamp('processed_at', { withTimezone: true }),
   },
   (t) => [index('idx_webhook_deliveries_event').on(t.webhookEventId)],
 );

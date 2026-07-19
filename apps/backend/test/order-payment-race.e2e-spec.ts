@@ -53,6 +53,8 @@ describe('Order payment concurrency (e2e)', () => {
     email: 'race@test.com',
     role: 'manager',
     organizationId: orgId,
+    locationId: null,
+    isPlatformAdmin: false,
   });
 
   // recordPayment needs a getFullOrder callback; the tests only assert on DB

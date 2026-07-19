@@ -114,7 +114,9 @@ describe('Provisioning (e2e)', () => {
       steps: unknown[];
     };
     expect(body.organizationStatus).toBe('provisioning');
-    expect(body.steps).toHaveLength(7);
+    // Provisioning flow is 8 steps (search/purchase phone, clone/assign/configure
+    // agent, import menu, register webhook, send admin invitation).
+    expect(body.steps).toHaveLength(8);
   });
 
   it('/api/v1/admin/organizations/:id/status (PATCH) - Suspend Org', async () => {
