@@ -18,9 +18,10 @@ type Listener = (state: SyncState) => void;
 /**
  * Offline-first synchronizer.
  *
- * Push: queued orders go up first (idempotent — the local order id is the
- * server's clientOrderId, so a retry after a dropped response can never
- * double-create), then locally created customers.
+ * Push: locally created customers go up FIRST so that resolveLocalCustomer can
+ * repoint any queued order at the canonical server customer id; then the orders
+ * (idempotent — the local order id is the server's clientOrderId, so a retry
+ * after a dropped response can never double-create).
  * Pull: catalog, customers, tables, locations refresh the SQLite cache.
  *
  * Any network failure simply leaves rows queued; a later run (connectivity
@@ -68,8 +69,10 @@ export class SyncEngine {
     if (!client.isConfigured || this.state.syncing) return;
     this.update({ syncing: true, lastError: null });
     try {
-      await this.pushOrders(client, settings);
+      // Customers first: resolveLocalCustomer repoints queued orders at the
+      // server customer id, so orders must be pushed only after that remap (P7-002).
       await this.pushCustomers(client);
+      await this.pushOrders(client, settings);
       await this.pullAll(client, settings);
       setMeta('lastSyncAt', new Date().toISOString());
       this.update({ lastSyncAt: getMeta('lastSyncAt') });
