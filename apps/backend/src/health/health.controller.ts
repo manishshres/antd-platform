@@ -1,4 +1,4 @@
-import { Controller, Get, Inject } from '@nestjs/common';
+import { Controller, Get, Inject, Logger } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { Public } from '../common/decorators/public.decorator';
 import { getAppVersion } from '../common/version';
@@ -16,6 +16,8 @@ interface RedisClient {
 @ApiTags('System Health & Monitoring')
 @Controller('health')
 export class HealthController {
+  private readonly logger = new Logger(HealthController.name);
+
   constructor(
     @Inject(DRIZZLE)
     private readonly db: NodePgDatabase<typeof schema>,
@@ -33,18 +35,23 @@ export class HealthController {
     description: 'One or more services are unhealthy',
   })
   async getHealth() {
+    // This endpoint is @Public(), so error details are logged server-side only
+    // and never returned to anonymous callers — raw PG/Redis messages can leak
+    // table names or internal topology (P10-007 / P10-008).
     let dbStatus = 'healthy';
-    let dbError: string | null = null;
     try {
       // Validate database connectivity using a fast query
       await this.db.select().from(schema.plans).limit(1);
     } catch (err: unknown) {
       dbStatus = 'unhealthy';
-      dbError = err instanceof Error ? err.message : String(err);
+      this.logger.error(
+        `Health check: database unavailable: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
     }
 
     let redisStatus = 'healthy';
-    let redisError: string | null = null;
     try {
       const client = (await this.printQueue.client) as unknown as RedisClient;
       const pingRes = await client.ping();
@@ -53,7 +60,11 @@ export class HealthController {
       }
     } catch (err: unknown) {
       redisStatus = 'unhealthy';
-      redisError = err instanceof Error ? err.message : String(err);
+      this.logger.error(
+        `Health check: redis unavailable: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
     }
 
     const mqttConnected = this.mqttService.getIsConnected();
@@ -69,8 +80,8 @@ export class HealthController {
       version: getAppVersion(),
       timestamp: new Date().toISOString(),
       services: {
-        database: { status: dbStatus, error: dbError },
-        redis: { status: redisStatus, error: redisError },
+        database: { status: dbStatus },
+        redis: { status: redisStatus },
         mqtt: { status: mqttStatus },
       },
     };

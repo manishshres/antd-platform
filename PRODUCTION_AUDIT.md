@@ -37,6 +37,25 @@ suite (`order-payment-race.e2e-spec.ts`, 3/3), plus POS `tsc --noEmit`.
 audit window. It ships with unit specs but has **not** had a security/business-
 logic review pass — treat it as unaudited until one runs.
 
+### Long-tail triage (P5/P8–P14, 2026-07-19)
+
+Spot-checked the Medium/Low backlog against current `HEAD`. One concrete fix
+made; the rest classified so the remaining work is scoped honestly.
+
+| Item | Verdict |
+|---|---|
+| **P10-007 / P10-008** health endpoint leaks raw `dbError`/`redisError` to anonymous callers | **Fixed** — `health.controller.ts` now logs failures server-side and returns status only, no raw PG/Redis messages. |
+| P13-007 `customers.notes` unbounded | **Already OK** — `upsert-customer.dto.ts` caps at `@MaxLength(2000)`. |
+| P8-008 / P8-009 public-API tenant gate | **Verified secure** — API key is the tenant gate; `getRequiredOrg` returns `user.organizationId`. |
+| P9-007 / P9-010 / P9-015, P13-004/005, P11-005/006/008/009/010, P14-002/009 | **Already OK / fixed** (verified or cross-linked to landed fixes). |
+| P8-003/004/005/006/007/010 tenant-gate "parameter-trust" | **Deferred** — callers currently pass `user.organizationId`; no active IDOR. Hardening = change read-service signatures to take the user payload. Own task. |
+| P10-001/002/012 request-id + error-path logging; P10-009 `upsertCustomer` not audited | **Deferred** — observability/audit-coverage improvements, no correctness defect. |
+| P9-002/006 public-API pagination shape inconsistency | **Deferred** — response-contract cleanup; coordinate with POS/frontend clients. |
+| P13-017 concurrent order-edit optimistic lock; P14-001 unused `featureFlags`; P14-006/007 env-validation breadth | **Deferred** — each is a small feature, not a spot-fix. |
+| P12-001 (19 modules w/o unit tests) | **Deferred** — coverage breadth; partially reduced (orders payment/pricing + this pass). Its own multi-session effort. |
+
+No new Critical/High correctness defect surfaced in the triage.
+
 ## Remediation log — POS findings (2026-07-16)
 
 The POS-related findings below were fixed in the working tree on 2026-07-16.
