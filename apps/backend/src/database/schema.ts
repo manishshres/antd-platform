@@ -537,6 +537,8 @@ export const orders = pgTable(
       'orders_status_check',
       sql`${t.status} IN ('pending', 'confirmed', 'preparing', 'ready', 'delivered', 'cancelled', 'refunded')`,
     ),
+    // Tips are never negative (P4-006). NULL is still allowed (no tip recorded).
+    check('orders_tip_amount_check', sql`${t.tipAmount} >= 0`),
   ],
 );
 
@@ -559,7 +561,15 @@ export const orderItems = pgTable(
     course: integer('course'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
   },
-  (t) => [index('idx_order_items_order_id').on(t.orderId)],
+  (t) => [
+    index('idx_order_items_order_id').on(t.orderId),
+    // FK cascade + cashier/menu reporting want this covered (P4-013).
+    index('idx_order_items_menu_item_id').on(t.menuItemId),
+    // Order lines are always for a positive quantity at a non-negative price
+    // (P4-030 / P4-031).
+    check('order_items_quantity_check', sql`${t.quantity} > 0`),
+    check('order_items_price_check', sql`${t.price} >= 0`),
+  ],
 );
 
 /**
@@ -596,6 +606,8 @@ export const payments = pgTable(
   (t) => [
     index('idx_payments_order_id').on(t.orderId),
     index('idx_payments_organization_id').on(t.organizationId),
+    // Cashier reports group by who took the payment; index the FK (P4-014).
+    index('idx_payments_created_by').on(t.createdBy),
     check('payments_method_check', sql`${t.method} IN ('cash', 'card')`),
     check('payments_amount_check', sql`${t.amount} != 0`),
   ],
