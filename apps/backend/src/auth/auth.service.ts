@@ -21,6 +21,12 @@ import { MailService } from '../common/services/mail.service';
 import { AuditService } from '../common/services/audit.service';
 
 const BCRYPT_ROUNDS = 12;
+// Constant bcrypt hash used to equalise the cost of the "user not found" path
+// with the "wrong password" path, so login response time can't be used to
+// enumerate registered emails (P3-003). The plaintext is irrelevant — the
+// comparison always fails; only its timing matters.
+const DUMMY_BCRYPT_HASH =
+  '$2b$12$jraujN.TOTv4cTEc/miy2OE7bxCmaQixFWg.DBb2ZvbUsjBapnUN2';
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
 const VERIFY_TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 export const REFRESH_TTL_DEFAULT = 24 * 60 * 60; // 24 hours
@@ -63,7 +69,13 @@ export class AuthService {
     emailVerifiedAt: Date | null;
   } | null> {
     const user = await this.usersService.findOneByEmail(email);
-    if (!user) return null;
+    if (!user) {
+      // Equalise timing with the wrong-password branch below so a missing email
+      // can't be distinguished from a wrong password (P3-003). Run a real bcrypt
+      // comparison against a constant hash; it always fails.
+      await bcrypt.compare(pass, DUMMY_BCRYPT_HASH);
+      return null;
+    }
 
     // Check account lockout
     if (user.lockedUntil && new Date() < new Date(user.lockedUntil)) {
