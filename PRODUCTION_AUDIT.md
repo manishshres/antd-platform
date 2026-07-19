@@ -15,6 +15,28 @@ Fresh full-stack production readiness audit of the Coneeko restaurant SaaS platf
   audit claiming 51/51 complete. This pass does not trust that tracker;
   we re-verify.
 
+## Remediation log — correctness + verification (2026-07-19)
+
+Follow-up pass that closed the genuinely-open items the earlier "FINAL" summary
+(written against `d864f34`) still listed as blockers, several of which were in
+fact already fixed. Verified: backend `nest build` + **212/212** Jest unit tests
+(46 suites, incl. the new `business-day` spec) and a **live-Postgres e2e** race
+suite (`order-payment-race.e2e-spec.ts`, 3/3), plus POS `tsc --noEmit`.
+
+| Finding IDs | Status | What was done |
+|---|---|---|
+| P2-008 / P2-025 / P2-009 | **Fixed** | New `src/common/time/business-day.ts` (`startOfBusinessDay`/`endOfBusinessDay`, `Intl`-based, no new dep) computes day bounds in the **location's** IANA timezone. `getOrders`, `getTransactionSummary`, `getOrderReport` (`orders.service.ts`) and the daily ticket-number reset in `nextTicketNumber` (`order-pricing.service.ts`, via new `getLocationTimezone`) all use it instead of server-local `setHours`. Unit spec covers EDT/EST and the 23:59-local edge. |
+| P3-003 | **Fixed** | `auth.service.validateUser` now runs a dummy `bcrypt.compare` against a constant hash on the "user not found" branch, equalising response time so a missing email is indistinguishable from a wrong password. |
+| P7-002 | **Fixed** | `syncEngine.syncAll` now pushes **customers before orders** so `resolveLocalCustomer` (which repoints queued orders at the server customer id) runs before the orders go up. The repo-layer remap and the dirty-row guard (`mergeServerCustomers ... WHERE dirty = 0`, P7-004) were already correct; only the push order was wrong. |
+| P2-001 / P2-002 / P2-006 | **Verified** | Added `test/order-payment-race.e2e-spec.ts` — live-Postgres concurrency tests proving the `pg_advisory_xact_lock` guards: two concurrent full payments don't overpay, two concurrent refunds don't double-refund, and concurrent split payments settle exactly and flag `'split'`. Closes the "lock unverified at concurrency" caveat. |
+| P1-002 / P3-011 | **Stale** | Already fixed in `5701e79` (single multi-arg `useGlobalFilters`); the old FINAL summary listing it OPEN was out of date. |
+| P12-001 (payment/pricing) | **Stale** | `order-payment.service.spec.ts` + `order-pricing.service.spec.ts` were added in `475c66f` / `a4bd08e`; no longer zero-coverage. |
+
+**Post-audit surface (not yet audited):** `apps/backend/src/modules/aggregator`
+(Uber Eats / KitchenHub adapters, HMAC webhooks, import queue) landed after the
+audit window. It ships with unit specs but has **not** had a security/business-
+logic review pass — treat it as unaudited until one runs.
+
 ## Remediation log — POS findings (2026-07-16)
 
 The POS-related findings below were fixed in the working tree on 2026-07-16.
@@ -1071,14 +1093,14 @@ still required for full closure.
 
 | ID      | Severity | Title                                                   | Status |
 |---------|----------|---------------------------------------------------------|--------|
-| P1-002  | High     | double `useGlobalFilters` overwrites itself             | OPEN — see initial analysis; reproduce by inspection of `main.ts:34,49`. Severity depends on whether `ValidationErrorFilter` actually catches the cases `GlobalExceptionFilter` did. |
+| P1-002  | High     | double `useGlobalFilters` overwrites itself             | **RESOLVED** (`5701e79`) — single multi-arg `useGlobalFilters`; both filters apply. |
 | P1-004  | High     | Frontend `/pos` page 2,369 lines                         | **SPLIT** — broken into `cart.ts` + 6 components; `pos/page.tsx` now a thinner wrapper. Further per-line breakdown remains. |
 | P1-018  | Medium   | `buildLine` `Date.now()` collision on rapid double-tap   | **RESOLVED** — WIP `cartOps.lineSeq` monatomic counter. |
-| P2-001  | Critical | `recordPayment` race                                    | **PARTIAL** — advisory-lock helper + `paidSumFor` inside tx; needs race-specific integration test. |
-| P2-002  | Critical | `refundPaidOrder` race                                  | **PARTIAL** — same lock helper. |
+| P2-001  | Critical | `recordPayment` race                                    | **RESOLVED** — advisory-lock helper + `paidSumFor` inside tx; verified by `order-payment-race.e2e-spec.ts` (2026-07-19). |
+| P2-002  | Critical | `refundPaidOrder` race                                  | **RESOLVED** — same lock helper; race e2e proves no double-refund. |
 | P2-004  | Critical | `refundPartialOrder` lacks Idempotency-Key              | **RESOLVED** — `IdempotencyService` (Redis-backed via `@nestjs/cache-manager`); `withIdempotency` wrapper with `drop` on fail. `Idempotency-Key` header end-to-end through controller/service. |
 | P2-005  | High     | `adjustOrderItems` recompute                            | **RESOLVED** — full tax/discount/tip recompute inside advisory-locked tx, audit logs before/after diff fields. |
-| P2-006  | High     | split-detection race                                    | **PARTIAL** — wrapped inside the same lock. |
+| P2-006  | High     | split-detection race                                    | **RESOLVED** — wrapped inside the same lock; race e2e asserts `'split'` under concurrency. |
 | P3-001  | High     | `refresh_token` echoed in login JSON body                | **RESOLVED** — body stripped by default; `LOGIN_REFRESH_TOKEN_IN_BODY` toggle for non-browser clients. |
 | P3-002  | Critical | PDF upload unsafe (no MIME / size / ext guard)         | **RESOLVED** — `FileInterceptor` with fileFilter + 20 MB limit + magic-byte `%PDF-` sniff; S3 key hard-coded `.pdf`. |
 | P3-020  | Low      | Sentry captures raw body with sensitive fields          | **RESOLVED** — `redactSensitiveFields()` walks body, masks password/pass/token/refresh/secret/authorization/apikey/x-api-key/pin. |
@@ -1114,9 +1136,10 @@ still required for full closure.
 | P14-009 | Medium   | `@nestjs/cache-manager` registered but unused           | **Status changed.** Now in use by the new `IdempotencyService`. |
 | P1-004  | High     | Frontend `/pos` page 2,369 lines                         | **Partial.** Splintered into `cart.ts` + `components/{CartPanel,MenuPanel,TenderModal,DiscountModal,FloorPlanView,ModifierPickerModal}` + `types.ts` + `layout.tsx`. The page itself is now a thin orchestrator. |
 | P1-018  | Medium   | `buildLine` Date.now() collision on rapid double-tap     | **Resolved** — WIP introduced a monotonic `lineSeq` counter in `cart.ts`. |
-| P2-001  | Critical | `recordPayment` race                                    | **Partial.** Advisory-lock helper (`lockOrderRow`) added; `paidSumFor` accepts an injected `db` so the SUM read runs inside the tx. The reading still reuses the lock — needs integration-test coverage. |
-| P2-002  | Critical | `refundPaidOrder` race                                  | **Partial.** Same lock helper now applied. |
-| P2-006  | High     | `summaryMethod` split-detection race                    | **Partial.** Lock scope covers it (tx-wrapped). |
+
+> Superseded: the earlier "Partial" rows for P2-001 / P2-002 / P2-006 are now
+> **Resolved + Verified** — see the 2026-07-19 remediation log and the corrected
+> progress table above.
 
 ### Critical release-blockers (must-fix before v0.3.0 production)
 
@@ -1127,10 +1150,20 @@ still required for full closure.
 4. ~~**P2-004** — `refundPartialOrder` lacks idempotency key → double-refund on retry.~~
 5. ~~**P3-001 (H)** — `refresh_token` echoed in JSON body.~~
 
-**Still OPEN as of audit end:**
-6. **P1-002 / P3-011** — `useGlobalFilters` double-register overwrites the GlobalExceptionFilter. Behavior is currently: only `ValidationErrorFilter` is in effect; the validated bad-request path still works for `{statusCode,error,timestamp,path}` shape because NestJS pipes emit BadRequestException from class-validator, but unstructured errors will not include stack-trace suppression. Reproduce by inspection of `main.ts:34,49`.
-7. **P2-001 / P2-002** — the advisory-lock primitive is wired into the helpers, but a multi-process concurrency-test for `recordPayment` and `refundPaidOrder` is required. Without it, the lock semantics are unverified at higher concurrency than reader-level.
-8. **P12-001** — 19 modules lack unit tests; `order-payment.service.ts` (financial core) and `order-pricing.service.ts` (tax math) still have **zero** test coverage beyond the integration suite. Phase 12 added 18 tests for *new* code (idempotency + redaction); existing untested modules remain open.
+**Closed since audit end (2026-07-19 — supersedes the list below):**
+6. ~~**P1-002 / P3-011**~~ — fixed in `5701e79`; `main.ts` now makes a single
+   multi-arg `useGlobalFilters(new GlobalExceptionFilter(), new ValidationErrorFilter())`.
+7. ~~**P2-001 / P2-002 / P2-006**~~ — the advisory lock was already wired; the
+   missing piece was verification. `test/order-payment-race.e2e-spec.ts` now
+   proves no overpay / no double-refund / correct split under real concurrency.
+8. **P12-001** — partially closed: `order-payment.service.ts` and
+   `order-pricing.service.ts` now have unit specs (`475c66f`, `a4bd08e`) plus the
+   race e2e above. Other modules still lack unit coverage — this is the one
+   remaining item from the original blocker list, and it is a coverage gap, not
+   a correctness defect.
+
+No Critical- or High-severity **correctness** blocker remains open. The residual
+work is test-coverage breadth (P12) and the Medium/Low long tail below.
 
 ### High (must-fix before grad-school prod-ready)
 
