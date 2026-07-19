@@ -37,6 +37,11 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { OrderPricingService } from './order-pricing.service';
 import { OrderPrintService } from './order-print.service';
 import { OrderPaymentService } from './order-payment.service';
+import {
+  startOfBusinessDay,
+  endOfBusinessDay,
+  DEFAULT_TIMEZONE,
+} from '../common/time/business-day';
 
 @Injectable()
 export class OrdersService {
@@ -96,15 +101,23 @@ export class OrdersService {
       }
       conditions.push(or(...searchConds)!);
     }
-    if (dateFrom) {
-      const start = new Date(dateFrom);
-      start.setHours(0, 0, 0, 0);
-      conditions.push(gte(schema.orders.createdAt, start));
-    }
-    if (dateTo) {
-      const end = new Date(dateTo);
-      end.setHours(23, 59, 59, 999);
-      conditions.push(lte(schema.orders.createdAt, end));
+    if (dateFrom || dateTo) {
+      // Bound the range by the location's business day, not the server's — see
+      // startOfBusinessDay (P2-008). Without a location we fall back to the
+      // platform default zone.
+      const timezone = locationId
+        ? await this.pricingService.getLocationTimezone(locationId)
+        : DEFAULT_TIMEZONE;
+      if (dateFrom) {
+        conditions.push(
+          gte(schema.orders.createdAt, startOfBusinessDay(dateFrom, timezone)),
+        );
+      }
+      if (dateTo) {
+        conditions.push(
+          lte(schema.orders.createdAt, endOfBusinessDay(dateTo, timezone)),
+        );
+      }
     }
 
     const whereClause = and(...conditions);
@@ -142,10 +155,10 @@ export class OrdersService {
   ) {
     const orgId = await this.billingService.getRequiredOrg(user);
 
-    const start = dateFrom ? new Date(dateFrom) : new Date();
-    start.setHours(0, 0, 0, 0);
-    const end = dateTo ? new Date(dateTo) : new Date();
-    end.setHours(23, 59, 59, 999);
+    // "Today" and any explicit range are the location's business day (P2-008/P2-025).
+    const timezone = await this.pricingService.getLocationTimezone(locationId);
+    const start = startOfBusinessDay(dateFrom ?? new Date(), timezone);
+    const end = endOfBusinessDay(dateTo ?? new Date(), timezone);
 
     const scope = and(
       eq(schema.orders.organizationId, orgId),
@@ -207,10 +220,12 @@ export class OrdersService {
     const orgId = await this.billingService.getRequiredOrg(user);
     const granularity = dto.granularity ?? 'day';
 
-    const start = dto.dateFrom ? new Date(dto.dateFrom) : new Date();
-    start.setHours(0, 0, 0, 0);
-    const end = dto.dateTo ? new Date(dto.dateTo) : new Date();
-    end.setHours(23, 59, 59, 999);
+    // Range bounds follow the location's business day, not the server's (P2-008).
+    const timezone = await this.pricingService.getLocationTimezone(
+      dto.locationId,
+    );
+    const start = startOfBusinessDay(dto.dateFrom ?? new Date(), timezone);
+    const end = endOfBusinessDay(dto.dateTo ?? new Date(), timezone);
 
     const scope = and(
       eq(schema.orders.organizationId, orgId),

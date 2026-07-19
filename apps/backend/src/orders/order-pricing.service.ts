@@ -10,6 +10,10 @@ import { DRIZZLE } from '../database/database.module';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../database/schema';
 import { eq, and, inArray, isNull, sql, gte } from 'drizzle-orm';
+import {
+  startOfBusinessDay,
+  DEFAULT_TIMEZONE,
+} from '../common/time/business-day';
 
 export interface ResolvedCartItem {
   menuItemId: string;
@@ -314,6 +318,19 @@ export class OrderPricingService {
     return null;
   }
 
+  /** The IANA timezone for a location, falling back to the platform default. */
+  async getLocationTimezone(
+    locationId: string,
+    tx: Pick<NodePgDatabase<typeof schema>, 'select'> = this.db,
+  ): Promise<string> {
+    const [row] = await tx
+      .select({ timezone: schema.locations.timezone })
+      .from(schema.locations)
+      .where(eq(schema.locations.id, locationId))
+      .limit(1);
+    return row?.timezone ?? DEFAULT_TIMEZONE;
+  }
+
   /** Next per-location daily ticket number ("Order #47"). Runs inside the insert transaction. */
   async nextTicketNumber(
     tx: Pick<NodePgDatabase<typeof schema>, 'select' | 'execute'>,
@@ -326,8 +343,10 @@ export class OrderPricingService {
       sql`select pg_advisory_xact_lock(hashtext(${locationId}))`,
     );
 
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
+    // Reset the counter at the location's local midnight, not the server's — a
+    // late-night order must keep counting up for the same business day (P2-009).
+    const timezone = await this.getLocationTimezone(locationId, tx);
+    const startOfDay = startOfBusinessDay(new Date(), timezone);
     const [row] = await tx
       .select({
         max: sql<number>`coalesce(max(${schema.orders.ticketNumber}), 0)`.mapWith(
