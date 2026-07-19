@@ -85,8 +85,10 @@ async function bootstrap() {
   // full API surface publicly.
   if (nodeEnv !== 'production') {
     const config = new DocumentBuilder()
-      .setTitle('Call Center AI Backend API')
-      .setDescription('The API documentation for the SaaS backend')
+      .setTitle('Coneeko Platform API')
+      .setDescription(
+        'API documentation for the Coneeko restaurant SaaS backend',
+      )
       .setVersion('1.0')
       .addBearerAuth()
       .build();

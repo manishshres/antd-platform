@@ -122,9 +122,10 @@ export class TelnyxService {
         body: JSON.stringify(updatePayload),
       });
     } catch (err) {
-      console.warn(
-        `Failed to update dynamic variables for assistant ${id}`,
-        err,
+      this.logger.warn(
+        `Failed to update dynamic variables for assistant ${id}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
       );
     }
   }
