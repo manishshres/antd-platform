@@ -9,7 +9,6 @@ import {
   HttpCode,
   HttpStatus,
   Res,
-  NotFoundException,
 } from '@nestjs/common';
 import {
   ApiTags,

@@ -10,7 +10,7 @@ import * as bcrypt from 'bcrypt';
 import { DRIZZLE } from '../database/database.module';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../database/schema';
-import { eq, count, and, isNotNull, inArray } from 'drizzle-orm';
+import { eq, count, and, isNotNull, isNull, inArray, desc } from 'drizzle-orm';
 import { notDeleted } from '../database/db.utils';
 import { CreateUserDto } from './dto/create-user.dto';
 import { PaginationDto } from '../common/dto/pagination.dto';
@@ -597,5 +597,45 @@ export class UsersService {
       }
     }
     return null;
+  }
+
+  /** The user's currently open shift, if any (clock_out_at is still null). */
+  async getOpenClockEntry(organizationId: string, userId: string) {
+    const [entry] = await this.db
+      .select()
+      .from(schema.timeClockEntries)
+      .where(
+        and(
+          eq(schema.timeClockEntries.organizationId, organizationId),
+          eq(schema.timeClockEntries.userId, userId),
+          isNull(schema.timeClockEntries.clockOutAt),
+        ),
+      )
+      .orderBy(desc(schema.timeClockEntries.clockInAt))
+      .limit(1);
+    return entry ?? null;
+  }
+
+  async clockIn(organizationId: string, userId: string, locationId?: string) {
+    const open = await this.getOpenClockEntry(organizationId, userId);
+    if (open) return open;
+    const [entry] = await this.db
+      .insert(schema.timeClockEntries)
+      .values({ organizationId, userId, locationId: locationId ?? null })
+      .returning();
+    return entry;
+  }
+
+  async clockOut(organizationId: string, userId: string) {
+    const open = await this.getOpenClockEntry(organizationId, userId);
+    if (!open) {
+      throw new ConflictException('No open shift to clock out of.');
+    }
+    const [entry] = await this.db
+      .update(schema.timeClockEntries)
+      .set({ clockOutAt: new Date() })
+      .where(eq(schema.timeClockEntries.id, open.id))
+      .returning();
+    return entry;
   }
 }

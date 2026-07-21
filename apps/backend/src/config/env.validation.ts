@@ -18,20 +18,6 @@ const REQUIRED_IN_PRODUCTION = [
   'AGGREGATOR_ENCRYPTION_KEY',
 ] as const;
 
-/**
- * Secrets and toggles we want to validate in **every** environment so a
- * misconfigured dev/staging build never silently regresses (e.g. exposes a
- * cookie-only refresh path that mobile clients can't tolerate, or breaks
- * the front-end domain allowlist).
- *
- * P14-006 / P14-007: extend the list as new toggles are introduced.
- */
-const OPTIONAL_FLAGS = [
-  'LOGIN_REFRESH_TOKEN_IN_BODY',
-  'GLOBAL_FILTER_DEDUP_BUG',
-  'PRODUCTION_HOST',
-] as const;
-
 const MIN_SECRET_LENGTH = 16;
 
 export function validateEnv(

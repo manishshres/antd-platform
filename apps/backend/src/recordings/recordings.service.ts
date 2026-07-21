@@ -3,7 +3,7 @@ import { CurrentUserPayload } from '../common/decorators/current-user.decorator'
 import { DRIZZLE } from '../database/database.module';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../database/schema';
-import { eq, and, desc, isNull, ilike, or, SQL, sql } from 'drizzle-orm';
+import { eq, and, desc, sql } from 'drizzle-orm';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { PaginatedResponseDto } from '../common/dto/paginated-response.dto';
 import { BillingService } from '../billing/billing.service';

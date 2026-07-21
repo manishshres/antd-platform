@@ -7,11 +7,13 @@ import {
   IsUUID,
   ValidateNested,
   IsNumber,
+  IsBoolean,
   Min,
   MaxLength,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
+import { PAYMENT_METHODS } from '../payment-methods';
 
 export class PosOrderItemDto {
   @ApiProperty({ description: 'Menu Item UUID' })
@@ -47,6 +49,27 @@ export class PosOrderItemDto {
   @IsOptional()
   @IsNumber()
   course?: number;
+
+  @ApiProperty({
+    required: false,
+    description:
+      'Manager-authorized replacement unit price in cents (0 = comped). Overrides the ' +
+      'menu price and any modifier price adjustments for this line only — the menu item ' +
+      'itself is unchanged. The POS gates this behind a manager PIN before sending it.',
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  priceOverride?: number;
+
+  @ApiProperty({
+    required: false,
+    description: 'Free-text reason for the price override (e.g. "customer complaint, comped dessert").',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  priceOverrideReason?: string;
 }
 
 export class CreatePosOrderDto {
@@ -104,7 +127,7 @@ export class CreatePosOrderDto {
       'the kitchen ticket still fires and payment is recorded later via /orders/:id/pay.',
   })
   @IsOptional()
-  @IsIn(['cash', 'card'])
+  @IsIn(PAYMENT_METHODS)
   paymentMethod?: string;
 
   @ApiProperty({ required: false, description: 'Tip in cents' })
@@ -112,6 +135,25 @@ export class CreatePosOrderDto {
   @IsNumber()
   @Min(0)
   tipAmount?: number;
+
+  @ApiProperty({
+    required: false,
+    description:
+      "Opt in to the location's configured auto-gratuity/service-charge rate",
+  })
+  @IsOptional()
+  @IsBoolean()
+  applyServiceCharge?: boolean;
+
+  @ApiProperty({
+    required: false,
+    description:
+      'Loyalty points to redeem toward this order (1 point = 1 cent). Requires customerId.',
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  redeemPoints?: number;
 
   @ApiProperty({ required: false, description: 'Applied discount id' })
   @IsOptional()
@@ -123,6 +165,18 @@ export class CreatePosOrderDto {
   @IsString()
   @MaxLength(50)
   promoCode?: string;
+
+  @ApiProperty({
+    required: false,
+    example: 'all',
+    description:
+      "How the order reaches the kitchen. 'all' (default) prints every line " +
+      "on save. 'by_course' holds the ticket and prints one per course as " +
+      'the register fires it (course 1 fires automatically on creation).',
+  })
+  @IsOptional()
+  @IsIn(['all', 'by_course'])
+  fireMode?: string;
 
   @ApiProperty({ type: [PosOrderItemDto] })
   @IsArray()

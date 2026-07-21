@@ -63,20 +63,4 @@ export class ExportService {
       throw new Error('Excel export failed');
     }
   }
-
-  /**
-   * Placeholder for PDF export
-   * PDF generation depends heavily on the layout requirements (table vs document).
-   * Could use pdfkit or puppeteer depending on complexity.
-   */
-  async exportPdf<T extends object>(
-    data: T[],
-    title: string = 'Export',
-  ): Promise<Buffer> {
-    // Basic implementation using pdfkit could go here
-    // For now, we return a basic buffer or throw NotImplemented
-    throw new Error(
-      'PDF export not yet fully implemented for generic generic types',
-    );
-  }
 }

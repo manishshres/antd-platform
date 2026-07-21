@@ -8,7 +8,6 @@ import { ConfigService } from '@nestjs/config';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { and, eq, isNull } from 'drizzle-orm';
 import * as schema from './schema';
-import { DRIZZLE } from './database.module';
 
 @Injectable()
 export class SeedService implements OnApplicationBootstrap {

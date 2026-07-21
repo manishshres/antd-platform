@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ConfigService } from '@nestjs/config';
 import { ApiKeysService } from './api-keys.service';
 import { DRIZZLE } from '../database/database.module';
 import { BillingService } from '../billing/billing.service';
@@ -22,6 +23,10 @@ describe('ApiKeysService', () => {
         {
           provide: AuditService,
           useValue: {},
+        },
+        {
+          provide: ConfigService,
+          useValue: { get: () => undefined },
         },
       ],
     }).compile();

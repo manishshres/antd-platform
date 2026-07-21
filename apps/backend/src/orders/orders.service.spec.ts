@@ -16,7 +16,9 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { EventsGateway } from '../events/events.gateway';
 import { UsersService } from '../users/users.service';
 
-const userPayload = (overrides: Partial<CurrentUserPayload> = {}): CurrentUserPayload => ({
+const userPayload = (
+  overrides: Partial<CurrentUserPayload> = {},
+): CurrentUserPayload => ({
   id: 'user-id',
   email: 'user@example.com',
   role: 'manager',
@@ -43,6 +45,7 @@ describe('OrdersService', () => {
     from: jest.fn().mockReturnThis(),
     where: jest.fn().mockReturnThis(),
     innerJoin: jest.fn().mockReturnThis(),
+    leftJoin: jest.fn().mockReturnThis(),
     limit: jest.fn().mockResolvedValue([]),
     update: jest.fn().mockReturnThis(),
     set: jest.fn().mockReturnThis(),

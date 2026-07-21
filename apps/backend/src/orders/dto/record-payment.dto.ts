@@ -1,9 +1,10 @@
 import { IsIn, IsInt, IsOptional, Min } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { PAYMENT_METHODS } from '../payment-methods';
 
 export class RecordPaymentDto {
-  @ApiProperty({ example: 'cash', enum: ['cash', 'card'] })
-  @IsIn(['cash', 'card'])
+  @ApiProperty({ example: 'cash', enum: PAYMENT_METHODS })
+  @IsIn(PAYMENT_METHODS)
   method: string;
 
   @ApiProperty({

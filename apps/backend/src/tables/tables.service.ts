@@ -151,8 +151,11 @@ export class TablesService {
         const order = activeOrders.find((o) => o.tableId === t.id);
         return {
           ...t,
+          // A POS tab is created 'confirmed' (createPosOrder), so it must read
+          // as occupied like a 'pending' order does — 'billed' is reserved for
+          // a check that has actually been presented to the guest.
           status: order
-            ? order.status === 'pending'
+            ? ['pending', 'confirmed'].includes(order.status)
               ? 'occupied'
               : 'billed'
             : 'available',

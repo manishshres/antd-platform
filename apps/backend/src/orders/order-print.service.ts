@@ -9,6 +9,7 @@ import { PrintJobsService } from '../printers/print-jobs.service';
 export type FullOrder = {
   id: string;
   locationId: string | null;
+  fireMode?: string;
   ticketNumber: number | null;
   customerName: string;
   customerPhone: string;
@@ -29,6 +30,8 @@ export type FullOrder = {
     price: number;
     modifiers: unknown;
     notes: string | null;
+    course?: number | null;
+    firedAt?: Date | null;
   }[];
 };
 
@@ -100,8 +103,19 @@ export class OrderPrintService {
     return { kitchen: matrix('kitchen'), receipt: matrix('receipt') };
   }
 
-  /** Build the printable representation of an order for either document type. */
-  buildPrintPayload(fullOrder: FullOrder, opts: { updated?: boolean } = {}) {
+  /**
+   * Build the printable representation of an order for either document type.
+   * `opts.course` narrows it to a single course for a fire ticket; without it
+   * the payload is exactly what it has always been.
+   */
+  buildPrintPayload(
+    fullOrder: FullOrder,
+    opts: { updated?: boolean; course?: number } = {},
+  ) {
+    const items =
+      opts.course === undefined
+        ? fullOrder.items
+        : fullOrder.items.filter((i) => i.course === opts.course);
     return {
       orderId: fullOrder.id,
       ticketNumber: fullOrder.ticketNumber ?? undefined,
@@ -116,12 +130,14 @@ export class OrderPrintService {
       totalAmount: fullOrder.totalAmount,
       orderType: fullOrder.orderType,
       specialInstructions: fullOrder.specialInstructions,
-      items: fullOrder.items.map((item) => ({
+      course: opts.course,
+      items: items.map((item) => ({
         menuItemName: item.menuItemName,
         quantity: item.quantity,
         price: item.price,
         modifiers: item.modifiers ?? undefined,
         notes: item.notes ?? undefined,
+        course: item.course ?? undefined,
       })),
       createdAt: fullOrder.createdAt,
     };
@@ -142,6 +158,13 @@ export class OrderPrintService {
       const plan = await this.getPrintPlan(fullOrder.locationId);
       const payload = this.buildPrintPayload(fullOrder, opts);
       for (const jobType of ['kitchen', 'receipt'] as const) {
+        // A coursed order's food reaches the kitchen through explicit fires,
+        // never through save/update — otherwise the whole order (dessert
+        // included) would print the moment the tab opens. The receipt is
+        // unaffected: the guest is still billed for everything at once.
+        if (jobType === 'kitchen' && fullOrder.fireMode === 'by_course') {
+          continue;
+        }
         const cfg = plan[jobType];
         const triggered =
           (events.includes('save') && cfg.onSave) ||
@@ -165,6 +188,34 @@ export class OrderPrintService {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       this.logger.error(
         `Failed to enqueue print jobs for order ${fullOrder.id}: ${msg}`,
+      );
+    }
+  }
+
+  /**
+   * Enqueue the kitchen ticket for a single course.
+   *
+   * Deliberately ignores the event matrix from `getPrintPlan`: firing is an
+   * explicit instruction from the register, so it prints regardless of the
+   * location's save/update/paid checkboxes. Copies still honour the matrix.
+   */
+  async printCourse(orgId: string, fullOrder: FullOrder, course: number) {
+    try {
+      const plan = await this.getPrintPlan(fullOrder.locationId);
+      const payload = this.buildPrintPayload(fullOrder, { course });
+      if (payload.items.length === 0) return;
+      for (let copy = 0; copy < plan.kitchen.copies; copy++) {
+        await this.printJobsService.createPrintJob({
+          organizationId: orgId,
+          orderId: fullOrder.id,
+          jobType: 'kitchen',
+          payload,
+        });
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      this.logger.error(
+        `Failed to enqueue course ${course} ticket for order ${fullOrder.id}: ${msg}`,
       );
     }
   }

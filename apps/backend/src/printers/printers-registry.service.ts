@@ -8,7 +8,7 @@ import {
 import { DRIZZLE } from '../database/database.module';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../database/schema';
-import { eq, and, isNull } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { MqttService } from './mqtt.service';
 import { PrintJobsService } from './print-jobs.service';
 import { CreatePrinterDto } from './dto/create-printer.dto';

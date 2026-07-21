@@ -368,7 +368,7 @@ export class OrderPaymentService {
   ): Promise<T> {
     if (!key) return fn();
     const replay = await this.idempotencyService.replay<T>(scope, key);
-    if (replay) return replay.body as T;
+    if (replay) return replay.body;
     const won = await this.idempotencyService.begin(scope, key);
     if (!won) {
       throw new ConflictException(
@@ -453,7 +453,6 @@ export class OrderPaymentService {
       };
     });
   }
-
 
   async adjustOrderItems(
     user: CurrentUserPayload,

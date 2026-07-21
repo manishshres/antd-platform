@@ -10,7 +10,9 @@ import { TelnyxService } from '../telnyx/telnyx.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { CurrentUserPayload } from '../common/decorators/current-user.decorator';
 
-const userPayload = (overrides: Partial<CurrentUserPayload> = {}): CurrentUserPayload => ({
+const userPayload = (
+  overrides: Partial<CurrentUserPayload> = {},
+): CurrentUserPayload => ({
   id: 'user-1',
   email: 'user@example.com',
   role: 'manager',

@@ -47,16 +47,16 @@ export class HeartbeatService implements OnModuleInit {
     );
 
     // HSPOS Cloud Printer default status topic (Docs say PrintSucces)
-    this.mqttService.subscribe('PrintSucces', (topic, payload) =>
+    this.mqttService.subscribe('PrintSucces', (_topic, payload) =>
       this.handlePrintStatus(payload),
     );
-    this.mqttService.subscribe('printSucces', (topic, payload) =>
+    this.mqttService.subscribe('printSucces', (_topic, payload) =>
       this.handlePrintStatus(payload),
     );
-    this.mqttService.subscribe('PrintSuccess', (topic, payload) =>
+    this.mqttService.subscribe('PrintSuccess', (_topic, payload) =>
       this.handlePrintStatus(payload),
     );
-    this.mqttService.subscribe('printSuccess', (topic, payload) =>
+    this.mqttService.subscribe('printSuccess', (_topic, payload) =>
       this.handlePrintStatus(payload),
     );
     this.logger.log('Heartbeat subscriptions registered for all printers.');
@@ -106,7 +106,7 @@ export class HeartbeatService implements OnModuleInit {
         );
       } catch (err: unknown) {
         this.logger.error(
-          `Failed to update print job ${ticketId} from status report: ${err}`,
+          `Failed to update print job ${ticketId} from status report: ${String(err)}`,
         );
       }
     }
