@@ -21,7 +21,8 @@ import {
   Upload,
   Radio,
 } from "antd";
-import { PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined, KeyOutlined, ApiOutlined, GlobalOutlined, BankOutlined, SecurityScanOutlined, BuildOutlined, CreditCardOutlined, NotificationOutlined, SettingOutlined, MailOutlined, UserAddOutlined, MinusCircleOutlined, LinkOutlined, SyncOutlined, ReloadOutlined, TagOutlined } from "@ant-design/icons";
+import { PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined, KeyOutlined, ApiOutlined, GlobalOutlined, BankOutlined, SecurityScanOutlined, BuildOutlined, CreditCardOutlined, NotificationOutlined, SettingOutlined, MailOutlined, UserAddOutlined, MinusCircleOutlined, LinkOutlined, SyncOutlined, ReloadOutlined, TagOutlined, QrcodeOutlined } from "@ant-design/icons";
+import { QRCodeSVG } from "qrcode.react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { getAccessToken } from "@/lib/token-store";
@@ -110,6 +111,9 @@ export default function SettingsHubPage() {
   const [apiKeySubmitting, setApiKeySubmitting] = useState(false);
   const [apiKeyForm] = Form.useForm();
   const [newlyGeneratedKey, setNewlyGeneratedKey] = useState<string | null>(null);
+  // Base URL the POS app should call — pre-filled from the public API origin in
+  // production; left blank in local dev where there's no single public origin.
+  const [posApiUrl, setPosApiUrl] = useState(process.env.NEXT_PUBLIC_API_URL ?? "");
 
   // Modal states (Assign Manager)
   const [assignManagerModalVisible, setAssignManagerModalVisible] = useState(false);
@@ -294,9 +298,12 @@ export default function SettingsHubPage() {
   const handleCreateApiKey = async (values: any) => {
     try {
       setApiKeySubmitting(true);
-      const res = await api.post<{ apiKey: string }>("/api-keys", values);
+      const res = await api.post<{ apiKey: string; publicApiUrl: string | null }>("/api-keys", values);
       apiKeyForm.resetFields();
       setNewlyGeneratedKey(res.data.apiKey);
+      // The backend already knows its own public origin when the deployer has
+      // configured PUBLIC_API_URL — no need to make the admin retype it.
+      if (res.data.publicApiUrl) setPosApiUrl(res.data.publicApiUrl);
       loadDevData();
     } catch (err) {
       message.error("Failed to create API key");
@@ -816,29 +823,79 @@ export default function SettingsHubPage() {
         footer={null}
       >
         {newlyGeneratedKey && (
-          <Alert
-            type="success"
-            title="API Key Created"
-            description={
-              <div>
-                <Text>Please copy your new API key now. You won't be able to see it again!</Text>
-                <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
-                  <Input value={newlyGeneratedKey} readOnly />
-                  <Button
-                    icon={<CopyOutlined />}
-                    aria-label="Copy API key"
-                    onClick={() => {
-                      navigator.clipboard.writeText(newlyGeneratedKey);
-                      message.success("Copied to clipboard!");
-                    }}
-                  />
+          <>
+            <Alert
+              type="success"
+              title="API Key Created"
+              description={
+                <div>
+                  <Text>Please copy your new API key now. You won't be able to see it again!</Text>
+                  <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
+                    <Input value={newlyGeneratedKey} readOnly />
+                    <Button
+                      icon={<CopyOutlined />}
+                      aria-label="Copy API key"
+                      onClick={() => {
+                        navigator.clipboard.writeText(newlyGeneratedKey);
+                        message.success("Copied to clipboard!");
+                      }}
+                    />
+                  </div>
                 </div>
+              }
+              showIcon
+            />
+
+            <Divider style={{ margin: "20px 0" }}>
+              <QrcodeOutlined /> POS App Setup
+            </Divider>
+            <Text type="secondary">
+              Scan this in the register (Settings → Connection → Scan QR Code) to
+              configure the API URL and key in one step.
+            </Text>
+            <Form.Item
+              label="POS API base URL"
+              extra={
+                posApiUrl
+                  ? "Detected automatically — change it only if this register should point somewhere else."
+                  : "Not configured on the server (PUBLIC_API_URL) — enter it once here."
+              }
+              style={{ marginTop: 12, marginBottom: 12 }}
+            >
+              <Input
+                value={posApiUrl}
+                onChange={(e) => setPosApiUrl(e.target.value)}
+                placeholder="https://api.your-domain.com"
+              />
+            </Form.Item>
+            {posApiUrl.trim() ? (
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "center",
+                  padding: 20,
+                  background: token.colorBgContainer,
+                  border: `1px solid ${token.colorBorderSecondary}`,
+                  borderRadius: token.borderRadius,
+                }}
+              >
+                <QRCodeSVG
+                  value={JSON.stringify({ apiUrl: posApiUrl.trim(), apiKey: newlyGeneratedKey })}
+                  size={200}
+                  marginSize={2}
+                />
               </div>
-            }
-            showIcon
-          />
+            ) : (
+              <Alert type="warning" title="Enter the POS API base URL above to generate the QR code." showIcon />
+            )}
+            <div style={{ textAlign: "right", marginTop: 20 }}>
+              <Button type="primary" onClick={() => { setApiKeyModalVisible(false); setNewlyGeneratedKey(null); }}>
+                Done
+              </Button>
+            </div>
+          </>
         )}
-        
+
         <Form form={apiKeyForm} layout="vertical" onFinish={handleCreateApiKey} style={{ display: newlyGeneratedKey ? 'none' : 'block' }}>
             <Form.Item name="name" label="Key Name" rules={[{ required: true }]}><Input placeholder="e.g. Production Backend" /></Form.Item>
             <Form.Item style={{ textAlign: "right", marginTop: 24, marginBottom: 0 }}>
