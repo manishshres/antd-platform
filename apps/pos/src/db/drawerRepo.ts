@@ -80,6 +80,28 @@ export function salesSince(sinceIso: string): { cashSales: number; otherSales: n
   return { cashSales: row?.cash ?? 0, otherSales: row?.other ?? 0 };
 }
 
+/**
+ * Cash vs non-cash takings for a whole business day, keyed by
+ * orders.business_day_id rather than a timestamp. A drawer session only
+ * spans one open→close cash-custody window, but a business day can span
+ * several (End Day, then Start Day again the same day starts a fresh drawer
+ * session) — scoping "today's sales" to the current session's openedAt, as
+ * salesSince() does, silently drops every order placed before a reopen.
+ */
+export function salesForBusinessDay(businessDayId: string): { cashSales: number; otherSales: number } {
+  const row = db.getFirstSync<{ cash: number | null; other: number | null }>(
+    `SELECT
+       SUM(CASE WHEN payment_method = 'cash' THEN total_amount ELSE 0 END) AS cash,
+       SUM(CASE WHEN payment_method != 'cash' THEN total_amount ELSE 0 END) AS other
+     FROM orders
+     WHERE status IN ('pending_sync', 'synced', 'failed')
+       AND payment_method IS NOT NULL
+       AND business_day_id = ?`,
+    [businessDayId],
+  );
+  return { cashSales: row?.cash ?? 0, otherSales: row?.other ?? 0 };
+}
+
 /** Close the open session, snapshotting sales and the counted-vs-expected difference. */
 export function closeSession(
   id: string,
@@ -151,6 +173,28 @@ export function paidOrdersSince(sinceIso: string): PaidOrderSummary[] {
          AND created_at >= ?
        ORDER BY created_at DESC`,
       [sinceIso],
+    )
+    .map((r) => ({
+      id: r.id,
+      ticketNumber: r.ticket_number,
+      customerName: r.customer_name,
+      totalAmount: r.total_amount,
+      paymentMethod: r.payment_method as LocalOrder['paymentMethod'],
+      createdAt: r.created_at,
+    }));
+}
+
+/** Paid orders for a whole business day (see salesForBusinessDay for why). */
+export function paidOrdersForBusinessDay(businessDayId: string): PaidOrderSummary[] {
+  return db
+    .getAllSync<PaidOrderRow>(
+      `SELECT id, ticket_number, customer_name, total_amount, payment_method, created_at
+       FROM orders
+       WHERE status IN ('pending_sync', 'synced', 'failed')
+         AND payment_method IS NOT NULL
+         AND business_day_id = ?
+       ORDER BY created_at DESC`,
+      [businessDayId],
     )
     .map((r) => ({
       id: r.id,

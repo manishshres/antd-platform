@@ -1,32 +1,25 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
-  FlatList,
   ScrollView,
   StyleSheet,
   TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import { Button, Divider, Text } from 'react-native-paper';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { antd, RADIUS } from '../theme';
 import { useApp } from '../state/AppContext';
+import { useEmployee } from '../state/EmployeeContext';
 import * as drawerRepo from '../db/drawerRepo';
 import { formatMoney, parseMoney } from '../utils/money';
+import { fmtDate as fmtDateTime, fmtTime } from '../utils/dates';
 import type { DrawerSession } from '../types';
+import { CloseStoreDialog } from '../components/CloseStoreDialog';
 
 type ActiveTab = 'drawer' | 'today' | 'sales';
-
-function fmtTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-}
-
-function fmtDateTime(iso: string): string {
-  return new Date(iso).toLocaleString(undefined, {
-    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
-  });
-}
 
 function startOfTodayIso(): string {
   const d = new Date();
@@ -37,7 +30,7 @@ function startOfTodayIso(): string {
 const PAYMENT_LABELS: Record<string, string> = { cash: 'Cash', card: 'Card' };
 
 export function DrawerScreen() {
-  const { dataVersion } = useApp();
+  const { dataVersion, businessDay } = useApp();
   const [activeTab, setActiveTab] = useState<ActiveTab>('drawer');
   const [session, setSession] = useState<DrawerSession | null>(null);
   const [refresh, setRefresh] = useState(0);
@@ -46,17 +39,27 @@ export function DrawerScreen() {
     setSession(drawerRepo.getOpenSession());
   }, [dataVersion, refresh]);
 
-  // Sales window: the open session if there is one, otherwise today.
+  // Cash-drawer reconciliation is scoped to the current drawer session's own
+  // open→close window — a fresh float deserves a fresh count.
   const sinceIso = session?.openedAt ?? startOfTodayIso();
   const sales = useMemo(
     () => drawerRepo.salesSince(sinceIso),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [sinceIso, dataVersion, refresh, activeTab],
   );
-  const paidOrders = useMemo(
-    () => drawerRepo.paidOrdersSince(sinceIso),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sinceIso, dataVersion, refresh, activeTab],
+
+  // "Today's Sale"/"Sale History" report on the whole business day instead —
+  // ending and restarting the day (e.g. a shift change) opens a new drawer
+  // session, so scoping these by session.openedAt would silently drop every
+  // order placed before the restart. business_day_id survives that.
+  const dayId = businessDay?.id ?? null;
+  const daySales = useMemo(
+    () => (dayId ? drawerRepo.salesForBusinessDay(dayId) : { cashSales: 0, otherSales: 0 }),
+    [dayId, dataVersion, refresh, activeTab],
+  );
+  const dayPaidOrders = useMemo(
+    () => (dayId ? drawerRepo.paidOrdersForBusinessDay(dayId) : []),
+    [dayId, dataVersion, refresh, activeTab],
   );
 
   const bump = useCallback(() => setRefresh((n) => n + 1), []);
@@ -89,9 +92,9 @@ export function DrawerScreen() {
         <CashDrawerTab session={session} sales={sales} onChanged={bump} />
       )}
       {activeTab === 'today' && (
-        <TodaysSaleTab session={session} sales={sales} orders={paidOrders} />
+        <TodaysSaleTab session={session} sales={daySales} orders={dayPaidOrders} />
       )}
-      {activeTab === 'sales' && <SaleHistoryTab orders={paidOrders} />}
+      {activeTab === 'sales' && <SaleHistoryTab orders={dayPaidOrders} />}
     </View>
   );
 }
@@ -107,8 +110,62 @@ function CashDrawerTab({
   sales: { cashSales: number; otherSales: number };
   onChanged: () => void;
 }) {
-  if (!session) return <OpenDrawerCard onChanged={onChanged} />;
-  return <DrawerSummaryCard session={session} sales={sales} onChanged={onChanged} />;
+  const { businessDay, endDay } = useApp();
+  const { employee } = useEmployee();
+  const [closeStoreOpen, setCloseStoreOpen] = useState(false);
+
+  const handleEndDay = () => {
+    setCloseStoreOpen(true);
+  };
+
+  return (
+    <ScrollView contentContainerStyle={{ paddingBottom: 32 }}>
+      {!session ? (
+        <OpenDrawerCard onChanged={onChanged} />
+      ) : (
+        <DrawerSummaryCard session={session} sales={sales} onChanged={onChanged} />
+      )}
+      
+      {businessDay && (
+        <View style={styles.centerWrap}>
+          <View style={[styles.card, { marginTop: 24 }]}>
+            <View style={styles.cardHeader}>
+              <MaterialCommunityIcons name="store-clock-outline" size={20} color={antd.primary} />
+              <Text style={styles.cardTitle}>Business Day</Text>
+              <View style={[styles.openPill, { backgroundColor: antd.successBg }]}>
+                <Text style={[styles.openPillText, { color: antd.success }]}>
+                  {businessDay.date}
+                </Text>
+              </View>
+            </View>
+            <Divider />
+            <View style={styles.cardBody}>
+              <Text style={{ color: antd.textSecondary, marginBottom: 16 }}>
+                End the current business day. This will lock the register and prevent any further orders from being placed until a new day is started.
+              </Text>
+              <Button
+                mode="contained"
+                onPress={handleEndDay}
+                buttonColor={antd.error}
+                style={styles.primaryBtn}
+                contentStyle={styles.btnContent}
+              >
+                End Day
+              </Button>
+            </View>
+          </View>
+        </View>
+      )}
+
+      <CloseStoreDialog
+        visible={closeStoreOpen}
+        onDismiss={() => {
+          setCloseStoreOpen(false);
+          onChanged();
+        }}
+      />
+    </ScrollView>
+  );
 }
 
 function OpenDrawerCard({ onChanged }: { onChanged: () => void }) {
@@ -379,8 +436,9 @@ function SalesTable({ orders }: { orders: drawerRepo.PaidOrderSummary[] }) {
         <Text style={[styles.th, { flex: 1.4, textAlign: 'right' }]}>Order Total</Text>
         <Text style={[styles.th, { flex: 1.2, textAlign: 'right' }]}>Payment</Text>
       </View>
-      <FlatList
+      <FlashList
         data={orders}
+        estimatedItemSize={50}
         keyExtractor={(o) => o.id}
         ListEmptyComponent={
           <View style={styles.emptyWrap}>

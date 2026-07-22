@@ -12,6 +12,8 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { antd, RADIUS } from '../theme';
 import { formatMoney } from '../utils/money';
 import * as catalogRepo from '../db/catalogRepo';
+import { useEmployee } from '../state/EmployeeContext';
+import { ManagerPinPrompt } from './ManagerPinPrompt';
 import type { Discount } from '../types';
 
 interface Props {
@@ -30,17 +32,51 @@ function describe(d: Discount): string {
  * so the totals a cashier quotes are exactly what the server prices on sync.
  */
 export function DiscountDialog({ visible, onDismiss, selectedId, onApply }: Props) {
+  const { isManager, verifyManagerPin } = useEmployee();
   const [discounts, setDiscounts] = useState<Discount[]>([]);
   const [code, setCode] = useState('');
   const [codeError, setCodeError] = useState('');
+  // A manager-only discount awaiting PIN approval before it's actually applied.
+  const [pendingDiscount, setPendingDiscount] = useState<Discount | null>(null);
+  const [pinBusy, setPinBusy] = useState(false);
+  const [pinError, setPinError] = useState<string | null>(null);
 
   useEffect(() => {
     if (visible) {
       setDiscounts(catalogRepo.getDiscounts());
       setCode('');
       setCodeError('');
+      setPendingDiscount(null);
+      setPinError(null);
     }
   }, [visible]);
+
+  /** Managers can apply manager-only discounts on their own signed-in role; everyone else needs a PIN. */
+  const requestApply = (d: Discount) => {
+    if (d.requiresManager && !isManager) {
+      setPinError(null);
+      setPendingDiscount(d);
+      return;
+    }
+    onApply(d);
+    onDismiss();
+  };
+
+  const submitManagerPin = async (pin: string) => {
+    if (!pendingDiscount) return;
+    setPinBusy(true);
+    setPinError(null);
+    try {
+      await verifyManagerPin(pin);
+      onApply(pendingDiscount);
+      setPendingDiscount(null);
+      onDismiss();
+    } catch (err) {
+      setPinError(err instanceof Error ? err.message : 'Could not verify PIN.');
+    } finally {
+      setPinBusy(false);
+    }
+  };
 
   const applyCode = () => {
     const found = catalogRepo.findDiscountByCode(code);
@@ -48,8 +84,7 @@ export function DiscountDialog({ visible, onDismiss, selectedId, onApply }: Prop
       setCodeError(`Code "${code.trim().toUpperCase()}" not found`);
       return;
     }
-    onApply(found);
-    onDismiss();
+    requestApply(found);
   };
 
   return (
@@ -102,8 +137,12 @@ export function DiscountDialog({ visible, onDismiss, selectedId, onApply }: Prop
                   <TouchableRipple
                     key={d.id}
                     onPress={() => {
-                      onApply(selected ? null : d);
-                      onDismiss();
+                      if (selected) {
+                        onApply(null);
+                        onDismiss();
+                        return;
+                      }
+                      requestApply(d);
                     }}
                     style={[styles.item, selected && styles.itemSelected]}
                     borderless
@@ -153,6 +192,17 @@ export function DiscountDialog({ visible, onDismiss, selectedId, onApply }: Prop
           <Button onPress={onDismiss}>Close</Button>
         </Dialog.Actions>
       </Dialog>
+
+      <ManagerPinPrompt
+        visible={pendingDiscount !== null}
+        reason={
+          pendingDiscount ? `Approve "${pendingDiscount.name}" (manager only)` : undefined
+        }
+        busy={pinBusy}
+        errorMessage={pinError}
+        onSubmit={submitManagerPin}
+        onCancel={() => setPendingDiscount(null)}
+      />
     </Portal>
   );
 }

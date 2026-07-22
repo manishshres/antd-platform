@@ -8,6 +8,8 @@ interface Props {
   onDigit: (digit: string) => void;
   onBackspace: () => void;
   onClear: () => void;
+  /** Shrinks key height/font — used where the keypad shares space with other controls. */
+  compact?: boolean;
 }
 
 const KEYS = [
@@ -18,15 +20,15 @@ const KEYS = [
 ];
 
 /** Chunky cash-tender keypad, sized for fingers on a tablet. */
-export function NumPad({ onDigit, onBackspace, onClear }: Props) {
+export function NumPad({ onDigit, onBackspace, onClear, compact }: Props) {
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, compact && styles.containerCompact]}>
       {KEYS.map((row, i) => (
-        <View key={i} style={styles.row}>
+        <View key={i} style={[styles.row, compact && styles.rowCompact]}>
           {row.map((key) => (
             <TouchableRipple
               key={key}
-              style={styles.key}
+              style={[styles.key, compact && styles.keyCompact]}
               onPress={() =>
                 key === 'back' ? onBackspace() : onDigit(key)
               }
@@ -36,11 +38,11 @@ export function NumPad({ onDigit, onBackspace, onClear }: Props) {
               {key === 'back' ? (
                 <MaterialCommunityIcons
                   name="backspace-outline"
-                  size={24}
+                  size={compact ? 18 : 24}
                   color={antd.textSecondary}
                 />
               ) : (
-                <Text style={styles.keyText}>{key}</Text>
+                <Text style={[styles.keyText, compact && styles.keyTextCompact]}>{key}</Text>
               )}
             </TouchableRipple>
           ))}
@@ -52,7 +54,9 @@ export function NumPad({ onDigit, onBackspace, onClear }: Props) {
 
 const styles = StyleSheet.create({
   container: { gap: 8 },
+  containerCompact: { gap: 5 },
   row: { flexDirection: 'row', gap: 8 },
+  rowCompact: { gap: 5 },
   key: {
     flex: 1,
     height: 56,
@@ -68,5 +72,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     elevation: 1,
   },
+  keyCompact: { height: 36 },
   keyText: { fontSize: 20, fontWeight: '600', color: antd.text },
+  keyTextCompact: { fontSize: 16 },
 });
