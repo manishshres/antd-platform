@@ -6,12 +6,21 @@ import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../database/schema';
 import { eq, and } from 'drizzle-orm';
 
+/** 1 Apps, 2 Mains, 3 Dessert — the fixed course set the register offers. */
+export const COURSE_LABELS: Record<number, string> = {
+  1: 'APPETIZERS',
+  2: 'MAINS',
+  3: 'DESSERT',
+};
+
 const MAX_PRINT_PACKET_BYTES = 16378;
 
 export interface PrintJobPayload {
   orderId: string;
   ticketNumber?: number;
   updated?: boolean;
+  /** Set when this ticket is one fired course rather than the whole order. */
+  course?: number;
   customerName: string;
   customerPhone: string;
   totalAmount: number;
@@ -22,6 +31,7 @@ export interface PrintJobPayload {
     /** Modifier snapshot: {modifier, option, priceAdjustment} objects. */
     modifiers?: { modifier?: string; option?: string }[] | null;
     notes?: string | null;
+    course?: number;
   }[];
   createdAt: Date;
   printerId?: string;
@@ -184,8 +194,25 @@ export class PrinterService {
       )
       .line(`Customer:   ${payload.customerName}`)
       .line(`Time:       ${dateStr}`)
-      .rule()
+      .rule();
 
+    // Course band — only on a fired-course ticket. An all-at-once ticket
+    // renders byte-for-byte as it always has.
+    if (payload.course != null) {
+      builder
+        .align('center')
+        .bold(true)
+        .size(2, 2)
+        .line(`COURSE ${payload.course}`)
+        .size(1, 1)
+        .line(COURSE_LABELS[payload.course] ?? '')
+        .size(1, 1)
+        .bold(false)
+        .align('left')
+        .rule();
+    }
+
+    builder
       // Items List (Large items for readability in busy kitchen)
       .bold(true)
       .size(1, 2) // Normal width, double height

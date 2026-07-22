@@ -113,8 +113,8 @@ describe('AuthService', () => {
       let message = '';
       try {
         await service.validateUser('test@test.com', 'password');
-      } catch (err) {
-        message = (err as Error).message;
+      } catch (err: unknown) {
+        message = err instanceof Error ? err.message : String(err);
       }
       expect(message).not.toContain(unlockAt.toISOString());
       expect(message).not.toMatch(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/);

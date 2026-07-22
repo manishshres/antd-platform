@@ -70,6 +70,17 @@ export class CreateLocationDto {
   taxRateBps?: number;
 
   @ApiPropertyOptional({
+    example: 1800,
+    description:
+      'Optional auto-gratuity/service-charge rate in basis points (1800 = 18%). The POS offers it as a toggle at checkout; 0/unset means no service charge is offered.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(10000)
+  serviceChargeBps?: number;
+
+  @ApiPropertyOptional({
     description:
       'Printing behavior: { kitchenEnabled, kitchenCopies, receiptEnabled, receiptCopies }',
   })

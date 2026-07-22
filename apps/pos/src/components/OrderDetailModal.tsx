@@ -7,7 +7,7 @@ import { formatMoney } from '../utils/money';
 import { OrderStatusChip } from './OrderStatusChip';
 import { ApiClient } from '../api/client';
 import * as ordersRepo from '../db/ordersRepo';
-import type { LocalOrder, ServerOrderDetail } from '../types';
+import { paymentMethodLabel, type LocalOrder, type ServerOrderDetail } from '../types';
 import type { PosSettings } from '../types';
 
 interface Props {
@@ -178,7 +178,7 @@ function LocalOrderDetail({ order }: { order: LocalOrder }) {
 
       {order.paymentMethod && (
         <Section title="Payment">
-          <InfoRow label="Method" value={order.paymentMethod} />
+          <InfoRow label="Method" value={paymentMethodLabel(order.paymentMethod)} />
           {order.tenderedAmount != null && order.paymentMethod === 'cash' && (
             <InfoRow label="Tendered" value={formatMoney(order.tenderedAmount)} />
           )}
@@ -269,7 +269,7 @@ function ServerDetail({ order }: { order: ServerOrderDetail }) {
 
       {order.paymentMethod && (
         <Section title="Payment">
-          <InfoRow label="Method" value={order.paymentMethod} />
+          <InfoRow label="Method" value={paymentMethodLabel(order.paymentMethod)} />
           {order.tenderedAmount != null && order.paymentMethod === 'cash' && (
             <InfoRow label="Tendered" value={formatMoney(order.tenderedAmount)} />
           )}
@@ -413,7 +413,6 @@ const styles = StyleSheet.create({
   ticket: { color: antd.text, fontWeight: '800' },
   typeChip: {
     backgroundColor: antd.bgLayout,
-    height: 24,
   },
 
   section: { gap: 8 },

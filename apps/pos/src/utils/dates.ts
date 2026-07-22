@@ -36,6 +36,10 @@ export function fmtDate(iso: string): string {
   });
 }
 
+export function fmtTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+}
+
 export function fmtDateOnly(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }

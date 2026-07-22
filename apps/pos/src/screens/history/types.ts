@@ -1,6 +1,6 @@
 import type { LocalOrder, ServerOrderDetail } from '../../types';
 
-export type ActiveTab = 'history' | 'hold' | 'offline';
+export type ActiveTab = 'history' | 'tabs' | 'hold' | 'offline';
 
 export interface HistoryRow {
   key: string;

@@ -63,6 +63,9 @@ export const locations = pgTable(
     // Sales tax rate in basis points (825 = 8.25%). Single flat rate per location for now;
     // a tax_rates table replaces this when per-item/channel rules are needed (see POS plan).
     taxRateBps: integer('tax_rate_bps').default(0).notNull(),
+    // Optional auto-gratuity/service-charge rate in basis points (1800 = 18%). The POS offers
+    // it as an opt-in toggle at checkout rather than always applying it; 0 means unused.
+    serviceChargeBps: integer('service_charge_bps').default(0).notNull(),
     // Per-location printing behavior: { kitchenEnabled, kitchenCopies, receiptEnabled,
     // receiptCopies }. Null = defaults (both enabled, 1 copy each).
     printSettings: jsonb('print_settings'),
@@ -215,6 +218,35 @@ export const users = pgTable(
   ],
 );
 
+export const timeClockEntries = pgTable(
+  'time_clock_entries',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    organizationId: uuid('organization_id')
+      .references(() => organizations.id, { onDelete: 'cascade' })
+      .notNull(),
+    userId: uuid('user_id')
+      .references(() => users.id, { onDelete: 'cascade' })
+      .notNull(),
+    locationId: uuid('location_id').references(() => locations.id, {
+      onDelete: 'set null',
+    }),
+    clockInAt: timestamp('clock_in_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    // Null while the shift is open. At most one open (null) entry per user is
+    // enforced in the service layer, not the DB, so it stays a plain nullable column.
+    clockOutAt: timestamp('clock_out_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    index('idx_time_clock_entries_org').on(t.organizationId),
+    index('idx_time_clock_entries_user').on(t.userId),
+  ],
+);
+
 export const refreshTokens = pgTable(
   'refresh_tokens',
   {
@@ -351,6 +383,17 @@ export const menuItems = pgTable(
     imageUrl: varchar('image_url', { length: 1024 }),
     sortOrder: integer('sort_order').default(0).notNull(),
     availabilitySchedule: jsonb('availability_schedule'), // e.g. [{ day: 1, startTime: '09:00', endTime: '17:00' }]
+    // Retail checkout: barcode/SKU the POS camera scanner matches against. Nullable —
+    // most restaurant menu items are never scanned.
+    sku: varchar('sku', { length: 64 }),
+    // Combo/bundle meal: components are modeled as its required modifier groups
+    // (e.g. "Choose a Side"), reusing the existing modifier pricing/validation engine.
+    // This flag only changes how the POS presents the item (combo builder vs. simple customize).
+    isCombo: boolean('is_combo').default(false).notNull(),
+    // Excluded from tax calculation (e.g. unprepared grocery items in some jurisdictions).
+    taxExempt: boolean('tax_exempt').default(false).notNull(),
+    stockQuantity: integer('stock_quantity'),
+    lowStockThreshold: integer('low_stock_threshold'),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true })
       .defaultNow()
@@ -362,6 +405,7 @@ export const menuItems = pgTable(
   (t) => [
     index('idx_menu_items_category_id').on(t.categoryId),
     index('idx_menu_items_location_id').on(t.locationId),
+    index('idx_menu_items_sku').on(t.sku),
   ],
 );
 
@@ -422,6 +466,19 @@ export const menuItemToModifiers = pgTable(
   (t) => [primaryKey({ columns: [t.menuItemId, t.modifierId] })],
 );
 
+export const categoryToModifiers = pgTable(
+  'category_to_modifiers',
+  {
+    categoryId: uuid('category_id')
+      .references(() => categories.id, { onDelete: 'cascade' })
+      .notNull(),
+    modifierId: uuid('modifier_id')
+      .references(() => menuModifiers.id, { onDelete: 'cascade' })
+      .notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.categoryId, t.modifierId] })],
+);
+
 export const discounts = pgTable(
   'discounts',
   {
@@ -466,6 +523,10 @@ export const customers = pgTable(
     phone: varchar('phone', { length: 50 }),
     email: varchar('email', { length: 255 }),
     notes: text('notes'),
+    // Simple cash-back-style loyalty balance: 1 point earned per dollar spent (paid POS
+    // orders only), 1 point = 1 cent redeemable toward a future order. See
+    // OrdersService.createPosOrder for the accrual/redemption math.
+    loyaltyPoints: integer('loyalty_points').default(0).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -560,6 +621,13 @@ export const orders = pgTable(
     // discountName snapshots the applied discount so receipts survive later edits;
     // discountId lets the register rehydrate the selection when re-editing an unpaid order.
     tipAmount: integer('tip_amount'),
+    // Auto-gratuity/service charge (cents), applied at the taxable base like a taxed line
+    // item rather than a tip — see OrdersService.createPosOrder.
+    serviceChargeAmount: integer('service_charge_amount'),
+    // Loyalty: points redeemed reduce the amount due 1:1 with cents; points earned accrue
+    // only on orders paid at creation (see OrdersService.createPosOrder).
+    loyaltyPointsEarned: integer('loyalty_points_earned'),
+    loyaltyPointsRedeemed: integer('loyalty_points_redeemed'),
     discountAmount: integer('discount_amount'),
     discountName: varchar('discount_name', { length: 255 }),
     discountId: uuid('discount_id').references(() => discounts.id, {
@@ -591,6 +659,11 @@ export const orders = pgTable(
     // Human-friendly per-location daily sequence ("Order #47") for tickets and callouts.
     ticketNumber: integer('ticket_number'),
     clientOrderId: varchar('client_order_id', { length: 255 }),
+    // How this order reaches the kitchen. 'all' (default) prints every line on
+    // the normal save/update events — the behaviour every non-dine-in order
+    // has always had. 'by_course' suppresses that and prints one ticket per
+    // course as the register fires it.
+    fireMode: varchar('fire_mode', { length: 20 }).default('all').notNull(),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true })
       .defaultNow()
@@ -611,6 +684,7 @@ export const orders = pgTable(
     ),
     // Tips are never negative (P4-006). NULL is still allowed (no tip recorded).
     check('orders_tip_amount_check', sql`${t.tipAmount} >= 0`),
+    check('orders_fire_mode_check', sql`${t.fireMode} IN ('all', 'by_course')`),
   ],
 );
 
@@ -630,7 +704,12 @@ export const orderItems = pgTable(
     // historical orders. Shape: [{ modifier, option, priceAdjustment }]
     modifiers: jsonb('modifiers'),
     notes: varchar('notes', { length: 500 }),
+    // Which wave this line goes out in: 1 Apps, 2 Mains, 3 Dessert. Null means
+    // the line isn't coursed and rides the order's normal kitchen ticket.
     course: integer('course'),
+    // When this line was actually sent to the kitchen. Null = not yet fired.
+    // Only meaningful on orders with fireMode = 'by_course'.
+    firedAt: timestamp('fired_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -643,6 +722,38 @@ export const orderItems = pgTable(
     // (P4-030 / P4-031).
     check('order_items_quantity_check', sql`${t.quantity} > 0`),
     check('order_items_price_check', sql`${t.price} >= 0`),
+  ],
+);
+
+/**
+ * Idempotency ledger for mutations against an existing order — today the POS
+ * appending items to an open tab. The register mints the key on-device and
+ * replays it after a dropped response, so the unique constraint (not the
+ * check-then-insert) is what actually prevents a double-append; see the
+ * clientOrderId convention on `orders` for the create-side equivalent.
+ */
+export const orderMutations = pgTable(
+  'order_mutations',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    organizationId: uuid('organization_id')
+      .references(() => organizations.id, { onDelete: 'cascade' })
+      .notNull(),
+    orderId: uuid('order_id')
+      .references(() => orders.id, { onDelete: 'cascade' })
+      .notNull(),
+    clientMutationId: varchar('client_mutation_id', { length: 255 }).notNull(),
+    kind: varchar('kind', { length: 20 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    index('idx_order_mutations_order_id').on(t.orderId),
+    unique('idx_order_mutations_org_client_id').on(
+      t.organizationId,
+      t.clientMutationId,
+    ),
   ],
 );
 
@@ -664,7 +775,7 @@ export const payments = pgTable(
     orderId: uuid('order_id')
       .references(() => orders.id, { onDelete: 'cascade' })
       .notNull(),
-    method: varchar('method', { length: 10 }).notNull(), // 'cash' | 'card'
+    method: varchar('method', { length: 20 }).notNull(), // 'cash' | 'card' | 'gift_card' | 'store_credit' | 'other'
     /** Cents applied toward the order total. */
     amount: integer('amount').notNull(),
     /** Tip carried by this payment (added to the order total when recorded). */
@@ -684,7 +795,10 @@ export const payments = pgTable(
     index('idx_payments_organization_id').on(t.organizationId),
     // Cashier reports group by who took the payment; index the FK (P4-014).
     index('idx_payments_created_by').on(t.createdBy),
-    check('payments_method_check', sql`${t.method} IN ('cash', 'card')`),
+    check(
+      'payments_method_check',
+      sql`${t.method} IN ('cash', 'card', 'gift_card', 'store_credit', 'other')`,
+    ),
     check('payments_amount_check', sql`${t.amount} != 0`),
   ],
 );
@@ -1034,7 +1148,7 @@ export const webhookEvents = pgTable('webhook_events', {
 
 // ────────────────────────────────────────────────────────────────────────────
 // Order Aggregator — provider-agnostic marketplace integration layer.
-// See src/modules/aggregator/. Marketplace orders flow: webhook → externalOrders
+// See src/aggregator/. Marketplace orders flow: webhook → externalOrders
 // (raw) → normalization → native `orders` row (source = provider). Adding a new
 // marketplace (DoorDash/UberEats/Grubhub) is a new adapter + a `providers` row —
 // no changes to orders/POS/kitchen/reporting.

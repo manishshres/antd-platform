@@ -4,6 +4,7 @@ import {
   IsNumber,
   IsOptional,
   IsUUID,
+  IsBoolean,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -55,4 +56,45 @@ export class CreateItemDto {
   @IsUUID()
   @IsOptional()
   locationId?: string;
+
+  @ApiProperty({
+    description: 'Barcode/SKU for POS retail scanning',
+    required: false,
+  })
+  @IsString()
+  @IsOptional()
+  sku?: string;
+
+  @ApiProperty({
+    description:
+      'Marks this item as a combo/bundle — its required modifier groups are its combo components',
+    required: false,
+  })
+  @IsBoolean()
+  @IsOptional()
+  isCombo?: boolean;
+
+  @ApiProperty({
+    description: 'Excludes this item from tax calculation',
+    required: false,
+  })
+  @IsBoolean()
+  @IsOptional()
+  taxExempt?: boolean;
+
+  @ApiProperty({
+    description: 'Stock on hand; leave unset for items that are not stock-tracked',
+    required: false,
+  })
+  @IsNumber()
+  @IsOptional()
+  stockQuantity?: number;
+
+  @ApiProperty({
+    description: 'Quantity at or below which the POS flags this item as low stock',
+    required: false,
+  })
+  @IsNumber()
+  @IsOptional()
+  lowStockThreshold?: number;
 }

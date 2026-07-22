@@ -6,14 +6,15 @@ import { useApp } from '../state/AppContext';
 import { useCart } from '../state/CartContext';
 import { ApiClient } from '../api/client';
 import * as ordersRepo from '../db/ordersRepo';
+import * as mutationsRepo from '../db/mutationsRepo';
+import * as tabsRepo from '../db/tabsRepo';
 import { syncEngine } from '../sync/syncEngine';
 import { presetDates, type DatePreset } from '../utils/dates';
 import { HistoryTabPanel } from './history/HistoryTabPanel';
-import { HoldTabPanel } from './history/HoldTabPanel';
-import { OfflineTabPanel } from './history/OfflineTabPanel';
+import { OrdersListPanel } from './history/OrdersListPanel';
 import { DetailPanel } from './history/DetailPanel';
 import type { ActiveTab, DetailState, HistoryRow } from './history/types';
-import type { LocalOrder } from '../types';
+import type { Course, LocalOrder } from '../types';
 import type { ScreenName } from '../navigation';
 
 interface Props {
@@ -40,7 +41,9 @@ export function HistoryScreen({ onNavigate }: Props) {
   // Hold / offline
   const [heldOrders, setHeldOrders] = useState<LocalOrder[]>([]);
   const [offlineOrders, setOfflineOrders] = useState<LocalOrder[]>([]);
+  const [openTabs, setOpenTabs] = useState<LocalOrder[]>([]);
   const [localRefresh, setLocalRefresh] = useState(0);
+  const [historyRefresh, setHistoryRefresh] = useState(0);
 
   const { from: resolvedFrom, to: resolvedTo } =
     preset === 'custom'
@@ -110,11 +113,12 @@ export function HistoryScreen({ onNavigate }: Props) {
       setRows(loadLocal());
     }
     return () => { cancelled = true; };
-  }, [activeTab, search, online, settings.apiUrl, settings.apiKey, dataVersion, loadLocal]);
+  }, [activeTab, search, online, settings.apiUrl, settings.apiKey, dataVersion, loadLocal, historyRefresh]);
 
   useEffect(() => {
     setHeldOrders(ordersRepo.listOrders(['held']));
     setOfflineOrders(ordersRepo.listOrders(['pending_sync', 'failed']));
+    setOpenTabs(ordersRepo.listOpenTabs());
   }, [dataVersion, localRefresh]);
 
   // Clear selection on tab change
@@ -149,26 +153,59 @@ export function HistoryScreen({ onNavigate }: Props) {
 
   // Hold actions
   const resumeOrder = (order: LocalOrder) => {
-    cart.loadOrder(order);
+    // An open tab reopens as a tab (baseline preserved, appends only); a held
+    // order reopens as an editable draft.
+    if (order.status === 'open_tab') cart.loadTab(order);
+    else cart.loadOrder(order);
     onNavigate('home');
   };
 
   const discardOrder = (order: LocalOrder) => {
     ordersRepo.deleteOrder(order.id);
+    // Drop any queued work for it too, or the sync engine would keep trying to
+    // push an order that no longer exists locally.
+    mutationsRepo.removeForOrder(order.id);
     syncEngine.refreshCounts();
     setLocalRefresh((n) => n + 1);
     if (selectedId === order.id) { setSelectedId(null); setDetail({ kind: 'empty' }); }
   };
 
+  // Tab actions
+  const fireCourse = (order: LocalOrder, course: Course) => {
+    tabsRepo.fireCourse(order, course);
+    syncEngine.refreshCounts();
+    setLocalRefresh((n) => n + 1);
+    // Re-read so the detail panel shows the course as fired straight away.
+    const updated = ordersRepo.getOrderById(order.id);
+    if (updated) setDetail({ kind: 'local', order: updated });
+    if (online) syncNow();
+  };
+
   // Offline actions
   const retrySync = (order: LocalOrder) => {
     ordersRepo.requeue(order.id);
+    // The order status alone no longer drives the queue — clear the parked
+    // mutations too, or the next run would skip this order entirely.
+    mutationsRepo.requeueForOrder(order.id);
     syncEngine.refreshCounts();
     setLocalRefresh((n) => n + 1);
     if (online) syncNow();
   };
 
   const pendingCount = sync.pendingOrders + sync.failedOrders;
+
+  // Reload the currently-open server order (its status just changed) and
+  // refresh the list behind it so the voided order drops out of "paid" totals.
+  const handleVoided = useCallback(() => {
+    if (selectedId) {
+      const client = new ApiClient(settings.apiUrl, settings.apiKey);
+      client
+        .getOrderById(selectedId)
+        .then((order) => setDetail({ kind: 'server', order }))
+        .catch((err: Error) => setDetail({ kind: 'error', message: err.message ?? 'Failed to reload.' }));
+    }
+    setHistoryRefresh((n) => n + 1);
+  }, [selectedId, settings.apiUrl, settings.apiKey]);
 
   return (
     <View style={styles.root}>
@@ -178,9 +215,10 @@ export function HistoryScreen({ onNavigate }: Props) {
         <View style={styles.tabBar}>
           {(
             [
-              { key: 'history', label: 'Order History' },
-              { key: 'hold', label: 'Order On Hold' },
-              { key: 'offline', label: 'Offline Order' },
+              { key: 'tabs', label: 'Active' },
+              { key: 'hold', label: 'Held' },
+              { key: 'offline', label: 'Unsynced' },
+              { key: 'history', label: 'History' },
             ] as { key: ActiveTab; label: string }[]
           ).map((tab) => (
             <TouchableOpacity
@@ -216,20 +254,31 @@ export function HistoryScreen({ onNavigate }: Props) {
             onSelect={selectHistoryRow}
           />
         )}
+        {activeTab === 'tabs' && (
+          <OrdersListPanel
+            orders={openTabs}
+            selectedId={selectedId}
+            onSelect={selectLocalOrder}
+            emptyLabel="No active orders"
+            emptyIcon="silverware-fork-knife"
+          />
+        )}
         {activeTab === 'hold' && (
-          <HoldTabPanel
+          <OrdersListPanel
             orders={heldOrders}
             selectedId={selectedId}
             onSelect={selectLocalOrder}
+            emptyLabel="No held orders"
+            emptyIcon="pause-circle-outline"
           />
         )}
         {activeTab === 'offline' && (
-          <OfflineTabPanel
+          <OrdersListPanel
             orders={offlineOrders}
-            online={online}
-            onSyncNow={() => { if (online) syncNow(); }}
             selectedId={selectedId}
             onSelect={selectLocalOrder}
+            emptyLabel="Everything is synced"
+            emptyIcon="cloud-check-outline"
           />
         )}
       </View>
@@ -242,6 +291,10 @@ export function HistoryScreen({ onNavigate }: Props) {
           onResume={resumeOrder}
           onDiscard={discardOrder}
           onRetry={retrySync}
+          onFireCourse={fireCourse}
+          client={new ApiClient(settings.apiUrl, settings.apiKey)}
+          onVoided={handleVoided}
+          settings={settings}
         />
       </View>
     </View>

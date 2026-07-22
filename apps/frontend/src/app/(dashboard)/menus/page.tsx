@@ -60,7 +60,8 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { api } from "@/lib/api";
-import { getAccessToken } from "@/lib/token-store";
+import { getAccessToken, onTokenChange } from "@/lib/token-store";
+import { decodeJwtPayload } from "@/lib/jwt";
 
 const { Title, Text, Paragraph } = Typography;
 const { Option } = Select;
@@ -102,6 +103,7 @@ interface Category {
   isAvailable: boolean;
   deletedAt?: string | null;
   items?: MenuItem[];
+  modifiers?: ModifierGroup[];
 }
 
 interface SortableMenuItemProps {
@@ -252,15 +254,17 @@ export default function MenuEditorPage() {
   useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
-    const tk = getAccessToken();
-    if (tk) {
-      try {
-        const payload = JSON.parse(window.atob(tk.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
-        if (payload.role === "sysadmin" || payload.role === "manager") setIsAdmin(true);
-        if (payload.role === "platform_admin") { setIsAdmin(true); setIsPlatformAdmin(true); }
-      } catch { setIsAdmin(false); setIsPlatformAdmin(false); }
-    }
-  }, [load]);
+    const applyRole = () => {
+      const tk = getAccessToken();
+      if (!tk) { setIsAdmin(false); setIsPlatformAdmin(false); return; }
+      const payload = decodeJwtPayload<{ role?: string }>(tk);
+      setIsAdmin(!!payload?.role && ["sysadmin", "admin", "manager", "platform_admin"].includes(payload.role));
+      setIsPlatformAdmin(payload?.role === "platform_admin");
+    };
+    applyRole();
+    const unsub = onTokenChange(applyRole);
+    return unsub;
+  }, []);
 
   const handleImportMenu = async (mode: string = 'sync') => {
     try {
@@ -289,17 +293,38 @@ export default function MenuEditorPage() {
     } finally { setAiSyncLoading(false); }
   };
 
-  const handleAddCategory = async (values: { name: string }) => {
+  const handleAddCategory = async (values: any) => {
     try {
-      await api.post("/menus/categories", { name: values.name, locationId: selectedLocationId });
+      const { data } = await api.post("/menus/categories", { name: values.name, locationId: selectedLocationId });
+      if (values.modifierIds?.length > 0) {
+        for (const modId of values.modifierIds) {
+          await api.post(`/menus/categories/${data.id}/modifiers`, { modifierId: modId }).catch(console.error);
+        }
+      }
       message.success("Category created."); setCatModalOpen(false); catForm.resetFields(); load();
     } catch { message.error("Failed to create category."); }
   };
 
-  const handleUpdateCategory = async (values: { name: string; isAvailable: boolean }) => {
+  const handleUpdateCategory = async (values: any) => {
     try {
       if (!editingCat) return;
-      await api.patch(`/menus/categories/${editingCat.id}`, values);
+      await api.patch(`/menus/categories/${editingCat.id}`, { name: values.name, isAvailable: values.isAvailable });
+      
+      // For simplicity, we can try to just re-add the selected ones (the backend uses onConflictDoNothing)
+      // but we should ideally remove the ones not selected. For now, since there is no bulk edit, we will loop and remove unselected ones.
+      const currentModIds = editingCat.modifiers?.map(m => m.id) || [];
+      const newModIds = values.modifierIds || [];
+      
+      const toRemove = currentModIds.filter(id => !newModIds.includes(id));
+      const toAdd = newModIds.filter((id: string) => !currentModIds.includes(id));
+      
+      for (const modId of toRemove) {
+        await api.delete(`/menus/categories/${editingCat.id}/modifiers/${modId}`).catch(console.error);
+      }
+      for (const modId of toAdd) {
+        await api.post(`/menus/categories/${editingCat.id}/modifiers`, { modifierId: modId }).catch(console.error);
+      }
+
       message.success("Category updated."); setEditCatModalOpen(false); load();
     } catch { message.error("Failed to update category."); }
   };
@@ -329,16 +354,19 @@ export default function MenuEditorPage() {
   const handleSaveItem = async (values: any) => {
     try {
       const priceInCents = Math.round(Number(values.price) * 100);
-      const payload = { categoryId: selectedCatId, name: String(values.name), description: String(values.description || ""), price: priceInCents, imageUrl: values.imageUrl, isAvailable: values.isAvailable, locationId: selectedLocationId };
+      const basePayload = { categoryId: selectedCatId, name: String(values.name), description: String(values.description || ""), price: priceInCents, imageUrl: values.imageUrl, isAvailable: values.isAvailable };
       let savedItem;
       if (editingItem) {
-        const { data } = await api.patch(`/menus/items/${editingItem.id}`, payload); savedItem = data; message.success("Item updated.");
+        const { data } = await api.patch(`/menus/items/${editingItem.id}`, basePayload); savedItem = data; message.success("Item updated.");
       } else {
-        const { data } = await api.post("/menus/items", payload); savedItem = data; message.success("Item created.");
+        const { data } = await api.post("/menus/items", { ...basePayload, locationId: selectedLocationId }); savedItem = data; message.success("Item created.");
       }
-      if (values.modifierIds?.length > 0) {
-        for (const modId of values.modifierIds) await api.post(`/menus/items/${savedItem.id}/modifiers`, { modifierId: modId }).catch(console.error);
-      }
+      const currentModIds = editingItem?.modifiers?.map(m => m.id) || [];
+      const newModIds = values.modifierIds || [];
+      const toAdd = newModIds.filter((id: string) => !currentModIds.includes(id));
+      const toRemove = currentModIds.filter((id: string) => !newModIds.includes(id));
+      for (const modId of toAdd) await api.post(`/menus/items/${savedItem.id}/modifiers`, { modifierId: modId }).catch(console.error);
+      for (const modId of toRemove) await api.delete(`/menus/items/${savedItem.id}/modifiers/${modId}`).catch(console.error);
       itemForm.resetFields(); setItemModalOpen(false); setEditingItem(null); load();
     } catch { message.error("Failed to save menu item."); }
   };
@@ -470,7 +498,7 @@ export default function MenuEditorPage() {
                       {isAdmin && (
                         <Button size="small" type="text" icon={<EllipsisOutlined />} aria-label="Category options" onClick={(e) => {
                           e.stopPropagation(); setEditingCat(cat);
-                          editCatForm.setFieldsValue({ name: cat.name, isAvailable: cat.isAvailable });
+                          editCatForm.setFieldsValue({ name: cat.name, isAvailable: cat.isAvailable, modifierIds: cat.modifiers?.map(m => m.id) || [] });
                           setEditCatModalOpen(true);
                         }} style={{ opacity: 0.6 }} />
                       )}
@@ -501,7 +529,7 @@ export default function MenuEditorPage() {
                 {isAdmin && selectedCat && !selectedCat.deletedAt && (
                   <>
                     <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditingItem(null); itemForm.resetFields(); itemForm.setFieldsValue({ isAvailable: true }); setItemModalOpen(true); }}>Add Item</Button>
-                    <Tooltip title="Edit category"><Button icon={<EditOutlined />} aria-label="Edit category" onClick={() => { setEditingCat(selectedCat); editCatForm.setFieldsValue({ name: selectedCat.name, isAvailable: selectedCat.isAvailable }); setEditCatModalOpen(true); }} /></Tooltip>
+                    <Tooltip title="Edit category"><Button icon={<EditOutlined />} aria-label="Edit category" onClick={() => { setEditingCat(selectedCat); editCatForm.setFieldsValue({ name: selectedCat.name, isAvailable: selectedCat.isAvailable, modifierIds: selectedCat.modifiers?.map(m => m.id) || [] }); setEditCatModalOpen(true); }} /></Tooltip>
                     <Tooltip title="Delete category"><Button danger icon={<DeleteOutlined />} aria-label="Delete category" onClick={() => handleDeleteCategory(selectedCat.id, selectedCat.name)} /></Tooltip>
                   </>
                 )}
@@ -580,14 +608,26 @@ export default function MenuEditorPage() {
       <Modal title="Add New Category" open={catModalOpen} onCancel={() => setCatModalOpen(false)} footer={null} forceRender>
         <Form form={catForm} layout="vertical" onFinish={handleAddCategory}>
           <Form.Item name="name" label="Category Name" rules={[{ required: true }]}><Input placeholder="e.g. Appetizers, Pizzas" /></Form.Item>
-          <Form.Item style={{ textAlign: "right" }}><Button type="primary" htmlType="submit">Create</Button></Form.Item>
+          <Form.Item name="modifierIds" label="Assign Default Modifier Groups">
+            <Select mode="multiple" placeholder="Select modifiers">
+              {modifierGroups.map(mg => <Option key={mg.id} value={mg.id}>{mg.name}</Option>)}
+            </Select>
+          </Form.Item>
+          <Form.Item style={{ textAlign: "right", marginBottom: 0 }}>
+            <Space><Button onClick={() => setCatModalOpen(false)}>Cancel</Button><Button type="primary" htmlType="submit">Create</Button></Space>
+          </Form.Item>
         </Form>
       </Modal>
 
       {/* Edit Category Modal */}
       <Modal title="Edit Category" open={editCatModalOpen} onCancel={() => setEditCatModalOpen(false)} footer={null} forceRender>
-        <Form form={editCatForm} layout="vertical" onFinish={handleUpdateCategory}>
+        <Form form={editCatForm} layout="vertical" onFinish={handleUpdateCategory} initialValues={{ isAvailable: true }}>
           <Form.Item name="name" label="Category Name" rules={[{ required: true }]}><Input /></Form.Item>
+          <Form.Item name="modifierIds" label="Assign Default Modifier Groups">
+            <Select mode="multiple" placeholder="Select modifiers">
+              {modifierGroups.map(mg => <Option key={mg.id} value={mg.id}>{mg.name}</Option>)}
+            </Select>
+          </Form.Item>
           <Form.Item name="isAvailable" label="Available for ordering" valuePropName="checked"><Switch /></Form.Item>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             {editingCat && !editingCat.deletedAt && isAdmin && (

@@ -453,23 +453,34 @@ export class OrdersService {
       throw new NotFoundException('Order not found.');
     }
 
-    // Fetch order items and join with menu item details
-    const itemsRes = await this.db
-      .select({
-        id: schema.orderItems.id,
-        quantity: schema.orderItems.quantity,
-        price: schema.orderItems.price,
-        modifiers: schema.orderItems.modifiers,
-        notes: schema.orderItems.notes,
-        menuItemId: schema.orderItems.menuItemId,
-        menuItemName: schema.menuItems.name,
-      })
-      .from(schema.orderItems)
-      .innerJoin(
-        schema.menuItems,
-        eq(schema.orderItems.menuItemId, schema.menuItems.id),
-      )
-      .where(eq(schema.orderItems.orderId, orderId));
+    // Fetch order items and join with menu item details. leftJoin (not inner):
+    // an order's own line items (quantity/price already snapshotted at order
+    // time) must never disappear from its history just because the menu item
+    // they reference was later removed — an inner join silently dropped the
+    // whole row in that case.
+    const itemsRes = (
+      await this.db
+        .select({
+          id: schema.orderItems.id,
+          quantity: schema.orderItems.quantity,
+          price: schema.orderItems.price,
+          modifiers: schema.orderItems.modifiers,
+          notes: schema.orderItems.notes,
+          course: schema.orderItems.course,
+          firedAt: schema.orderItems.firedAt,
+          menuItemId: schema.orderItems.menuItemId,
+          menuItemName: schema.menuItems.name,
+        })
+        .from(schema.orderItems)
+        .leftJoin(
+          schema.menuItems,
+          eq(schema.orderItems.menuItemId, schema.menuItems.id),
+        )
+        .where(eq(schema.orderItems.orderId, orderId))
+    ).map((item) => ({
+      ...item,
+      menuItemName: item.menuItemName ?? 'Item no longer on menu',
+    }));
 
     const paymentsRes = await this.db
       .select()
@@ -881,9 +892,15 @@ export class OrdersService {
       /** Omitted = save unpaid (dine-in / pay-later); kitchen fires, receipt waits. */
       paymentMethod?: string;
       tipAmount?: number;
+      /** Opt in to the location's configured auto-gratuity/service-charge rate. */
+      applyServiceCharge?: boolean;
+      /** Loyalty points to redeem, 1 point = 1 cent off. Requires customerId. */
+      redeemPoints?: number;
       discountId?: string;
       promoCode?: string;
       clientOrderId?: string;
+      /** 'by_course' holds the kitchen ticket until each course is fired. */
+      fireMode?: string;
       items: {
         menuItemId: string;
         quantity: number;
@@ -910,6 +927,7 @@ export class OrdersService {
       .select({
         id: schema.locations.id,
         taxRateBps: schema.locations.taxRateBps,
+        serviceChargeBps: schema.locations.serviceChargeBps,
       })
       .from(schema.locations)
       .where(
@@ -925,8 +943,30 @@ export class OrdersService {
     }
 
     // A linked customer profile must belong to this org (never trust client ids).
+    let customerLoyaltyPoints = 0;
     if (dto.customerId) {
       await this.pricingService.requireOrgCustomer(orgId, dto.customerId);
+      if (dto.redeemPoints) {
+        const [customerRow] = await this.db
+          .select({ loyaltyPoints: schema.customers.loyaltyPoints })
+          .from(schema.customers)
+          .where(eq(schema.customers.id, dto.customerId))
+          .limit(1);
+        customerLoyaltyPoints = customerRow?.loyaltyPoints ?? 0;
+      }
+    }
+    const redeemPoints = Math.max(0, Math.round(dto.redeemPoints ?? 0));
+    if (redeemPoints > 0) {
+      if (!dto.customerId) {
+        throw new BadRequestException(
+          'A linked customer is required to redeem loyalty points.',
+        );
+      }
+      if (redeemPoints > customerLoyaltyPoints) {
+        throw new BadRequestException(
+          `Customer only has ${customerLoyaltyPoints} loyalty points.`,
+        );
+      }
     }
 
     const { resolvedItems, subtotal } =
@@ -943,9 +983,32 @@ export class OrdersService {
       subtotal,
     );
     const taxableBase = subtotal - discountAmount;
-    const taxAmount = Math.round((taxableBase * location.taxRateBps) / 10000);
+    // Discount reduces the taxable and exempt portions proportionally, mirroring how it's
+    // already applied to the whole subtotal above.
+    const taxableSubtotal = this.pricingService.taxableSubtotal(resolvedItems);
+    const taxableAfterDiscount =
+      subtotal > 0 ? taxableSubtotal - (discountAmount * taxableSubtotal) / subtotal : 0;
+    // Service charge is computed off the discounted taxable base, same as tax, and — unlike
+    // tip — is itself taxable, matching how mandatory gratuities are commonly treated.
+    const serviceChargeAmount = dto.applyServiceCharge
+      ? Math.round((taxableBase * location.serviceChargeBps) / 10000)
+      : 0;
+    const taxAmount = Math.round(
+      ((taxableAfterDiscount + serviceChargeAmount) * location.taxRateBps) /
+        10000,
+    );
     const tipAmount = Math.max(0, Math.round(dto.tipAmount ?? 0));
-    const totalAmount = taxableBase + taxAmount + tipAmount;
+    const preRedemptionTotal =
+      taxableBase + serviceChargeAmount + taxAmount + tipAmount;
+    // Redemption is a payment offset (like store credit), not a pre-tax price cut, so it's
+    // subtracted after tax and floored at 0 rather than folded into the taxable base.
+    const redemptionAmount = Math.min(redeemPoints, preRedemptionTotal);
+    const totalAmount = preRedemptionTotal - redemptionAmount;
+    // Earn only accrues on orders paid at creation — pay-later orders don't accrue until
+    // that gap is closed (see the class-level note on this method).
+    const loyaltyPointsEarned = dto.paymentMethod
+      ? Math.floor(totalAmount / 100)
+      : 0;
 
     const now = new Date();
     let orderId: string;
@@ -968,6 +1031,9 @@ export class OrdersService {
             subtotal,
             taxAmount,
             tipAmount,
+            serviceChargeAmount,
+            loyaltyPointsEarned: loyaltyPointsEarned || null,
+            loyaltyPointsRedeemed: redemptionAmount || null,
             discountAmount,
             discountName: discount?.name ?? null,
             discountId: discount?.id ?? null,
@@ -979,6 +1045,7 @@ export class OrdersService {
             paidAt: dto.paymentMethod ? now : null,
             ticketNumber,
             clientOrderId: dto.clientOrderId ?? null,
+            fireMode: dto.fireMode === 'by_course' ? 'by_course' : 'all',
           })
           .returning();
 
@@ -986,6 +1053,7 @@ export class OrdersService {
           throw new BadRequestException('Failed to create order.');
         }
 
+        const byCourse = dto.fireMode === 'by_course';
         await tx.insert(schema.orderItems).values(
           resolvedItems.map((item) => ({
             orderId: order.id,
@@ -995,8 +1063,42 @@ export class OrdersService {
             modifiers: item.modifiers,
             notes: item.notes,
             course: item.course,
+            // Course 1 goes to the kitchen the moment the party is seated —
+            // starters don't wait for a server to tap Fire.
+            firedAt: byCourse && item.course === 1 ? now : null,
           })),
         );
+
+        await this.pricingService.decrementStock(tx, resolvedItems);
+
+        if (dto.customerId && (redemptionAmount > 0 || loyaltyPointsEarned > 0)) {
+          await tx
+            .update(schema.customers)
+            .set({
+              loyaltyPoints: sql`GREATEST(${schema.customers.loyaltyPoints} - ${redemptionAmount} + ${loyaltyPointsEarned}, 0)`,
+              updatedAt: now,
+            })
+            .where(eq(schema.customers.id, dto.customerId));
+        }
+
+        if (resolvedItems.some((i) => i.priceOverridden)) {
+          this.auditService.fireAndForget({
+            action: 'order.item.price_override',
+            userId: user.id,
+            organizationId: orgId,
+            entityType: 'order',
+            entityId: order.id,
+            newValue: {
+              items: resolvedItems
+                .filter((i) => i.priceOverridden)
+                .map((i) => ({
+                  menuItemId: i.menuItemId,
+                  price: i.price,
+                  reason: i.priceOverrideReason,
+                })),
+            },
+          });
+        }
 
         return order.id;
       });
@@ -1172,6 +1274,270 @@ export class OrdersService {
       entityId: orderId,
       previousValue: { totalAmount: order.totalAmount, items: order.items },
       newValue: { subtotal, taxAmount, totalAmount, items: resolvedItems },
+    });
+
+    this.eventsGateway.emitToOrganization(orgId, 'order.updated', fullOrder);
+    return fullOrder;
+  }
+
+  /**
+   * Append items to an open tab (POS dine-in). Delta semantics on purpose:
+   * `updateOrderItems` replaces the whole line set, so two registers ringing
+   * into the same tab would silently drop each other's items. Here the client
+   * sends only what it added and the read-concat-write happens server-side
+   * under an advisory lock.
+   *
+   * The lock key is 'order-payment' — the same one OrderPaymentService takes —
+   * so an append can never interleave with a payment on the same order. A
+   * separate 'order-items' key would serialize appends against each other but
+   * still let one race a tender and re-price an order mid-payment.
+   */
+  async appendOrderItems(
+    user: CurrentUserPayload,
+    orderId: string,
+    dto: {
+      clientMutationId?: string;
+      items: {
+        menuItemId: string;
+        quantity: number;
+        optionIds?: string[];
+        notes?: string;
+        course?: number;
+        priceOverride?: number;
+        priceOverrideReason?: string;
+      }[];
+    },
+  ) {
+    const orgId = await this.billingService.getRequiredOrg(user);
+    if (dto.items.length === 0) {
+      throw new BadRequestException('No items to append.');
+    }
+
+    const replayed = await this.db.transaction(async (tx) => {
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtext('order-payment'), hashtext(${orderId}))`,
+      );
+
+      // Claim the idempotency key first: a retry after a dropped response must
+      // be a no-op, and the unique constraint — not this check — is what makes
+      // that true under concurrency.
+      if (dto.clientMutationId) {
+        const claimed = await tx
+          .insert(schema.orderMutations)
+          .values({
+            organizationId: orgId,
+            orderId,
+            clientMutationId: dto.clientMutationId,
+            kind: 'append',
+          })
+          .onConflictDoNothing()
+          .returning({ id: schema.orderMutations.id });
+        if (claimed.length === 0) return true;
+      }
+
+      // Post-lock re-read: the order may have been paid or cancelled while we
+      // waited for the lock.
+      const [order] = await tx
+        .select()
+        .from(schema.orders)
+        .where(
+          and(
+            eq(schema.orders.id, orderId),
+            eq(schema.orders.organizationId, orgId),
+            isNull(schema.orders.deletedAt),
+          ),
+        )
+        .limit(1);
+      if (!order) {
+        throw new NotFoundException(`Order ${orderId} not found`);
+      }
+      if (order.paidAt) {
+        throw new BadRequestException(
+          'Paid orders cannot be edited. Use a refund/void instead.',
+        );
+      }
+      if (!['pending', 'confirmed'].includes(order.status)) {
+        throw new BadRequestException(
+          `Orders in status "${order.status}" can no longer be edited.`,
+        );
+      }
+      if ((await this.paymentService.paidSumFor(orderId, tx)) > 0) {
+        throw new BadRequestException(
+          'Orders with recorded payments cannot be edited.',
+        );
+      }
+
+      const { resolvedItems, subtotal: addedSubtotal } =
+        await this.pricingService.priceCartItems(orgId, dto.items);
+
+      // Existing lines keep their original prices — a menu price change must
+      // never retroactively re-price what the guest already ordered.
+      const existing = await tx
+        .select({
+          price: schema.orderItems.price,
+          quantity: schema.orderItems.quantity,
+        })
+        .from(schema.orderItems)
+        .where(eq(schema.orderItems.orderId, orderId));
+      const existingSubtotal = existing.reduce(
+        (sum, i) => sum + i.price * i.quantity,
+        0,
+      );
+
+      const subtotal = existingSubtotal + addedSubtotal;
+      const taxRateBps = await this.pricingService.getTaxRate(order.locationId);
+      // Re-resolve the order's own discount so a percent discount keeps
+      // scaling as the tab grows.
+      const discount = await this.pricingService.resolveDiscount(orgId, user, {
+        discountId: order.discountId ?? undefined,
+      });
+      const discountAmount = this.pricingService.discountAmountFor(
+        discount,
+        subtotal,
+      );
+      const taxableBase = subtotal - discountAmount;
+      const taxAmount = Math.round((taxableBase * taxRateBps) / 10000);
+      const totalAmount = taxableBase + taxAmount + (order.tipAmount ?? 0);
+
+      await tx.insert(schema.orderItems).values(
+        resolvedItems.map((item) => ({
+          orderId,
+          menuItemId: item.menuItemId,
+          quantity: item.quantity,
+          price: item.price,
+          modifiers: item.modifiers,
+          notes: item.notes,
+          course: item.course,
+        })),
+      );
+
+      await this.pricingService.decrementStock(tx, resolvedItems);
+
+      await tx
+        .update(schema.orders)
+        .set({
+          subtotal,
+          taxAmount,
+          discountAmount,
+          discountName: discount?.name ?? null,
+          totalAmount,
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.orders.id, orderId));
+
+      return false;
+    });
+
+    const fullOrder = await this.getOrderByIdForOrg(orgId, orderId);
+    if (replayed) return fullOrder;
+
+    // Fire the added lines to the kitchen; an open tab prints as it grows.
+    await this.printService.printForEvents(orgId, fullOrder, ['update'], {
+      updated: true,
+    });
+
+    this.auditService.fireAndForget({
+      action: 'order.items.append',
+      userId: user.id,
+      organizationId: orgId,
+      entityType: 'order',
+      entityId: orderId,
+      newValue: { appended: dto.items, totalAmount: fullOrder.totalAmount },
+    });
+
+    this.eventsGateway.emitToOrganization(orgId, 'order.updated', fullOrder);
+    return fullOrder;
+  }
+
+  /**
+   * Send one course of a coursed order to the kitchen.
+   *
+   * Shares the 'order-payment' advisory lock with appends and tenders so a fire
+   * can never interleave with either — the ticket must reflect the lines that
+   * are actually on the order at that instant.
+   *
+   * Re-firing a course with nothing left unfired is a deliberate no-op rather
+   * than an error: a double-tapped Fire button must not double-print, but it
+   * also shouldn't show the server a scary failure.
+   */
+  async fireCourse(
+    user: CurrentUserPayload,
+    orderId: string,
+    dto: { course: number; clientMutationId?: string },
+  ) {
+    const orgId = await this.billingService.getRequiredOrg(user);
+
+    const fired = await this.db.transaction(async (tx) => {
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtext('order-payment'), hashtext(${orderId}))`,
+      );
+
+      if (dto.clientMutationId) {
+        const claimed = await tx
+          .insert(schema.orderMutations)
+          .values({
+            organizationId: orgId,
+            orderId,
+            clientMutationId: dto.clientMutationId,
+            kind: 'fire',
+          })
+          .onConflictDoNothing()
+          .returning({ id: schema.orderMutations.id });
+        if (claimed.length === 0) return false;
+      }
+
+      const [order] = await tx
+        .select()
+        .from(schema.orders)
+        .where(
+          and(
+            eq(schema.orders.id, orderId),
+            eq(schema.orders.organizationId, orgId),
+            isNull(schema.orders.deletedAt),
+          ),
+        )
+        .limit(1);
+      if (!order) {
+        throw new NotFoundException(`Order ${orderId} not found`);
+      }
+      if (order.paidAt) {
+        throw new BadRequestException(
+          'This order is already paid; there is nothing left to fire.',
+        );
+      }
+      if (!['pending', 'confirmed'].includes(order.status)) {
+        throw new BadRequestException(
+          `Orders in status "${order.status}" can no longer be fired.`,
+        );
+      }
+
+      const stamped = await tx
+        .update(schema.orderItems)
+        .set({ firedAt: new Date() })
+        .where(
+          and(
+            eq(schema.orderItems.orderId, orderId),
+            eq(schema.orderItems.course, dto.course),
+            isNull(schema.orderItems.firedAt),
+          ),
+        )
+        .returning({ id: schema.orderItems.id });
+
+      return stamped.length > 0;
+    });
+
+    const fullOrder = await this.getOrderByIdForOrg(orgId, orderId);
+    if (!fired) return fullOrder;
+
+    await this.printService.printCourse(orgId, fullOrder, dto.course);
+
+    this.auditService.fireAndForget({
+      action: 'order.course.fire',
+      userId: user.id,
+      organizationId: orgId,
+      entityType: 'order',
+      entityId: orderId,
+      newValue: { course: dto.course },
     });
 
     this.eventsGateway.emitToOrganization(orgId, 'order.updated', fullOrder);
@@ -1422,6 +1788,13 @@ export class OrdersService {
       fullOrder,
       fullOrder.paidAt ? ['save', 'paid'] : ['save'],
     );
+
+    // printForEvents deliberately withholds the kitchen ticket for a coursed
+    // order. Course 1 still goes out now — the starters are what the party is
+    // waiting on — and the rest wait for an explicit fire.
+    if (fullOrder.fireMode === 'by_course') {
+      await this.printService.printCourse(orgId, fullOrder, 1);
+    }
 
     this.auditService.fireAndForget({
       action: 'order.create',

@@ -7,7 +7,7 @@ import {
 } from '@nestjs/swagger';
 import { ApiKeyAuthGuard } from './guards/api-key-auth.guard';
 import { LocationsService } from '../locations/locations.service';
-import { ThrottlerGuard, SkipThrottle } from '@nestjs/throttler';
+import { SkipThrottle } from '@nestjs/throttler';
 import { Public } from '../common/decorators/public.decorator';
 
 @ApiTags('Public API - Locations')

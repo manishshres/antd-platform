@@ -30,9 +30,9 @@ export class TelnyxController {
   @ApiOperation({ summary: 'Search available Telnyx phone numbers' })
   @ApiQuery({ name: 'country', required: false, type: String })
   @ApiQuery({ name: 'locality', required: false, type: String })
-  async searchNumbers(
-    @Query('country') country?: string,
-    @Query('locality') locality?: string,
+  searchNumbers(
+    @Query('country') _country?: string,
+    @Query('locality') _locality?: string,
   ) {
     // This is a stub for the frontend wizard.
     // In a real scenario, this would call Telnyx's /v2/available_phone_numbers API.

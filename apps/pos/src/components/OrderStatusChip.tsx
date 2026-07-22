@@ -5,6 +5,7 @@ import { antd, RADIUS } from '../theme';
 
 const STYLES: Record<string, { bg: string; border: string; fg: string; label: string }> = {
   held: { bg: antd.warningBg, border: antd.warningBorder, fg: antd.warning, label: 'On Hold' },
+  open_tab: { bg: antd.primaryBg, border: antd.primaryBorder, fg: antd.primary, label: 'Open Tab' },
   pending_sync: { bg: antd.warningBg, border: antd.warningBorder, fg: antd.warning, label: 'Pending Sync' },
   synced: { bg: antd.successBg, border: antd.successBorder, fg: antd.success, label: 'Synced' },
   failed: { bg: antd.errorBg, border: antd.errorBorder, fg: antd.error, label: 'Failed' },

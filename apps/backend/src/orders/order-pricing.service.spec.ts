@@ -17,12 +17,9 @@ describe('OrderPricingService — discount math', () => {
   const db: Record<string, unknown[]> = {};
 
   beforeEach(async () => {
-    (db['taxRateBps'] as unknown[]) = [];
+    db['taxRateBps'] = [];
     const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        OrderPricingService,
-        { provide: DRIZZLE, useValue: db },
-      ],
+      providers: [OrderPricingService, { provide: DRIZZLE, useValue: db }],
     }).compile();
     service = module.get(OrderPricingService);
   });
@@ -89,9 +86,7 @@ describe('OrderPricingService — discount math', () => {
 
     it('returns taxRateBps when row is found', async () => {
       // Inject a bare mock that mimics drizzle's pg response shape.
-      const locations = [
-        { id: 'loc-1', taxRateBps: 825 },
-      ];
+      const locations = [{ id: 'loc-1', taxRateBps: 825 }];
       const qb = {
         from: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
@@ -114,9 +109,9 @@ describe('OrderPricingService — discount math', () => {
 
   describe('resolveOrderLocation (DB)', () => {
     it('returns the hinted location unchanged', async () => {
-      expect(await service.resolveOrderLocation('org-1', 'hinted-loc', [])).toBe(
-        'hinted-loc',
-      );
+      expect(
+        await service.resolveOrderLocation('org-1', 'hinted-loc', []),
+      ).toBe('hinted-loc');
     });
 
     it('infers from a single-item location with no hint', async () => {
@@ -125,7 +120,7 @@ describe('OrderPricingService — discount math', () => {
       ).toBe('loc-A');
     });
 
-    it('falls back to the org\'s single location when items disagree', async () => {
+    it("falls back to the org's single location when items disagree", async () => {
       const locations = [{ id: 'only-loc' }];
       const qb = {
         from: jest.fn().mockReturnThis(),

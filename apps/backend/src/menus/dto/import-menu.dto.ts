@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsUrl, IsNotEmpty, IsOptional, IsUUID } from 'class-validator';
+import { IsUrl, IsOptional, IsUUID } from 'class-validator';
 
 export class ImportMenuDto {
   @ApiProperty({

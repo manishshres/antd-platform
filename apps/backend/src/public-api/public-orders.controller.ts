@@ -2,11 +2,14 @@ import {
   Controller,
   Get,
   Post,
+  Put,
+  Patch,
   Body,
   Query,
   Param,
   UseGuards,
   Req,
+  Headers,
   HttpCode,
   HttpStatus,
   ParseUUIDPipe,
@@ -21,8 +24,16 @@ import { ApiKeyAuthGuard } from './guards/api-key-auth.guard';
 import { OrdersService } from '../orders/orders.service';
 import { CreateOrderDto } from '../orders/dto/create-order.dto';
 import { CreatePosOrderDto } from '../orders/dto/create-pos-order.dto';
+import { AppendOrderItemsDto } from '../orders/dto/append-order-items.dto';
+import { PayOrderDto } from '../orders/dto/pay-order.dto';
+import { FireCourseDto } from '../orders/dto/fire-course.dto';
 import { GetOrdersDto } from '../orders/dto/get-orders.dto';
 import { OrderReportDto } from '../orders/dto/order-report.dto';
+import { RecordPaymentDto } from '../orders/dto/record-payment.dto';
+import { RefundOrderDto } from '../orders/dto/refund-order.dto';
+import { PartialRefundDto } from '../orders/dto/partial-refund.dto';
+import { AdjustOrderItemsDto } from '../orders/dto/adjust-order-items.dto';
+import { UpdateStatusDto } from '../orders/dto/update-status.dto';
 import { GetOrderSummaryDto } from './dto/get-order-summary.dto';
 import { SkipThrottle } from '@nestjs/throttler';
 import { Public } from '../common/decorators/public.decorator';
@@ -94,7 +105,30 @@ export class PublicOrdersController {
     @Req() request: import('express').Request & { organizationId: string },
     @Param('id', ParseUUIDPipe) id: string,
   ) {
-    return this.ordersService.getOrderByIdForOrg(request.organizationId, id);
+    const order = await this.ordersService.getOrderByIdForOrg(
+      request.organizationId,
+      id,
+    );
+    // The shared service method names item fields for the web app
+    // (`menuItemName`, `price`); the POS client's ServerOrderDetail expects
+    // `name`/`unitPrice`. Without this mapping the POS showed order lines with
+    // blank names and broken prices ("missing menu items"). Reshape to the
+    // client contract here rather than renaming in the service, which the JWT
+    // web path also consumes.
+    return {
+      ...order,
+      items: order.items.map((item) => ({
+        id: item.id,
+        menuItemId: item.menuItemId,
+        name: item.menuItemName,
+        quantity: item.quantity,
+        unitPrice: item.price,
+        notes: item.notes,
+        course: item.course,
+        firedAt: item.firedAt,
+        modifiers: item.modifiers,
+      })),
+    };
   }
 
   @Post()
@@ -148,6 +182,199 @@ export class PublicOrdersController {
     return this.ordersService.createPosOrder(
       apiPrincipal(request.organizationId),
       dto,
+    );
+  }
+
+  @Post(':id/items')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Append items to an open tab (delta, not a replacement; idempotent via clientMutationId)',
+  })
+  @ApiResponse({ status: 200, description: 'Items appended (or replayed).' })
+  @ApiResponse({ status: 400, description: 'Order is paid or not editable.' })
+  @ApiResponse({ status: 401, description: 'Unauthorized. Invalid API key.' })
+  async appendOrderItems(
+    @Req() request: import('express').Request & { organizationId: string },
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AppendOrderItemsDto,
+  ) {
+    return this.ordersService.appendOrderItems(
+      apiPrincipal(request.organizationId),
+      id,
+      dto,
+    );
+  }
+
+  @Post(':id/fire')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Fire one course of a coursed order to the kitchen (idempotent via clientMutationId)',
+  })
+  @ApiResponse({ status: 200, description: 'Course fired (or already fired).' })
+  @ApiResponse({ status: 400, description: 'Order is paid or not fireable.' })
+  @ApiResponse({ status: 401, description: 'Unauthorized. Invalid API key.' })
+  async fireCourse(
+    @Req() request: import('express').Request & { organizationId: string },
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: FireCourseDto,
+  ) {
+    return this.ordersService.fireCourse(
+      apiPrincipal(request.organizationId),
+      id,
+      dto,
+    );
+  }
+
+  @Post(':id/pay')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Settle an open tab (cash or card)' })
+  @ApiResponse({ status: 200, description: 'Payment recorded.' })
+  @ApiResponse({ status: 400, description: 'Order already paid.' })
+  @ApiResponse({ status: 401, description: 'Unauthorized. Invalid API key.' })
+  async payOrder(
+    @Req() request: import('express').Request & { organizationId: string },
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: PayOrderDto,
+  ) {
+    return this.ordersService.payOrder(
+      apiPrincipal(request.organizationId),
+      id,
+      dto.paymentMethod,
+      dto.tipAmount,
+    );
+  }
+
+  @Post(':id/payments')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Record a partial payment (split checks) against an unpaid order',
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Payment recorded; returns applied/changeGiven/remaining/paid.',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Order paid, cancelled, or invalid amount.',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized. Invalid API key.' })
+  @ApiResponse({ status: 404, description: 'Order not found.' })
+  async recordPayment(
+    @Req() request: import('express').Request & { organizationId: string },
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: RecordPaymentDto,
+  ) {
+    return this.ordersService.recordPayment(
+      apiPrincipal(request.organizationId),
+      id,
+      dto,
+    );
+  }
+
+  @Post(':id/refund')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Void and refund a paid order using manager PIN' })
+  @ApiResponse({ status: 200, description: 'Order voided and refunded.' })
+  @ApiResponse({ status: 400, description: 'Order not paid or invalid state.' })
+  @ApiResponse({ status: 401, description: 'Unauthorized. Invalid API key.' })
+  @ApiResponse({ status: 403, description: 'Invalid manager PIN.' })
+  @ApiResponse({ status: 404, description: 'Order not found.' })
+  async refundOrder(
+    @Req() request: import('express').Request & { organizationId: string },
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: RefundOrderDto,
+  ) {
+    return this.ordersService.refundPaidOrder(
+      apiPrincipal(request.organizationId),
+      id,
+      dto.managerPin,
+      dto.reason,
+    );
+  }
+
+  @Post(':id/refund-partial')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Partially refund a paid order using manager PIN' })
+  @ApiResponse({ status: 200, description: 'Order partially refunded.' })
+  @ApiResponse({
+    status: 400,
+    description: 'Order not paid or invalid amount.',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized. Invalid API key.' })
+  @ApiResponse({ status: 403, description: 'Invalid manager PIN.' })
+  @ApiResponse({ status: 404, description: 'Order not found.' })
+  async partialRefundOrder(
+    @Req() request: import('express').Request & { organizationId: string },
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: PartialRefundDto,
+    @Headers('idempotency-key') idempotencyKey?: string,
+  ) {
+    return this.ordersService.refundPartialOrder(
+      apiPrincipal(request.organizationId),
+      id,
+      dto,
+      idempotencyKey,
+    );
+  }
+
+  @Put(':id/adjust')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Adjust items in a closed order using manager PIN' })
+  @ApiResponse({ status: 200, description: 'Order items adjusted.' })
+  @ApiResponse({ status: 401, description: 'Unauthorized. Invalid API key.' })
+  @ApiResponse({ status: 403, description: 'Invalid manager PIN.' })
+  @ApiResponse({ status: 404, description: 'Order not found.' })
+  async adjustOrderItems(
+    @Req() request: import('express').Request & { organizationId: string },
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AdjustOrderItemsDto,
+  ) {
+    return this.ordersService.adjustOrderItems(
+      apiPrincipal(request.organizationId),
+      id,
+      dto,
+    );
+  }
+
+  @Patch(':id/status')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Change order status (e.g. pickup/delivery lifecycle: preparing, ready, delivered)',
+  })
+  @ApiResponse({ status: 200, description: 'Order status updated.' })
+  @ApiResponse({ status: 401, description: 'Unauthorized. Invalid API key.' })
+  @ApiResponse({ status: 404, description: 'Order not found.' })
+  async updateOrderStatus(
+    @Req() request: import('express').Request & { organizationId: string },
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateStatusDto,
+  ) {
+    return this.ordersService.updateOrderStatus(
+      apiPrincipal(request.organizationId),
+      id,
+      dto.status,
+    );
+  }
+
+  @Post(':id/print')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Reprint the kitchen ticket / receipt for an order' })
+  @ApiResponse({ status: 200, description: 'Print job(s) queued.' })
+  @ApiResponse({ status: 401, description: 'Unauthorized. Invalid API key.' })
+  @ApiResponse({ status: 404, description: 'Order not found.' })
+  async printOrder(
+    @Req() request: import('express').Request & { organizationId: string },
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { printerId?: string },
+  ) {
+    return this.ordersService.printOrder(
+      apiPrincipal(request.organizationId),
+      id,
+      body?.printerId,
     );
   }
 }

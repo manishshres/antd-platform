@@ -2,7 +2,6 @@ import {
   Injectable,
   UnauthorizedException,
   BadRequestException,
-  ForbiddenException,
   Inject,
   Logger,
   HttpException,

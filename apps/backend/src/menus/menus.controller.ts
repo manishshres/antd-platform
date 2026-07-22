@@ -170,6 +170,13 @@ export class MenusController {
       dto.price,
       dto.imageUrl,
       dto.locationId,
+      dto.sku,
+      {
+        isCombo: dto.isCombo,
+        taxExempt: dto.taxExempt,
+        stockQuantity: dto.stockQuantity,
+        lowStockThreshold: dto.lowStockThreshold,
+      },
     );
   }
 
@@ -236,7 +243,10 @@ export class MenusController {
           file.mimetype === 'application/pdf' ||
           file.mimetype === 'application/octet-stream';
         if (!looksLikePdf) {
-          return cb(new BadRequestException('Only PDF uploads are allowed.'), false);
+          return cb(
+            new BadRequestException('Only PDF uploads are allowed.'),
+            false,
+          );
         }
         cb(null, true);
       },
@@ -348,7 +358,43 @@ export class MenusController {
     return this.menusService.assignModifierToItem(user, itemId, dto.modifierId);
   }
 
+  @Delete('items/:itemId/modifiers/:modifierId')
+  @Roles('sysadmin', 'manager')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Remove a modifier group from a menu item' })
+  async removeModifierFromItem(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('itemId') itemId: string,
+    @Param('modifierId') modifierId: string,
+  ): Promise<unknown> {
+    return this.menusService.removeModifierFromItem(user, itemId, modifierId);
+  }
+
   // --- NEW ROUTES FOR PHASE 10 ---
+
+  @Post('categories/:categoryId/modifiers')
+  @Roles('sysadmin', 'manager')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Assign a modifier group to a category' })
+  async assignModifierToCategory(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('categoryId') categoryId: string,
+    @Body() dto: AssignModifierDto,
+  ): Promise<unknown> {
+    return this.menusService.assignModifierToCategory(user, categoryId, dto.modifierId);
+  }
+
+  @Delete('categories/:categoryId/modifiers/:modifierId')
+  @Roles('sysadmin', 'manager')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Remove a modifier group from a category' })
+  async removeModifierFromCategory(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('categoryId') categoryId: string,
+    @Param('modifierId') modifierId: string,
+  ): Promise<unknown> {
+    return this.menusService.removeModifierFromCategory(user, categoryId, modifierId);
+  }
 
   @Patch('items/:id')
   @Roles('sysadmin', 'manager')

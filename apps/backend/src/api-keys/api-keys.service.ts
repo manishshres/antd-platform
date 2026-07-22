@@ -1,4 +1,5 @@
 import { Injectable, Inject, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { DRIZZLE } from '../database/database.module';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../database/schema';
@@ -14,6 +15,7 @@ export class ApiKeysService {
     private readonly db: NodePgDatabase<typeof schema>,
     private readonly billingService: BillingService,
     private readonly auditService: AuditService,
+    private readonly configService: ConfigService,
   ) {}
 
   async generateApiKey(
@@ -55,6 +57,10 @@ export class ApiKeysService {
       name: newKey[0].name,
       createdAt: newKey[0].createdAt,
       apiKey, // Returned only once!
+      // The POS app's own public origin, if the deployer has configured one —
+      // lets clients (e.g. the connection QR code) skip asking the admin to
+      // retype a URL we already know.
+      publicApiUrl: this.configService.get<string>('PUBLIC_API_URL') || null,
     };
   }
 

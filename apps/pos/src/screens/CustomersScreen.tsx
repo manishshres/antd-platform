@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { FlatList, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import {
   Button,
   Dialog,
@@ -75,10 +76,12 @@ export function CustomersScreen({ onNavigate }: Props) {
         Recent Customers
       </Text>
 
-      <FlatList
-        data={customers}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.list}
+      <View style={styles.listContainer}>
+        <FlashList
+          data={customers}
+          estimatedItemSize={76}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.list}
         ListEmptyComponent={
           <View style={styles.empty}>
             <MaterialCommunityIcons
@@ -138,7 +141,8 @@ export function CustomersScreen({ onNavigate }: Props) {
             </TouchableRipple>
           );
         }}
-      />
+        />
+      </View>
 
       <Portal>
         <Dialog
@@ -204,12 +208,14 @@ const styles = StyleSheet.create({
   searchInput: { fontSize: 14, minHeight: 0, alignSelf: 'center' },
   addBtn: { borderRadius: RADIUS, justifyContent: 'center' },
   sectionTitle: { color: antd.textSecondary, marginBottom: 8 },
-  list: { gap: 8, paddingBottom: 16 },
+  listContainer: { flex: 1 },
+  list: { paddingBottom: 16 },
   row: {
     backgroundColor: antd.bgContainer,
     borderRadius: RADIUS,
     borderWidth: 1,
     borderColor: antd.split,
+    marginBottom: 8,
   },
   rowSelected: { borderColor: antd.primary, backgroundColor: antd.primaryBg },
   rowInner: {

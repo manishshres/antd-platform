@@ -12,7 +12,7 @@ import { validateUpload } from './security';
 import { DRIZZLE } from '../database/database.module';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../database/schema';
-import { eq, and, isNull } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { notDeleted } from '../database/db.utils';
 
 export interface DocumentDto {

@@ -10,6 +10,7 @@ interface CustomerRow {
   notes: string | null;
   dirty: number;
   updated_at: string;
+  loyalty_points: number;
 }
 
 function toCustomer(row: CustomerRow): Customer {
@@ -21,6 +22,7 @@ function toCustomer(row: CustomerRow): Customer {
     notes: row.notes,
     dirty: row.dirty === 1,
     updatedAt: row.updated_at,
+    loyaltyPoints: row.loyalty_points ?? 0,
   };
 }
 
@@ -55,6 +57,7 @@ export function createLocalCustomer(payload: {
     notes: null,
     dirty: true,
     updatedAt: new Date().toISOString(),
+    loyaltyPoints: 0,
   };
   db.runSync(
     'INSERT INTO customers(id, name, phone, email, notes, dirty, updated_at) VALUES(?, ?, ?, ?, ?, 1, ?)',
@@ -84,10 +87,11 @@ export function resolveLocalCustomer(localId: string, server: Customer): void {
   db.withTransactionSync(() => {
     db.runSync('DELETE FROM customers WHERE id = ?', [localId]);
     db.runSync(
-      `INSERT INTO customers(id, name, phone, email, notes, dirty, updated_at)
-       VALUES(?, ?, ?, ?, ?, 0, ?)
+      `INSERT INTO customers(id, name, phone, email, notes, dirty, updated_at, loyalty_points)
+       VALUES(?, ?, ?, ?, ?, 0, ?, ?)
        ON CONFLICT(id) DO UPDATE SET name = excluded.name, phone = excluded.phone,
-         email = excluded.email, notes = excluded.notes, dirty = 0, updated_at = excluded.updated_at`,
+         email = excluded.email, notes = excluded.notes, dirty = 0, updated_at = excluded.updated_at,
+         loyalty_points = excluded.loyalty_points`,
       [
         server.id,
         server.name,
@@ -95,6 +99,7 @@ export function resolveLocalCustomer(localId: string, server: Customer): void {
         server.email,
         server.notes,
         server.updatedAt ?? new Date().toISOString(),
+        server.loyaltyPoints ?? 0,
       ],
     );
     db.runSync('UPDATE orders SET customer_id = ? WHERE customer_id = ?', [
@@ -109,10 +114,11 @@ export function mergeServerCustomers(customers: Customer[]): void {
   db.withTransactionSync(() => {
     for (const c of customers) {
       db.runSync(
-        `INSERT INTO customers(id, name, phone, email, notes, dirty, updated_at)
-         VALUES(?, ?, ?, ?, ?, 0, ?)
+        `INSERT INTO customers(id, name, phone, email, notes, dirty, updated_at, loyalty_points)
+         VALUES(?, ?, ?, ?, ?, 0, ?, ?)
          ON CONFLICT(id) DO UPDATE SET name = excluded.name, phone = excluded.phone,
-           email = excluded.email, notes = excluded.notes, dirty = 0, updated_at = excluded.updated_at
+           email = excluded.email, notes = excluded.notes, dirty = 0, updated_at = excluded.updated_at,
+           loyalty_points = excluded.loyalty_points
          WHERE customers.dirty = 0`,
         [
           c.id,
@@ -121,6 +127,7 @@ export function mergeServerCustomers(customers: Customer[]): void {
           c.email ?? null,
           c.notes ?? null,
           c.updatedAt ?? new Date().toISOString(),
+          c.loyaltyPoints ?? 0,
         ],
       );
     }

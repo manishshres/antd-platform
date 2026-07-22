@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Alert, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { ActivityIndicator, Button, Divider, Text } from 'react-native-paper';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
@@ -6,8 +6,87 @@ import { antd, RADIUS } from '../../theme';
 import { formatMoney } from '../../utils/money';
 import { fmtDateOnly } from '../../utils/dates';
 import { OrderStatusChip } from '../../components/OrderStatusChip';
-import type { LocalOrder, ServerOrderDetail } from '../../types';
+import { ManagerPinPrompt } from '../../components/ManagerPinPrompt';
+import { unfiredCourses } from '../../db/tabsRepo';
+import { ApiRequestError, type ApiClient } from '../../api/client';
+import { printReceipt, printKitchenTicketsByStation, type StationPrintResult } from '../../printing/printerService';
+import { useEmployee } from '../../state/EmployeeContext';
+import {
+  COURSE_LABELS,
+  paymentMethodLabel,
+  type Course,
+  type LocalOrder,
+  type OrderType,
+  type PaymentMethod,
+  type PosSettings,
+  type ServerOrderDetail,
+} from '../../types';
 import type { ActiveTab, DetailState } from './types';
+
+/** Server order details lack a few fields only local carts track (tip, service
+ *  charge, loyalty redemption) — those print as zero, which is correct for any
+ *  order old enough to only exist server-side (the receipt already includes
+ *  them baked into totalAmount at the time they were charged). */
+function toLocalOrderForPrint(order: ServerOrderDetail): LocalOrder {
+  return {
+    id: order.id,
+    serverId: order.id,
+    ticketNumber: order.ticketNumber,
+    status: 'synced',
+    items: order.items.map((item) => ({
+      menuItemId: item.menuItemId,
+      name: item.name,
+      unitPrice: item.unitPrice,
+      quantity: item.quantity,
+      notes: item.notes ?? undefined,
+      course: item.course ?? undefined,
+      firedAt: item.firedAt,
+    })),
+    customerId: order.customer?.id ?? null,
+    customerName: order.customer?.name ?? order.customerName,
+    customerPhone: order.customerPhone,
+    tableId: order.table?.id ?? order.tableId,
+    tableName: order.table?.name ?? order.tableName,
+    guests: null,
+    orderType: (order.orderType as OrderType) ?? 'dine_in',
+    subtotal: order.subtotal ?? 0,
+    discountId: null,
+    discountName: null,
+    discountAmount: order.discountAmount ?? 0,
+    taxAmount: order.taxAmount ?? 0,
+    totalAmount: order.totalAmount,
+    paymentMethod: (order.paymentMethod as PaymentMethod) ?? null,
+    tenderedAmount: order.tenderedAmount,
+    changeAmount: order.changeAmount,
+    tipAmount: 0,
+    serviceChargeAmount: 0,
+    loyaltyPointsRedeemed: 0,
+    specialInstructions: order.specialInstructions,
+    errorMessage: null,
+    createdAt: order.createdAt,
+    syncedAt: null,
+    tabOpenedAt: null,
+    fireMode: 'all',
+    // This order was placed (possibly on another register) and fetched back from
+    // the server — it isn't tied to a business day open on this device.
+    businessDayId: null,
+  };
+}
+
+/** One line per station outcome, e.g. "Grill: printed", "Bar: printer offline". */
+function summarizeStationResults(results: StationPrintResult[]): string {
+  return results
+    .map((r) => `${r.stationName}: ${r.result.ok ? 'printed' : r.result.error ?? 'failed'}`)
+    .join('\n');
+}
+
+/** Wall-clock time a course went to the kitchen ("fired 7:42 PM"). */
+function fmtTimeOnly(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime())
+    ? ''
+    : d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+}
 
 interface DetailPanelProps {
   detail: DetailState;
@@ -15,10 +94,17 @@ interface DetailPanelProps {
   onResume: (o: LocalOrder) => void;
   onDiscard: (o: LocalOrder) => void;
   onRetry: (o: LocalOrder) => void;
+  onFireCourse?: (o: LocalOrder, course: Course) => void;
+  /** Needed to call the void/refund endpoint from the server order view. */
+  client?: ApiClient;
+  /** Called after a successful void/refund so the caller can reload the order + list. */
+  onVoided?: () => void;
+  /** Needed to reprint to the register's own Bluetooth printer, if one's configured. */
+  settings: PosSettings;
 }
 
 /** Right-hand order detail: empty/loading/error, local receipt, or server receipt. */
-export function DetailPanel({ detail, tab, onResume, onDiscard, onRetry }: DetailPanelProps) {
+export function DetailPanel({ detail, tab, onResume, onDiscard, onRetry, onFireCourse, client, onVoided, settings }: DetailPanelProps) {
   if (detail.kind === 'empty') {
     return (
       <View style={styles.detailEmpty}>
@@ -52,6 +138,7 @@ export function DetailPanel({ detail, tab, onResume, onDiscard, onRetry }: Detai
           onResume={onResume}
           onDiscard={onDiscard}
           onRetry={onRetry}
+          onFireCourse={onFireCourse}
         />
       </ScrollView>
     );
@@ -59,7 +146,7 @@ export function DetailPanel({ detail, tab, onResume, onDiscard, onRetry }: Detai
 
   return (
     <ScrollView style={styles.detailScroll} contentContainerStyle={styles.detailContent}>
-      <ServerOrderDetailView order={detail.order} />
+      <ServerOrderDetailView order={detail.order} client={client} onVoided={onVoided} settings={settings} />
     </ScrollView>
   );
 }
@@ -67,13 +154,14 @@ export function DetailPanel({ detail, tab, onResume, onDiscard, onRetry }: Detai
 // ── Local order detail ────────────────────────────────────────────────────────
 
 function LocalOrderDetail({
-  order, tab, onResume, onDiscard, onRetry,
+  order, tab, onResume, onDiscard, onRetry, onFireCourse,
 }: {
   order: LocalOrder;
   tab: ActiveTab;
   onResume: (o: LocalOrder) => void;
   onDiscard: (o: LocalOrder) => void;
   onRetry: (o: LocalOrder) => void;
+  onFireCourse?: (o: LocalOrder, course: Course) => void;
 }) {
   const ticket = order.ticketNumber ? `#${order.ticketNumber}` : order.id.slice(0, 8).toUpperCase();
   const tableLabel = order.tableName
@@ -99,10 +187,16 @@ function LocalOrderDetail({
       <Divider style={styles.div} />
 
       {order.items.map((item, i) => (
-        <View key={`${item.menuItemId}-${i}`} style={styles.lineItem}>
+        <View key={`${item.menuItemId}-${item.course ?? 0}-${i}`} style={styles.lineItem}>
           <Text style={styles.lineIdx}>{i + 1}.</Text>
           <View style={{ flex: 1 }}>
             <Text style={styles.lineName}>{item.name}</Text>
+            {item.course ? (
+              <Text style={styles.lineNote}>
+                {COURSE_LABELS[item.course]}
+                {item.firedAt ? ` · fired ${fmtTimeOnly(item.firedAt)}` : ' · not fired'}
+              </Text>
+            ) : null}
             {item.notes ? <Text style={styles.lineNote}>{item.notes}</Text> : null}
           </View>
           <Text style={styles.lineQty}>×{item.quantity}</Text>
@@ -122,7 +216,7 @@ function LocalOrderDetail({
       {order.paymentMethod && (
         <>
           <Divider style={styles.div} />
-          <TotalRow label={order.paymentMethod === 'cash' ? 'Cash' : 'Card'} value={formatMoney(order.tenderedAmount)} />
+          <TotalRow label={paymentMethodLabel(order.paymentMethod)} value={formatMoney(order.tenderedAmount)} />
           {order.changeAmount != null && order.changeAmount > 0 && (
             <TotalRow label="Change" value={formatMoney(order.changeAmount)} />
           )}
@@ -163,6 +257,35 @@ function LocalOrderDetail({
             </Button>
           </>
         )}
+        {tab === 'tabs' && (
+          <>
+            {/* Firing happens here, long after the cart is gone — this is
+                where a server stands when the apps come back cleared. */}
+            {order.fireMode === 'by_course' &&
+              unfiredCourses(order).map((course) => (
+                <Button
+                  key={course}
+                  mode="contained"
+                  onPress={() => onFireCourse?.(order, course)}
+                  style={styles.actionBtn}
+                  contentStyle={styles.actionBtnContent}
+                  buttonColor={antd.warning}
+                  icon="fire"
+                >
+                  {`Fire ${COURSE_LABELS[course]}`}
+                </Button>
+              ))}
+            <Button
+              mode="contained"
+              onPress={() => onResume(order)}
+              style={[styles.actionBtn, { flex: 1 }]}
+              contentStyle={styles.actionBtnContent}
+              icon="plus"
+            >
+              Add to Tab
+            </Button>
+          </>
+        )}
         {tab === 'offline' && order.status === 'failed' && (
           <Button
             mode="contained"
@@ -181,11 +304,96 @@ function LocalOrderDetail({
 
 // ── Server order detail ───────────────────────────────────────────────────────
 
-function ServerOrderDetailView({ order }: { order: ServerOrderDetail }) {
+function ServerOrderDetailView({
+  order,
+  client,
+  onVoided,
+  settings,
+}: {
+  order: ServerOrderDetail;
+  client?: ApiClient;
+  onVoided?: () => void;
+  settings: PosSettings;
+}) {
   const name = order.customer?.name ?? order.customerName;
   const tableLabel = order.table?.name
     ? `${order.orderType === 'dine_in' ? 'Dine-In' : 'Pickup'} • Table ${order.table.name}`
     : order.orderType === 'dine_in' ? 'Dine-In' : 'Pickup';
+
+  const { employee } = useEmployee();
+  const [voidPromptOpen, setVoidPromptOpen] = useState(false);
+  const [voidBusy, setVoidBusy] = useState(false);
+  const [voidError, setVoidError] = useState<string | null>(null);
+
+  const canVoid =
+    Boolean(client) &&
+    order.paidAt != null &&
+    order.status !== 'refunded' &&
+    order.status !== 'cancelled';
+
+  const submitVoid = async (pin: string) => {
+    if (!client) return;
+    setVoidBusy(true);
+    setVoidError(null);
+    try {
+      await client.refundOrder(order.id, { managerPin: pin, reason: 'Voided from POS' });
+      setVoidPromptOpen(false);
+      onVoided?.();
+    } catch (err) {
+      if (err instanceof ApiRequestError && err.status === 403) {
+        setVoidError('Invalid manager PIN.');
+      } else {
+        setVoidError(err instanceof Error ? err.message : 'Could not void this order.');
+      }
+    } finally {
+      setVoidBusy(false);
+    }
+  };
+
+  const [kitchenPrinting, setKitchenPrinting] = useState(false);
+  const reprintKitchen = async () => {
+    if (kitchenPrinting) return;
+    setKitchenPrinting(true);
+    try {
+      const results = await printKitchenTicketsByStation(
+        toLocalOrderForPrint(order),
+        settings,
+        employee?.displayName ?? null,
+        settings.locationName,
+      );
+      Alert.alert('Kitchen Tickets', summarizeStationResults(results));
+    } finally {
+      setKitchenPrinting(false);
+    }
+  };
+
+  const [printing, setPrinting] = useState(false);
+  const reprint = async () => {
+    if (printing) return;
+    setPrinting(true);
+    try {
+      if (settings.printerEnabled) {
+        // A Bluetooth printer set up on this register prints directly —
+        // there's no reason to round-trip through the server's own (separate,
+        // MQTT-based) printer dispatch for a receipt this register can print itself.
+        const result = await printReceipt(toLocalOrderForPrint(order), settings, settings.locationName);
+        if (!result.ok) throw new Error(result.error);
+        Alert.alert('Printed', 'The receipt was sent to the printer.');
+      } else if (client) {
+        await client.printOrder(order.id);
+        Alert.alert('Sent to Printer', 'The kitchen ticket / receipt is reprinting.');
+      } else {
+        throw new Error('No printer configured — set one up in Settings → Printer.');
+      }
+    } catch (err) {
+      Alert.alert(
+        'Print Failed',
+        err instanceof Error ? err.message : 'Could not reach the printer.',
+      );
+    } finally {
+      setPrinting(false);
+    }
+  };
 
   return (
     <>
@@ -235,7 +443,7 @@ function ServerOrderDetailView({ order }: { order: ServerOrderDetail }) {
       {order.paymentMethod && (
         <>
           <Divider style={styles.div} />
-          <TotalRow label={order.paymentMethod === 'cash' ? 'Cash' : 'Card'} value={formatMoney(order.tenderedAmount)} />
+          <TotalRow label={paymentMethodLabel(order.paymentMethod)} value={formatMoney(order.tenderedAmount)} />
           {(order.changeAmount ?? 0) > 0 && (
             <TotalRow label="Balance" value={formatMoney(order.changeAmount)} />
           )}
@@ -243,13 +451,60 @@ function ServerOrderDetailView({ order }: { order: ServerOrderDetail }) {
       )}
 
       <TouchableOpacity
-        style={styles.printBtn}
+        style={[styles.printBtn, printing && { opacity: 0.6 }]}
         activeOpacity={0.8}
-        onPress={() => Alert.alert('Print Invoice', 'Connect a receipt printer in Settings to enable printing.')}
+        disabled={printing || (!settings.printerEnabled && !client)}
+        onPress={reprint}
       >
         <MaterialCommunityIcons name="printer-outline" size={18} color="#fff" />
-        <Text style={styles.printBtnText}>Print Invoice</Text>
+        <Text style={styles.printBtnText}>{printing ? 'Sending…' : 'Reprint Invoice'}</Text>
       </TouchableOpacity>
+
+      {settings.printerEnabled && (
+        <TouchableOpacity
+          style={[styles.printBtn, styles.printBtnSecondary, kitchenPrinting && { opacity: 0.6 }]}
+          activeOpacity={0.8}
+          disabled={kitchenPrinting}
+          onPress={reprintKitchen}
+        >
+          <MaterialCommunityIcons name="chef-hat" size={18} color={antd.primary} />
+          <Text style={[styles.printBtnText, { color: antd.primary }]}>
+            {kitchenPrinting ? 'Sending…' : 'Reprint Kitchen Tickets'}
+          </Text>
+        </TouchableOpacity>
+      )}
+
+      {canVoid && (
+        <Button
+          mode="outlined"
+          icon="cancel"
+          textColor={antd.error}
+          style={[styles.actionBtn, { marginTop: 10, borderColor: antd.errorBorder }]}
+          contentStyle={styles.actionBtnContent}
+          onPress={() =>
+            Alert.alert(
+              'Void & Refund Order',
+              `This refunds the full ${formatMoney(order.totalAmount)} and voids the order. Requires manager approval.`,
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Continue', style: 'destructive', onPress: () => setVoidPromptOpen(true) },
+              ],
+            )
+          }
+        >
+          Void & Refund
+        </Button>
+      )}
+
+      <ManagerPinPrompt
+        visible={voidPromptOpen}
+        title="Approve void & refund"
+        reason={`Order ${order.ticketNumber ? `#${order.ticketNumber}` : ''} · ${formatMoney(order.totalAmount)}`}
+        busy={voidBusy}
+        errorMessage={voidError}
+        onSubmit={submitVoid}
+        onCancel={() => setVoidPromptOpen(false)}
+      />
     </>
   );
 }
@@ -345,6 +600,12 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: RADIUS,
     backgroundColor: antd.primary,
+  },
+  printBtnSecondary: {
+    marginTop: 10,
+    backgroundColor: antd.primaryBg,
+    borderWidth: 1,
+    borderColor: antd.primaryBorder,
   },
   printBtnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
 });

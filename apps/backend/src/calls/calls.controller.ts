@@ -24,7 +24,6 @@ import {
   CurrentUser,
   CurrentUserPayload,
 } from '../common/decorators/current-user.decorator';
-import { PaginationDto } from '../common/dto/pagination.dto';
 import { PaginatedResponseDto } from '../common/dto/paginated-response.dto';
 import { CallListQueryDto } from './dto/call-list-query.dto';
 

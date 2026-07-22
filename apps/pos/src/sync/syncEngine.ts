@@ -1,9 +1,15 @@
-import { ApiClient, ApiRequestError } from '../api/client';
+import { ApiClient, ApiNetworkError, ApiRequestError } from '../api/client';
 import { getMeta, setMeta } from '../db/database';
 import * as catalogRepo from '../db/catalogRepo';
 import * as customersRepo from '../db/customersRepo';
+import * as mutationsRepo from '../db/mutationsRepo';
 import * as ordersRepo from '../db/ordersRepo';
-import type { PosSettings } from '../types';
+import type {
+  LocalOrder,
+  OrderMutation,
+  PaymentMethod,
+  PosSettings,
+} from '../types';
 
 export interface SyncState {
   syncing: boolean;
@@ -40,8 +46,8 @@ export class SyncEngine {
   init(): void {
     this.update({
       lastSyncAt: getMeta('lastSyncAt'),
-      pendingOrders: ordersRepo.countOrders('pending_sync'),
-      failedOrders: ordersRepo.countOrders('failed'),
+      pendingOrders: mutationsRepo.countPendingOrders(),
+      failedOrders: mutationsRepo.countFailed(),
     });
   }
 
@@ -56,11 +62,15 @@ export class SyncEngine {
     this.listeners.forEach((l) => l(this.state));
   }
 
-  /** Recount queue sizes (call after any local order mutation). */
+  /**
+   * Recount queue sizes (call after any local order mutation). Counts the
+   * outbox, not order statuses — an open tab with unsent appends is still
+   * work owed to the server even though the order itself isn't 'pending_sync'.
+   */
   refreshCounts(): void {
     this.update({
-      pendingOrders: ordersRepo.countOrders('pending_sync'),
-      failedOrders: ordersRepo.countOrders('failed'),
+      pendingOrders: mutationsRepo.countPendingOrders(),
+      failedOrders: mutationsRepo.countFailed(),
     });
   }
 
@@ -72,7 +82,7 @@ export class SyncEngine {
       // Customers first: resolveLocalCustomer repoints queued orders at the
       // server customer id, so orders must be pushed only after that remap (P7-002).
       await this.pushCustomers(client);
-      await this.pushOrders(client, settings);
+      await this.pushMutations(client, settings);
       await this.pullAll(client, settings);
       setMeta('lastSyncAt', new Date().toISOString());
       this.update({ lastSyncAt: getMeta('lastSyncAt') });
@@ -86,13 +96,65 @@ export class SyncEngine {
     }
   }
 
-  private async pushOrders(
+  /**
+   * Drain the outbox in global FIFO order. Ordering is the whole point: a tab
+   * opened offline queues 'create' then 'append', and the append is only
+   * addressable once the create has written back a server id.
+   *
+   * If any mutation for an order is parked or fails, every later mutation for
+   * that same order is skipped this run — replaying an append against an order
+   * the server never accepted would just 404, and worse, would let a settle
+   * land on a tab that is missing items.
+   */
+  private async pushMutations(
     client: ApiClient,
     settings: PosSettings,
   ): Promise<void> {
-    const queue = ordersRepo.listOrders(['pending_sync']);
-    for (const order of queue) {
+    const blocked = new Set<string>();
+    for (const mutation of mutationsRepo.listPending()) {
+      if (mutation.lastError) {
+        blocked.add(mutation.orderId);
+        continue;
+      }
+      if (blocked.has(mutation.orderId)) continue;
+
+      const order = ordersRepo.getOrderById(mutation.orderId);
+      if (!order) {
+        // The order was discarded locally; nothing left to say about it.
+        mutationsRepo.remove(mutation.id);
+        continue;
+      }
+
       try {
+        await this.dispatch(client, settings, mutation, order);
+        mutationsRepo.remove(mutation.id);
+      } catch (err) {
+        if (err instanceof ApiRequestError && err.status < 500) {
+          // The server understood the request and rejected it (e.g. a menu
+          // item was deleted meanwhile). Park it for the operator to review.
+          mutationsRepo.markFailed(mutation.id, err.message);
+          ordersRepo.markFailed(mutation.orderId, err.message);
+          blocked.add(mutation.orderId);
+        } else {
+          // Network / server hiccup: keep it queued and stop this run —
+          // later mutations would almost certainly fail the same way.
+          mutationsRepo.bumpAttempts(mutation.id);
+          throw err;
+        }
+      } finally {
+        this.refreshCounts();
+      }
+    }
+  }
+
+  private async dispatch(
+    client: ApiClient,
+    settings: PosSettings,
+    mutation: OrderMutation,
+    order: LocalOrder,
+  ): Promise<void> {
+    switch (mutation.kind) {
+      case 'create': {
         const created = await client.createPosOrder({
           locationId: settings.locationId,
           clientOrderId: order.id,
@@ -105,35 +167,99 @@ export class SyncEngine {
           tableId: order.tableId ?? undefined,
           orderType: order.orderType,
           specialInstructions: order.specialInstructions ?? undefined,
+          // An open tab has no payment method yet, which is exactly what
+          // leaves paidAt null server-side and keeps the table occupied.
           paymentMethod: order.paymentMethod ?? undefined,
           // The server re-resolves and re-prices the discount; our cached
           // copy of the discount table means the local math already agrees.
           discountId: order.discountId ?? undefined,
+          tipAmount: order.tipAmount || undefined,
+          applyServiceCharge: order.serviceChargeAmount > 0 || undefined,
+          redeemPoints: order.loyaltyPointsRedeemed || undefined,
+          // 'by_course' tells the server to withhold the kitchen ticket and
+          // print course 1 only; the rest wait for explicit fires.
+          fireMode: order.fireMode,
           items: order.items.map((i) => ({
             menuItemId: i.menuItemId,
             quantity: i.quantity,
             notes: i.notes,
+            course: i.course,
+            optionIds: i.modifiers?.map((m) => m.optionId),
+            priceOverride: i.priceOverride,
+            priceOverrideReason: i.priceOverrideReason,
           })),
         });
-        ordersRepo.markSynced(
-          order.id,
-          created.id,
-          created.ticketNumber ?? null,
-        );
-      } catch (err) {
-        if (err instanceof ApiRequestError && err.status < 500) {
-          // The server understood the request and rejected it (e.g. a menu
-          // item was deleted meanwhile). Park it for the operator to review.
-          ordersRepo.markFailed(order.id, err.message);
+        if (order.status === 'open_tab') {
+          // Still taking items — record the id but don't close the order out.
+          ordersRepo.attachServerId(
+            order.id,
+            created.id,
+            created.ticketNumber ?? null,
+          );
         } else {
-          // Network / server hiccup: keep it queued and stop this run —
-          // later orders would almost certainly fail the same way.
-          throw err;
+          ordersRepo.markSynced(
+            order.id,
+            created.id,
+            created.ticketNumber ?? null,
+          );
         }
-      } finally {
-        this.refreshCounts();
+        return;
+      }
+
+      case 'append': {
+        const serverId = this.requireServerId(order);
+        const payload = mutation.payload as {
+          items: {
+            menuItemId: string;
+            quantity: number;
+            notes?: string;
+            course?: number;
+            optionIds?: string[];
+            priceOverride?: number;
+            priceOverrideReason?: string;
+          }[];
+        };
+        // The mutation id is the idempotency key: replaying it after a
+        // dropped response is a no-op server-side.
+        await client.appendOrderItems(serverId, {
+          clientMutationId: mutation.id,
+          items: payload.items,
+        });
+        return;
+      }
+
+      case 'fire': {
+        const serverId = this.requireServerId(order);
+        const payload = mutation.payload as { course: number };
+        await client.fireCourse(serverId, {
+          course: payload.course,
+          clientMutationId: mutation.id,
+        });
+        return;
+      }
+
+      case 'settle': {
+        const serverId = this.requireServerId(order);
+        const payload = mutation.payload as {
+          paymentMethod: PaymentMethod;
+          tipAmount?: number;
+        };
+        await client.payOrder(serverId, payload);
+        ordersRepo.markSynced(order.id, serverId, order.ticketNumber);
+        return;
       }
     }
+  }
+
+  private requireServerId(order: LocalOrder): string {
+    if (!order.serverId) {
+      // FIFO should have landed the create first. Treat a gap as transport
+      // failure so the work stays queued rather than being parked as rejected.
+      throw new ApiNetworkError(
+        `Order ${order.id} has no server id yet; its create has not landed.`,
+      );
+    }
+    return order.serverId;
   }
 
   private async pushCustomers(client: ApiClient): Promise<void> {

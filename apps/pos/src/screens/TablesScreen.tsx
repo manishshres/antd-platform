@@ -1,12 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Modal, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import { Button, Dialog, Divider, Portal, Text, TouchableRipple } from 'react-native-paper';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { antd, RADIUS } from '../theme';
 import { useApp } from '../state/AppContext';
 import { useCart } from '../state/CartContext';
 import * as catalogRepo from '../db/catalogRepo';
+import * as tabsRepo from '../db/tabsRepo';
 import { OrderDetailModal } from '../components/OrderDetailModal';
+import { TableManagerModal } from '../components/TableManagerModal';
+import { FloorPlanCanvas } from '../components/FloorPlanCanvas';
 import { formatMoney } from '../utils/money';
 import type { DiningTable } from '../types';
 import type { ScreenName } from '../navigation';
@@ -47,11 +51,15 @@ interface Props {
 
 /** Floor overview: select a table, handle conflicts on occupied/billed tables. */
 export function TablesScreen({ onNavigate }: Props) {
-  const { settings, online, dataVersion } = useApp();
+  const { settings, online, dataVersion, syncNow } = useApp();
   const cart = useCart();
 
   const [tables, setTables] = useState<DiningTable[]>([]);
   const [filter, setFilter] = useState<Filter>('all');
+  const [managingLayout, setManagingLayout] = useState(false);
+  const [viewMode, setViewMode] = useState<'grid' | 'floor'>('grid');
+  const [activeFloorPlanId, setActiveFloorPlanId] = useState<string | null>(null);
+  const [canvasWidth, setCanvasWidth] = useState(0);
 
   // Guest picker state (shown for vacant tables, or after "New Ticket" on occupied)
   const [guestPick, setGuestPick] = useState<DiningTable | null>(null);
@@ -62,6 +70,7 @@ export function TablesScreen({ onNavigate }: Props) {
 
   // Order detail modal (opened from conflict dialog "View Existing Ticket")
   const [viewingOrderId, setViewingOrderId] = useState<string | null>(null);
+  const [viewingOrderIsLocal, setViewingOrderIsLocal] = useState(false);
 
   useEffect(() => {
     setTables(catalogRepo.getTables());
@@ -70,6 +79,23 @@ export function TablesScreen({ onNavigate }: Props) {
   const filtered = useMemo(
     () => tables.filter((t) => filter === 'all' || t.status === filter),
     [tables, filter],
+  );
+
+  const floorPlans = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const t of tables) map.set(t.floorPlanId, t.floorPlanName);
+    return Array.from(map, ([id, name]) => ({ id, name }));
+  }, [tables]);
+
+  useEffect(() => {
+    setActiveFloorPlanId((prev) =>
+      prev && floorPlans.some((p) => p.id === prev) ? prev : (floorPlans[0]?.id ?? null),
+    );
+  }, [floorPlans]);
+
+  const floorTables = useMemo(
+    () => filtered.filter((t) => t.floorPlanId === activeFloorPlanId),
+    [filtered, activeFloorPlanId],
   );
 
   const handleTablePress = (item: DiningTable) => {
@@ -89,32 +115,103 @@ export function TablesScreen({ onNavigate }: Props) {
     onNavigate('home');
   };
 
-  const openNewTicketFromConflict = () => {
+  /**
+   * Open the order detail modal for a table's active tab. A tab opened on
+   * *this* device has a local row — that's the source of truth (it may hold
+   * appends the server hasn't seen yet) and must be looked up locally, not
+   * via the server API. Only a tab opened on another register (no local row
+   * here) falls back to the server, keyed by the table's server-side
+   * activeOrderId. Getting this wrong is exactly the old "Order not found"
+   * bug: it always queried the server, so any tab rung up on this device
+   * (whose local id the server has never heard of) 404'd.
+   */
+  const viewTab = (table: DiningTable) => {
+    const tab = tabsRepo.findOpenTabForTable(table.id);
+    if (tab) {
+      setViewingOrderIsLocal(true);
+      setViewingOrderId(tab.id);
+    } else if (table.activeOrderId) {
+      setViewingOrderIsLocal(false);
+      setViewingOrderId(table.activeOrderId);
+    }
+  };
+
+  /**
+   * Resume the tab already on this table. Prefer the local row — it has the
+   * item lines and may hold appends the server hasn't seen yet; the server's
+   * activeOrderId only tells us a tab exists.
+   */
+  const addToTabFromConflict = () => {
     const table = conflict;
     setConflict(null);
-    if (table) {
-      setGuestPick(table);
-      setGuests(2);
+    if (!table) return;
+    const tab = tabsRepo.findOpenTabForTable(table.id);
+    if (tab) {
+      cart.loadTab(tab);
+      onNavigate('home');
+      return;
     }
+    // Tab was opened on another register: we know it exists but not what's on
+    // it. Show it rather than silently starting a second check on the table.
+    viewTab(table);
+  };
+
+  /**
+   * Close out the table: load its open tab into the cart and go straight to
+   * payment. Only possible for a tab with a local row — settling requires the
+   * item lines, which a tab opened on another register isn't holding here; for
+   * that case we fall back to viewing it.
+   */
+  const closeTabAndPay = () => {
+    const table = conflict;
+    setConflict(null);
+    if (!table) return;
+    const tab = tabsRepo.findOpenTabForTable(table.id);
+    if (tab) {
+      cart.loadTab(tab);
+      onNavigate('payment');
+      return;
+    }
+    viewTab(table);
   };
 
   return (
     <View style={styles.container}>
       {/* ── Toolbar ── */}
       <View style={styles.toolbar}>
-        <View style={styles.filters}>
-          {FILTERS.map((f) => (
-            <TouchableRipple
-              key={f.value}
-              onPress={() => setFilter(f.value)}
-              style={[styles.filterTab, filter === f.value && styles.filterTabActive]}
-              borderless
-            >
-              <Text style={[styles.filterText, filter === f.value && styles.filterTextActive]}>
-                {f.label}
-              </Text>
-            </TouchableRipple>
-          ))}
+        <View style={styles.toolbarRow}>
+          <View style={styles.filters}>
+            {FILTERS.map((f) => (
+              <TouchableRipple
+                key={f.value}
+                onPress={() => setFilter(f.value)}
+                style={[styles.filterTab, filter === f.value && styles.filterTabActive]}
+                borderless
+              >
+                <Text style={[styles.filterText, filter === f.value && styles.filterTextActive]}>
+                  {f.label}
+                </Text>
+              </TouchableRipple>
+            ))}
+          </View>
+          <Button
+            mode="outlined"
+            icon={viewMode === 'grid' ? 'floor-plan' : 'view-grid-outline'}
+            compact
+            onPress={() => setViewMode((v) => (v === 'grid' ? 'floor' : 'grid'))}
+            style={styles.manageButton}
+          >
+            {viewMode === 'grid' ? 'Floor View' : 'Grid View'}
+          </Button>
+          <Button
+            mode="outlined"
+            icon="pencil-ruler-outline"
+            compact
+            onPress={() => setManagingLayout(true)}
+            style={styles.manageButton}
+          >
+            Manage Layout
+          </Button>
         </View>
         <View style={styles.legend}>
           {(Object.keys(STATUS_COLOR) as DiningTable['status'][]).map((s) => (
@@ -128,14 +225,54 @@ export function TablesScreen({ onNavigate }: Props) {
         </View>
       </View>
 
-      {/* ── Table grid ── */}
-      <FlatList
-        data={filtered}
-        key={5}
-        numColumns={5}
-        keyExtractor={(item) => item.id}
-        columnWrapperStyle={styles.gridRow}
-        contentContainerStyle={styles.grid}
+      {viewMode === 'floor' && floorPlans.length > 1 && (
+        <View style={styles.floorPlanTabs}>
+          {floorPlans.map((p) => (
+            <TouchableRipple
+              key={p.id}
+              onPress={() => setActiveFloorPlanId(p.id)}
+              style={[styles.floorPlanTab, activeFloorPlanId === p.id && styles.floorPlanTabActive]}
+              borderless
+            >
+              <Text
+                style={[
+                  styles.floorPlanTabText,
+                  activeFloorPlanId === p.id && styles.floorPlanTabTextActive,
+                ]}
+              >
+                {p.name}
+              </Text>
+            </TouchableRipple>
+          ))}
+        </View>
+      )}
+
+      {/* ── Table grid / floor view ── */}
+      <View style={styles.listContainer}>
+        {viewMode === 'floor' ? (
+          <View
+            style={{ flex: 1 }}
+            onLayout={(e) => setCanvasWidth(e.nativeEvent.layout.width - 20)}
+          >
+            {canvasWidth > 0 && (
+              <FloorPlanCanvas
+                tables={floorTables}
+                floorWidth={floorTables[0]?.floorPlanWidth ?? 800}
+                floorHeight={floorTables[0]?.floorPlanHeight ?? 600}
+                containerWidth={canvasWidth}
+                colorFor={(t) => STATUS_COLOR[t.status]}
+                selectedTableId={cart.table?.id ?? null}
+                onPressTable={(t) => t.status !== 'reserved' && handleTablePress(t)}
+              />
+            )}
+          </View>
+        ) : (
+        <FlashList
+          data={filtered}
+          numColumns={5}
+          estimatedItemSize={120}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.grid}
         ListEmptyComponent={
           <View style={styles.empty}>
             <MaterialCommunityIcons
@@ -154,9 +291,10 @@ export function TablesScreen({ onNavigate }: Props) {
           const selected = cart.table?.id === item.id;
           const isReserved = item.status === 'reserved';
           return (
-            <TouchableRipple
-              onPress={() => !isReserved && handleTablePress(item)}
-              disabled={isReserved}
+            <View style={styles.gridCell}>
+              <TouchableRipple
+                onPress={() => !isReserved && handleTablePress(item)}
+                disabled={isReserved}
               style={[
                 styles.table,
                 item.shape === 'circle' && styles.tableRound,
@@ -188,9 +326,12 @@ export function TablesScreen({ onNavigate }: Props) {
                 <View style={[styles.statusPill, { backgroundColor: STATUS_COLOR[item.status] }]} />
               </View>
             </TouchableRipple>
+            </View>
           );
         }}
       />
+        )}
+      </View>
 
       {/* ── Current table selection bar ── */}
       {cart.table && (
@@ -299,7 +440,8 @@ export function TablesScreen({ onNavigate }: Props) {
             )}
             <Divider />
             <Text variant="bodySmall" style={{ color: antd.textSecondary }}>
-              This table has an open ticket. You can view it or start a separate new ticket for this table.
+              This table has an open tab. Add the new items to it, or view what
+              is on it so far.
             </Text>
           </Dialog.Content>
           <Dialog.Actions style={styles.conflictActions}>
@@ -309,27 +451,37 @@ export function TablesScreen({ onNavigate }: Props) {
             >
               Cancel
             </Button>
-            <Button
-              mode="outlined"
-              onPress={openNewTicketFromConflict}
-              style={{ borderRadius: RADIUS }}
-            >
-              New Ticket
-            </Button>
             {conflict?.activeOrderId ? (
               <Button
-                mode="contained"
+                mode="outlined"
                 icon="receipt"
                 onPress={() => {
-                  const id = conflict.activeOrderId;
+                  const table = conflict;
                   setConflict(null);
-                  setViewingOrderId(id);
+                  viewTab(table);
                 }}
                 style={{ borderRadius: RADIUS }}
               >
-                View Existing Ticket
+                View Tab
               </Button>
             ) : null}
+            <Button
+              mode="outlined"
+              icon="plus"
+              onPress={addToTabFromConflict}
+              style={{ borderRadius: RADIUS }}
+            >
+              Add to Tab
+            </Button>
+            <Button
+              mode="contained"
+              icon="cash-register"
+              buttonColor={antd.success}
+              onPress={closeTabAndPay}
+              style={{ borderRadius: RADIUS }}
+            >
+              Close Tab &amp; Pay
+            </Button>
           </Dialog.Actions>
         </Dialog>
       </Portal>
@@ -338,10 +490,19 @@ export function TablesScreen({ onNavigate }: Props) {
       <OrderDetailModal
         visible={viewingOrderId !== null}
         orderId={viewingOrderId}
-        isLocal={false}
+        isLocal={viewingOrderIsLocal}
         settings={settings}
         online={online}
         onDismiss={() => setViewingOrderId(null)}
+      />
+
+      {/* ── Floor plan / table structural editor ── */}
+      <TableManagerModal
+        visible={managingLayout}
+        onDismiss={() => setManagingLayout(false)}
+        settings={settings}
+        tables={tables}
+        onMutated={syncNow}
       />
     </View>
   );
@@ -350,12 +511,17 @@ export function TablesScreen({ onNavigate }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: antd.bgLayout, padding: 16 },
   toolbar: {
+    gap: 10,
+    marginBottom: 16,
+  },
+  toolbarRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 16,
+    gap: 12,
   },
-  filters: { flexDirection: 'row', gap: 8 },
+  manageButton: { borderRadius: RADIUS, flexShrink: 0 },
+  filters: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, flexShrink: 1 },
   filterTab: {
     paddingHorizontal: 14,
     paddingVertical: 8,
@@ -367,16 +533,29 @@ const styles = StyleSheet.create({
   filterTabActive: { backgroundColor: antd.primary, borderColor: antd.primary },
   filterText: { color: antd.textSecondary, fontSize: 13, fontWeight: '500' },
   filterTextActive: { color: '#fff' },
-  legend: { flexDirection: 'row', gap: 14 },
+  legend: { flexDirection: 'row', flexWrap: 'wrap', gap: 14 },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   dot: { width: 10, height: 10, borderRadius: 5 },
   legendText: { color: antd.textSecondary },
 
-  grid: { paddingBottom: 80 },
-  gridRow: { gap: 12, marginBottom: 12 },
+  floorPlanTabs: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
+  floorPlanTab: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: RADIUS,
+    borderWidth: 1,
+    borderColor: antd.border,
+    backgroundColor: antd.bgContainer,
+  },
+  floorPlanTabActive: { backgroundColor: antd.primary, borderColor: antd.primary },
+  floorPlanTabText: { color: antd.textSecondary, fontSize: 13, fontWeight: '500' },
+  floorPlanTabTextActive: { color: '#fff' },
+
+  listContainer: { flex: 1 },
+  grid: { paddingBottom: 80, paddingHorizontal: 10 },
+  gridCell: { width: '100%', paddingHorizontal: 6, paddingBottom: 12 },
   table: {
     flex: 1,
-    maxWidth: '20%',
     aspectRatio: 1.5,
     borderRadius: RADIUS,
     borderWidth: 2,

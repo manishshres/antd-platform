@@ -146,66 +146,98 @@ export class MenusService {
       );
 
     const itemIds = itemsList.map((item) => item.id);
-    if (itemIds.length > 0) {
-      const itemToModifiers = await this.db
+    // Fetched unconditionally (not gated on itemIds.length) — a category can
+    // have modifier groups assigned directly with zero items in it so far,
+    // and the frontend's category edit modal needs this to know what's
+    // currently attached (see modifiersByCategoryId below).
+    const categoryToModifiers = categoryIds.length
+      ? await this.db
+          .select()
+          .from(schema.categoryToModifiers)
+          .where(inArray(schema.categoryToModifiers.categoryId, categoryIds))
+      : [];
+    const itemToModifiers = itemIds.length
+      ? await this.db
+          .select()
+          .from(schema.menuItemToModifiers)
+          .where(inArray(schema.menuItemToModifiers.menuItemId, itemIds))
+      : [];
+
+    const modifierIds = [
+      ...new Set([
+        ...itemToModifiers.map((m) => m.modifierId),
+        ...categoryToModifiers.map((m) => m.modifierId),
+      ]),
+    ];
+
+    let modifiersList: (typeof schema.menuModifiers.$inferSelect)[] = [];
+    let optionsList: (typeof schema.menuItemModifiers.$inferSelect)[] = [];
+    if (modifierIds.length > 0) {
+      modifiersList = await this.db
         .select()
-        .from(schema.menuItemToModifiers)
-        .where(inArray(schema.menuItemToModifiers.menuItemId, itemIds));
-
-      const modifierIds = [
-        ...new Set(itemToModifiers.map((m) => m.modifierId)),
-      ];
-
-      let modifiersList: (typeof schema.menuModifiers.$inferSelect)[] = [];
-      let optionsList: (typeof schema.menuItemModifiers.$inferSelect)[] = [];
-      if (modifierIds.length > 0) {
-        modifiersList = await this.db
-          .select()
-          .from(schema.menuModifiers)
-          .where(
-            and(
-              inArray(schema.menuModifiers.id, modifierIds),
-              notDeleted(schema.menuModifiers),
-              locationId
-                ? or(
-                    isNull(schema.menuModifiers.locationId),
-                    eq(schema.menuModifiers.locationId, locationId),
-                  )
-                : isNull(schema.menuModifiers.locationId),
-            ),
-          );
-        optionsList = await this.db
-          .select()
-          .from(schema.menuItemModifiers)
-          .where(
-            and(
-              inArray(schema.menuItemModifiers.modifierId, modifierIds),
-              notDeleted(schema.menuItemModifiers),
-            ),
-          );
-      }
-
-      const modifiersWithOptions = modifiersList.map((mod) => ({
-        ...mod,
-        options: optionsList.filter((opt) => opt.modifierId === mod.id),
-      }));
-
-      itemsList.forEach((item) => {
-        const attachedModifierIds = itemToModifiers
-          .filter((m) => m.menuItemId === item.id)
-          .map((m) => m.modifierId);
-        (item as Record<string, unknown>).modifiers =
-          modifiersWithOptions.filter((mod) =>
-            attachedModifierIds.includes(mod.id),
-          );
-      });
+        .from(schema.menuModifiers)
+        .where(
+          and(
+            inArray(schema.menuModifiers.id, modifierIds),
+            notDeleted(schema.menuModifiers),
+            locationId
+              ? or(
+                  isNull(schema.menuModifiers.locationId),
+                  eq(schema.menuModifiers.locationId, locationId),
+                )
+              : isNull(schema.menuModifiers.locationId),
+          ),
+        );
+      optionsList = await this.db
+        .select()
+        .from(schema.menuItemModifiers)
+        .where(
+          and(
+            inArray(schema.menuItemModifiers.modifierId, modifierIds),
+            notDeleted(schema.menuItemModifiers),
+          ),
+        );
     }
 
-    // Group items by category
+    const modifiersWithOptions = modifiersList.map((mod) => ({
+      ...mod,
+      options: optionsList.filter((opt) => opt.modifierId === mod.id),
+    }));
+
+    itemsList.forEach((item) => {
+      const itemAttachedModIds = itemToModifiers
+        .filter((m) => m.menuItemId === item.id)
+        .map((m) => m.modifierId);
+      const catAttachedModIds = categoryToModifiers
+        .filter((m) => m.categoryId === item.categoryId)
+        .map((m) => m.modifierId);
+
+      const attachedModifierIds = [
+        ...new Set([...itemAttachedModIds, ...catAttachedModIds]),
+      ];
+
+      (item as Record<string, unknown>).modifiers = modifiersWithOptions.filter(
+        (mod) => attachedModifierIds.includes(mod.id),
+      );
+    });
+
+    // Group items by category, and — separately — attach each category's OWN
+    // modifier assignments. Without this, the category never carries a
+    // `.modifiers` array of its own (only items did), so the frontend's Edit
+    // Category modal always read `editingCat.modifiers` as undefined: it showed
+    // every category as having no modifiers assigned, and its add/remove diff
+    // (currentModIds vs newModIds) always saw an empty currentModIds — meaning
+    // a modifier could be added but never removed from a category via that UI.
     const data = categoriesList.map((cat) => {
+      const attachedModifierIds = categoryToModifiers
+        .filter((m) => m.categoryId === cat.id)
+        .map((m) => m.modifierId);
       return {
         ...cat,
         items: itemsList.filter((item) => item.categoryId === cat.id),
+        modifiers: modifiersWithOptions.filter((mod) =>
+          attachedModifierIds.includes(mod.id),
+        ),
       };
     });
 
@@ -405,6 +437,13 @@ export class MenusService {
     price: number,
     imageUrl?: string,
     locationId?: string,
+    sku?: string,
+    options?: {
+      isCombo?: boolean;
+      taxExempt?: boolean;
+      stockQuantity?: number;
+      lowStockThreshold?: number;
+    },
   ) {
     const orgId = await this.billingService.getRequiredOrg(user);
 
@@ -434,6 +473,11 @@ export class MenusService {
         categoryId,
         locationId: locationId || null,
         imageUrl: imageUrl || null,
+        sku: sku || null,
+        isCombo: options?.isCombo ?? false,
+        taxExempt: options?.taxExempt ?? false,
+        stockQuantity: options?.stockQuantity ?? null,
+        lowStockThreshold: options?.lowStockThreshold ?? null,
         isAvailable: true,
       })
       .returning();
@@ -450,6 +494,8 @@ export class MenusService {
         price,
         categoryId,
         imageUrl,
+        sku,
+        ...options,
         isAvailable: true,
       },
     });
@@ -735,6 +781,131 @@ export class MenusService {
     return { success: true };
   }
 
+  async removeModifierFromItem(
+    user: CurrentUserPayload,
+    menuItemId: string,
+    modifierId: string,
+  ) {
+    const orgId = await this.billingService.getRequiredOrg(user);
+
+    const item = await this.db
+      .select({
+        id: schema.menuItems.id,
+        orgId: schema.categories.organizationId,
+      })
+      .from(schema.menuItems)
+      .innerJoin(
+        schema.categories,
+        eq(schema.menuItems.categoryId, schema.categories.id),
+      )
+      .where(
+        and(eq(schema.menuItems.id, menuItemId), notDeleted(schema.menuItems)),
+      )
+      .limit(1);
+
+    if (item.length === 0 || item[0].orgId !== orgId) {
+      throw new NotFoundException('Menu item not found');
+    }
+
+    await this.db
+      .delete(schema.menuItemToModifiers)
+      .where(
+        and(
+          eq(schema.menuItemToModifiers.menuItemId, menuItemId),
+          eq(schema.menuItemToModifiers.modifierId, modifierId),
+        ),
+      );
+    await this.invalidateMenuCache(orgId);
+    return { success: true };
+  }
+
+  async assignModifierToCategory(
+    user: CurrentUserPayload,
+    categoryId: string,
+    modifierId: string,
+  ) {
+    const orgId = await this.billingService.getRequiredOrg(user);
+
+    // verify category exists and belongs to org
+    const cat = await this.db
+      .select()
+      .from(schema.categories)
+      .where(
+        and(
+          eq(schema.categories.id, categoryId),
+          eq(schema.categories.organizationId, orgId),
+          notDeleted(schema.categories),
+        ),
+      )
+      .limit(1);
+
+    if (cat.length === 0) {
+      throw new NotFoundException('Category not found');
+    }
+
+    // verify modifier exists
+    const mod = await this.db
+      .select()
+      .from(schema.menuModifiers)
+      .where(
+        and(
+          eq(schema.menuModifiers.id, modifierId),
+          eq(schema.menuModifiers.organizationId, orgId),
+          notDeleted(schema.menuModifiers),
+        ),
+      )
+      .limit(1);
+    if (mod.length === 0) {
+      throw new NotFoundException('Modifier group not found');
+    }
+
+    await this.db
+      .insert(schema.categoryToModifiers)
+      .values({
+        categoryId,
+        modifierId,
+      })
+      .onConflictDoNothing(); // safe against duplicates
+
+    await this.invalidateMenuCache(orgId);
+    return { success: true };
+  }
+
+  async removeModifierFromCategory(
+    user: CurrentUserPayload,
+    categoryId: string,
+    modifierId: string,
+  ) {
+    const orgId = await this.billingService.getRequiredOrg(user);
+
+    // verify category exists and belongs to org
+    const cat = await this.db
+      .select()
+      .from(schema.categories)
+      .where(
+        and(
+          eq(schema.categories.id, categoryId),
+          eq(schema.categories.organizationId, orgId),
+        ),
+      )
+      .limit(1);
+
+    if (cat.length === 0) {
+      throw new NotFoundException('Category not found');
+    }
+
+    await this.db
+      .delete(schema.categoryToModifiers)
+      .where(
+        and(
+          eq(schema.categoryToModifiers.categoryId, categoryId),
+          eq(schema.categoryToModifiers.modifierId, modifierId),
+        ),
+      );
+    await this.invalidateMenuCache(orgId);
+    return { success: true };
+  }
+
   // --- NEW METHODS FOR PHASE 10 ---
 
   async updateMenuItem(
@@ -750,6 +921,11 @@ export class MenusService {
       isFavorite?: boolean;
       sortOrder?: number;
       availabilitySchedule?: unknown;
+      sku?: string;
+      isCombo?: boolean;
+      taxExempt?: boolean;
+      stockQuantity?: number;
+      lowStockThreshold?: number;
     },
   ) {
     const orgId = await this.billingService.getRequiredOrg(user);

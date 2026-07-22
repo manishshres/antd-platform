@@ -37,7 +37,7 @@ export class CallsService {
       return { data: [], total: 0, hasMore: false };
     }
 
-    const { orgId, isPlatformAdmin } = orgScopes;
+    const { orgId, isPlatformAdmin: _isPlatformAdmin } = orgScopes;
     const { offset = 0, limit = 20, locationId } = pagination;
 
     const conditions: (SQL<unknown> | undefined)[] = [
@@ -121,7 +121,11 @@ export class CallsService {
     orgId: string;
     isPlatformAdmin: boolean;
   } | null {
-    if (user.organizationId) return { orgId: user.organizationId, isPlatformAdmin: user.isPlatformAdmin };
+    if (user.organizationId)
+      return {
+        orgId: user.organizationId,
+        isPlatformAdmin: user.isPlatformAdmin,
+      };
     if (user.isPlatformAdmin) {
       // The 17.0 audits allowed unauthenticated-broad admin reads; we
       // require an orgId override. Currently set in JwtStrategy from

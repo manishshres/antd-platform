@@ -29,6 +29,9 @@ export interface ResolvedCartItem {
     | null;
   notes: string | null;
   course: number | null;
+  taxExempt: boolean;
+  priceOverridden: boolean;
+  priceOverrideReason: string | null;
 }
 
 @Injectable()
@@ -52,6 +55,9 @@ export class OrderPricingService {
       optionIds?: string[];
       notes?: string;
       course?: number;
+      /** Manager-authorized replacement unit price (cents); see PosOrderItemDto. */
+      priceOverride?: number;
+      priceOverrideReason?: string;
     }[],
   ): Promise<{ resolvedItems: ResolvedCartItem[]; subtotal: number }> {
     const itemIds = [...new Set(items.map((i) => i.menuItemId))];
@@ -60,6 +66,7 @@ export class OrderPricingService {
         id: schema.menuItems.id,
         price: schema.menuItems.price,
         locationId: schema.menuItems.locationId,
+        taxExempt: schema.menuItems.taxExempt,
       })
       .from(schema.menuItems)
       .innerJoin(
@@ -204,9 +211,15 @@ export class OrderPricingService {
         }
       }
 
+      // A manager price override replaces the whole line price (menu price + modifier
+      // adjustments) — it's a per-transaction comp/discount, not a menu change, so
+      // modifier selections are still recorded on the ticket even though they no
+      // longer contribute to the price.
       const unitPrice =
-        menuItem.price +
-        snapshots.reduce((sum, s) => sum + s.priceAdjustment, 0);
+        line.priceOverride !== undefined
+          ? line.priceOverride
+          : menuItem.price +
+            snapshots.reduce((sum, s) => sum + s.priceAdjustment, 0);
       subtotal += unitPrice * line.quantity;
 
       return {
@@ -216,10 +229,49 @@ export class OrderPricingService {
         modifiers: snapshots.length > 0 ? snapshots : null,
         notes: line.notes?.trim() || null,
         course: line.course ?? null,
+        taxExempt: menuItem.taxExempt,
+        priceOverridden: line.priceOverride !== undefined,
+        priceOverrideReason: line.priceOverride !== undefined ? (line.priceOverrideReason?.trim() || null) : null,
       };
     });
 
     return { resolvedItems, subtotal };
+  }
+
+  /**
+   * Portion of the (pre-discount) subtotal that's subject to tax. Discount is assumed to apply
+   * proportionally across taxable and exempt lines, same as it does across the whole subtotal.
+   */
+  taxableSubtotal(resolvedItems: ResolvedCartItem[]): number {
+    return resolvedItems.reduce(
+      (sum, item) =>
+        item.taxExempt ? sum : sum + item.price * item.quantity,
+      0,
+    );
+  }
+
+  /**
+   * Decrement stock_quantity for sold items. Items with a null stock_quantity are not
+   * stock-tracked and are left alone. Floors at 0 rather than going negative — a sale that
+   * outpaces the recorded count still completes, it just leaves stock at 0 for restocking.
+   */
+  async decrementStock(
+    tx: NodePgDatabase<typeof schema>,
+    items: { menuItemId: string; quantity: number }[],
+  ): Promise<void> {
+    for (const item of items) {
+      await tx
+        .update(schema.menuItems)
+        .set({
+          stockQuantity: sql`GREATEST(${schema.menuItems.stockQuantity} - ${item.quantity}, 0)`,
+        })
+        .where(
+          and(
+            eq(schema.menuItems.id, item.menuItemId),
+            sql`${schema.menuItems.stockQuantity} IS NOT NULL`,
+          ),
+        );
+    }
   }
 
   /**

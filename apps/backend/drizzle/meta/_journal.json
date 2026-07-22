@@ -127,6 +127,62 @@
       "when": 1784484982625,
       "tag": "0017_busy_drax",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1784510009488,
+      "tag": "0018_married_bruce_banner",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1784550823476,
+      "tag": "0019_violet_onslaught",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1784553799802,
+      "tag": "0020_living_valeria_richards",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1784556706587,
+      "tag": "0021_cloudy_omega_sentinel",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1784557573671,
+      "tag": "0022_unique_the_watchers",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1784557847185,
+      "tag": "0023_loose_mephistopheles",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1784558348249,
+      "tag": "0024_omniscient_thanos",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1784558888890,
+      "tag": "0025_sturdy_silk_fever",
+      "breakpoints": true
     }
   ]
 }

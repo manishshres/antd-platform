@@ -1,13 +1,17 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { FlatList, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
-import { IconButton, Text } from 'react-native-paper';
+import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
+import { IconButton, Snackbar, Text } from 'react-native-paper';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { antd, RADIUS } from '../theme';
 import { useApp } from '../state/AppContext';
 import { useCart } from '../state/CartContext';
+import { useEmployee } from '../state/EmployeeContext';
 import * as catalogRepo from '../db/catalogRepo';
 import { ProductCard } from '../components/ProductCard';
 import { ItemCustomizeDialog } from '../components/ItemCustomizeDialog';
+import { BarcodeScannerModal } from '../components/BarcodeScannerModal';
+import { MenuManagementModal } from '../components/MenuManagementModal';
 import type { Category, Product } from '../types';
 
 type ViewMode = 'tabs' | 'sidebar';
@@ -16,15 +20,34 @@ interface Props {
   search: string;
 }
 
+/** Roughly the narrowest a card can get before a two-line product name starts
+ *  truncating mid-word. Columns are derived from this, not hard-coded. */
+const TARGET_CARD_WIDTH = 160;
+
 /** Product catalog: category selector (tab rail or vertical sidebar) + product grid. */
 export function HomeScreen({ search }: Props) {
-  const { dataVersion } = useApp();
+  const { dataVersion, settings, syncNow } = useApp();
   const cart = useCart();
+  // Editing the menu is back-of-house — it doesn't belong in the cashier's
+  // category strip alongside barcode scan.
+  const { isManager } = useEmployee();
   const [categories, setCategories] = useState<Category[]>([]);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>('tabs');
   const [pendingProduct, setPendingProduct] = useState<Product | null>(null);
+  const [scannerVisible, setScannerVisible] = useState(false);
+  const [scanMessage, setScanMessage] = useState('');
+  const [managingMenu, setManagingMenu] = useState(false);
+  const [gridWidth, setGridWidth] = useState(0);
+
+  // A fixed column count can't serve both layouts: the vertical category rail
+  // costs 168pt, so the same "4 columns" is roomy in one mode and cramped in the
+  // other — and wrong again on a different tablet. Measure and divide instead.
+  const numColumns = useMemo(() => {
+    if (gridWidth <= 0) return 4;
+    return Math.min(6, Math.max(2, Math.floor(gridWidth / TARGET_CARD_WIDTH)));
+  }, [gridWidth]);
 
   useEffect(() => {
     const cats = catalogRepo.getCategories();
@@ -49,7 +72,19 @@ export function HomeScreen({ search }: Props) {
     return map;
   }, [cart.lines]);
 
-  const handleAddProduct = (item: Product) => setPendingProduct(item);
+  const handleCustomizeProduct = (item: Product) => setPendingProduct(item);
+  const handleQuickAdd = (item: Product) =>
+    cart.addProductWithOptions(item, 1, undefined, cart.activeCourse);
+
+  const handleScan = (code: string) => {
+    const match = catalogRepo.findProductBySku(code);
+    if (match) {
+      cart.addProductWithOptions(match, 1);
+      setScanMessage(`Added ${match.name}`);
+    } else {
+      setScanMessage(`No product found for "${code}"`);
+    }
+  };
 
   const productGrid = (
     <>
@@ -67,19 +102,19 @@ export function HomeScreen({ search }: Props) {
           </Text>
         </View>
       ) : (
-        <FlatList
+        <FlashList
           data={products}
-          key={4}
-          numColumns={4}
+          numColumns={numColumns}
+          estimatedItemSize={140}
           keyExtractor={(item) => item.id}
-          columnWrapperStyle={styles.gridRow}
           contentContainerStyle={styles.grid}
           renderItem={({ item }) => (
             <View style={styles.gridCell}>
               <ProductCard
                 product={item}
                 quantityInCart={cartQty.get(item.id) ?? 0}
-                onAdd={() => handleAddProduct(item)}
+                onQuickAdd={() => handleQuickAdd(item)}
+                onCustomize={() => handleCustomizeProduct(item)}
               />
             </View>
           )}
@@ -97,13 +132,31 @@ export function HomeScreen({ search }: Props) {
             <Text variant="labelSmall" style={styles.sidebarHeaderText}>
               CATEGORIES
             </Text>
-            <IconButton
-              icon="view-list-outline"
-              size={16}
-              iconColor={antd.primary}
-              style={styles.toggleBtn}
-              onPress={() => setViewMode('tabs')}
-            />
+            <View style={styles.headerBtnRow}>
+              <IconButton
+                icon="barcode-scan"
+                size={20}
+                iconColor={antd.textSecondary}
+                style={styles.toggleBtn}
+                onPress={() => setScannerVisible(true)}
+              />
+              <IconButton
+                icon="view-list-outline"
+                size={20}
+                iconColor={antd.primary}
+                style={styles.toggleBtn}
+                onPress={() => setViewMode('tabs')}
+              />
+              {isManager && (
+                <IconButton
+                  icon="silverware-fork-knife"
+                  size={20}
+                  iconColor={antd.textSecondary}
+                  style={styles.toggleBtn}
+                  onPress={() => setManagingMenu(true)}
+                />
+              )}
+            </View>
           </View>
           <ScrollView
             showsVerticalScrollIndicator={false}
@@ -126,15 +179,46 @@ export function HomeScreen({ search }: Props) {
         </View>
 
         {/* Product grid */}
-        <View style={styles.gridArea}>{productGrid}</View>
+        <View
+          style={styles.gridArea}
+          onLayout={(e) => setGridWidth(e.nativeEvent.layout.width)}
+        >
+          {productGrid}
+        </View>
 
         <ItemCustomizeDialog
           visible={pendingProduct !== null}
           product={pendingProduct}
+          showCourses={cart.fireMode === 'by_course'}
+          initialCourse={cart.activeCourse}
           onDismiss={() => setPendingProduct(null)}
-          onConfirm={(product, quantity, notes) =>
-            cart.addProductWithOptions(product, quantity, notes || undefined)
+          onConfirm={(product, quantity, notes, course, selectedModifiers) =>
+            cart.addProductWithOptions(
+              product,
+              quantity,
+              notes || undefined,
+              course ?? cart.activeCourse,
+              selectedModifiers,
+            )
           }
+        />
+        <BarcodeScannerModal
+          visible={scannerVisible}
+          onDismiss={() => setScannerVisible(false)}
+          onScan={handleScan}
+        />
+        <Snackbar
+          visible={scanMessage.length > 0}
+          onDismiss={() => setScanMessage('')}
+          duration={2200}
+        >
+          {scanMessage}
+        </Snackbar>
+        <MenuManagementModal
+          visible={managingMenu}
+          onDismiss={() => setManagingMenu(false)}
+          settings={settings}
+          onMutated={syncNow}
         />
       </View>
     );
@@ -166,23 +250,70 @@ export function HomeScreen({ search }: Props) {
           ))}
         </ScrollView>
         <IconButton
+          icon="barcode-scan"
+          size={20}
+          iconColor={antd.textSecondary}
+          style={styles.toggleBtn}
+          onPress={() => setScannerVisible(true)}
+        />
+        <IconButton
           icon="view-list-outline"
-          size={18}
+          size={20}
           iconColor={antd.textSecondary}
           style={styles.toggleBtn}
           onPress={() => setViewMode('sidebar')}
         />
+        {isManager && (
+          <IconButton
+            icon="silverware-fork-knife"
+            size={20}
+            iconColor={antd.textSecondary}
+            style={styles.toggleBtn}
+            onPress={() => setManagingMenu(true)}
+          />
+        )}
       </View>
 
-      <View style={styles.gridWrapper}>{productGrid}</View>
+      <View
+        style={styles.gridWrapper}
+        onLayout={(e) => setGridWidth(e.nativeEvent.layout.width)}
+      >
+        {productGrid}
+      </View>
 
       <ItemCustomizeDialog
         visible={pendingProduct !== null}
         product={pendingProduct}
+        showCourses={cart.fireMode === 'by_course'}
+        initialCourse={cart.activeCourse}
         onDismiss={() => setPendingProduct(null)}
-        onConfirm={(product, quantity, notes) =>
-          cart.addProductWithOptions(product, quantity, notes || undefined)
+        onConfirm={(product, quantity, notes, course, selectedModifiers) =>
+          cart.addProductWithOptions(
+            product,
+            quantity,
+            notes || undefined,
+            course ?? cart.activeCourse,
+            selectedModifiers,
+          )
         }
+      />
+      <BarcodeScannerModal
+        visible={scannerVisible}
+        onDismiss={() => setScannerVisible(false)}
+        onScan={handleScan}
+      />
+      <Snackbar
+        visible={scanMessage.length > 0}
+        onDismiss={() => setScanMessage('')}
+        duration={2200}
+      >
+        {scanMessage}
+      </Snackbar>
+      <MenuManagementModal
+        visible={managingMenu}
+        onDismiss={() => setManagingMenu(false)}
+        settings={settings}
+        onMutated={syncNow}
       />
     </View>
   );
@@ -264,9 +395,8 @@ const styles = StyleSheet.create({
   tabText: { color: antd.textSecondary, fontSize: 13, fontWeight: '500' },
   tabTextActive: { color: '#fff' },
   gridWrapper: { flex: 1, paddingTop: 4 },
-  grid: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 16 },
-  gridRow: { gap: 12, marginBottom: 12 },
-  gridCell: { flex: 1, maxWidth: '25%' },
+  grid: { paddingHorizontal: 10, paddingTop: 12, paddingBottom: 16 },
+  gridCell: { width: '100%', paddingHorizontal: 6, paddingBottom: 12 },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingTop: 60 },
   emptyText: { color: antd.textTertiary },
 
@@ -288,6 +418,7 @@ const styles = StyleSheet.create({
     paddingBottom: 4,
   },
   sidebarHeaderText: { color: antd.textTertiary, letterSpacing: 0.5 },
+  headerBtnRow: { flexDirection: 'row' },
   sidebarScroll: { paddingHorizontal: 8, paddingBottom: 16 },
   sidebarItem: {
     paddingHorizontal: 10,
@@ -306,5 +437,6 @@ const styles = StyleSheet.create({
   gridArea: { flex: 1 },
 
   // Shared
-  toggleBtn: { margin: 0 },
+  // 44pt containers — these sit in a strip the cashier hits mid-service.
+  toggleBtn: { margin: 0, width: 44, height: 44 },
 });

@@ -14,6 +14,7 @@ import { antd, RADIUS } from '../theme';
 import { useApp } from '../state/AppContext';
 import { ApiClient, ApiNetworkError, ApiRequestError } from '../api/client';
 import { formatMoney } from '../utils/money';
+import { isoDate, presetDates } from '../utils/dates';
 
 type Granularity = 'day' | 'week' | 'month';
 type DatePreset = 'today' | 'yesterday' | 'week' | 'month' | 'custom';
@@ -46,38 +47,24 @@ interface Report {
   topItems: { menuItemId: string; name: string; quantity: number; sales: number }[];
 }
 
-function localIsoDate(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-function today(): { from: string; to: string } {
-  const s = localIsoDate(new Date());
-  return { from: s, to: s };
-}
-function yesterday(): { from: string; to: string } {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  const s = localIsoDate(d);
-  return { from: s, to: s };
-}
-function thisWeek(): { from: string; to: string } {
+// This screen's week starts Monday (ISO week, standard for sales reporting); the history
+// filter's week starts Sunday — an intentional difference, not something to unify.
+function thisWeekMondayStart(): { from: string; to: string } {
   const d = new Date();
   const mon = new Date(d);
   mon.setDate(d.getDate() - ((d.getDay() + 6) % 7));
-  return { from: localIsoDate(mon), to: localIsoDate(new Date()) };
+  return { from: isoDate(mon), to: isoDate(new Date()) };
 }
 function thisMonth(): { from: string; to: string } {
   const d = new Date();
   const first = new Date(d.getFullYear(), d.getMonth(), 1);
-  return { from: localIsoDate(first), to: localIsoDate(d) };
+  return { from: isoDate(first), to: isoDate(d) };
 }
 
 function presetRange(preset: DatePreset): { from: string; to: string } | null {
-  if (preset === 'today') return today();
-  if (preset === 'yesterday') return yesterday();
-  if (preset === 'week') return thisWeek();
+  if (preset === 'today') return presetDates('today') as { from: string; to: string };
+  if (preset === 'yesterday') return presetDates('yesterday') as { from: string; to: string };
+  if (preset === 'week') return thisWeekMondayStart();
   if (preset === 'month') return thisMonth();
   return null;
 }
@@ -157,8 +144,8 @@ export function ReportsScreen() {
   const { settings, online } = useApp();
 
   const [preset, setPreset] = useState<DatePreset>('today');
-  const [dateFrom, setDateFrom] = useState(today().from);
-  const [dateTo, setDateTo] = useState(today().to);
+  const [dateFrom, setDateFrom] = useState(isoDate(new Date()));
+  const [dateTo, setDateTo] = useState(isoDate(new Date()));
   const [granularity, setGranularity] = useState<Granularity>('day');
   const [tab, setTab] = useState<TabKey>('summary');
   const [loading, setLoading] = useState(false);
