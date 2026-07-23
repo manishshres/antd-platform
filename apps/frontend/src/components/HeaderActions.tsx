@@ -1,23 +1,20 @@
 "use client";
 
 import React, { memo } from "react";
-import { Space, Select, Typography, Dropdown, Avatar, Button, Tooltip } from "antd";
+import { Space, Select, Typography, Dropdown, Avatar } from "antd";
 import type { MenuProps } from "antd";
 import {
   UserOutlined,
   SunOutlined,
   MoonOutlined,
   LogoutOutlined,
-  CreditCardOutlined,
   EnvironmentOutlined,
   BankOutlined,
   CompassOutlined,
-  MenuOutlined,
 } from "@ant-design/icons";
 import { theme } from "antd";
 import { useRouter } from "next/navigation";
 import { useLocation } from "@/contexts/LocationContext";
-import { useSocket } from "@/hooks/useSocket";
 import NotificationsBell from "./NotificationsBell";
 import { clearAccessToken } from "@/lib/token-store";
 import { api } from "@/lib/api";

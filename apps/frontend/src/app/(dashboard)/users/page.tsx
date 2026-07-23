@@ -25,7 +25,6 @@ import {
   LogoutOutlined,
   UserOutlined,
   MailOutlined,
-  LockOutlined,
 } from "@ant-design/icons";
 import { api } from "@/lib/api";
 import { getAccessToken } from "@/lib/token-store";

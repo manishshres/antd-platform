@@ -4,7 +4,6 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Alert,
-  Breadcrumb,
   Button,
   Card,
   DatePicker,
@@ -26,7 +25,6 @@ import {
   DownOutlined,
   DownloadOutlined,
   EyeOutlined,
-  HomeOutlined,
   ReloadOutlined,
 } from "@ant-design/icons";
 import { api } from "@/lib/api";
@@ -152,7 +150,7 @@ export default function CallsPage() {
       console.error("Failed to sync calls", err);
     }
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `selectedLocation`
+     
     // is a derived object; the React Compiler infers it from `selectedLocationId`
     // and `telnyxAssistantId`; listing it here keeps the dep array exact.
   }, [

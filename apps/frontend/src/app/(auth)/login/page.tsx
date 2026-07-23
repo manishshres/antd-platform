@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Form, Input, Button, Card, Typography, Alert, Space, theme, Checkbox } from "antd";
-import { LockOutlined, MailOutlined, RobotOutlined } from "@ant-design/icons";
+import { Form, Input, Button, Card, Typography, Alert, theme, Checkbox } from "antd";
+import { LockOutlined, MailOutlined } from "@ant-design/icons";
 import { ConeekoLogo } from "@/components/Logo";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";

@@ -1,17 +1,10 @@
 "use client";
 
-import React, { useState, useEffect, memo } from "react";
-import { Button, Drawer, Grid, Layout, Menu, Tooltip, ConfigProvider, theme, Space, App, Spin, Typography } from "antd";
+import React, { useState, useEffect } from "react";
+import { Button, Drawer, Grid, Layout, Menu, Tooltip, ConfigProvider, theme, App, Spin, Typography } from "antd";
 import type { MenuProps } from "antd";
 import {
-  MenuFoldOutlined,
   MenuOutlined,
-  MenuUnfoldOutlined,
-  UserOutlined,
-  SunOutlined,
-  MoonOutlined,
-  LogoutOutlined,
-  CompassOutlined,
 } from "@ant-design/icons";
 import { usePathname, useRouter } from "next/navigation";
 import { api } from "@/lib/api";

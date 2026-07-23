@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Row, Col, Card, Statistic, Skeleton, Typography, theme, Button, Progress, Avatar, Tag, Space, Tooltip, Switch, message } from "antd";
+import { Row, Col, Card, Statistic, Skeleton, Typography, theme, Tag, Space, Switch, message } from "antd";
 import {
   ShoppingOutlined,
   DollarOutlined,
@@ -11,7 +11,6 @@ import {
   SettingOutlined,
   TeamOutlined,
   CoffeeOutlined,
-  ArrowRightOutlined,
 } from "@ant-design/icons";
 import {
   AreaChart,

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Card, Typography, Skeleton, Alert, theme, Button, Space, Avatar, Divider } from "antd";
+import { Card, Typography, Skeleton, theme, Button, Avatar, Divider } from "antd";
 import { ArrowLeftOutlined, RobotOutlined, UserOutlined } from "@ant-design/icons";
 import { api } from "@/lib/api";
 import PageHeader from "@/components/PageHeader";

@@ -89,7 +89,9 @@ export class PublicEmployeesController {
 
   @Post(':id/clock-in')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Clock an employee in. No-op if already clocked in.' })
+  @ApiOperation({
+    summary: 'Clock an employee in. No-op if already clocked in.',
+  })
   async clockIn(
     @Req() request: import('express').Request & { organizationId: string },
     @Param('id') id: string,
@@ -107,7 +109,7 @@ export class PublicEmployeesController {
 
   @Post(':id/clock-out')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: "Clock an employee out of their open shift." })
+  @ApiOperation({ summary: 'Clock an employee out of their open shift.' })
   async clockOut(
     @Req() request: import('express').Request & { organizationId: string },
     @Param('id') id: string,
@@ -120,7 +122,9 @@ export class PublicEmployeesController {
   }
 
   @Get(':id/clock-status')
-  @ApiOperation({ summary: "Whether the employee currently has an open shift." })
+  @ApiOperation({
+    summary: 'Whether the employee currently has an open shift.',
+  })
   async clockStatus(
     @Req() request: import('express').Request & { organizationId: string },
     @Param('id') id: string,

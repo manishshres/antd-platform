@@ -59,20 +59,24 @@ export class UpdateItemDto {
   @IsBoolean()
   isCombo?: boolean;
 
-  @ApiPropertyOptional({ description: 'Excludes this item from tax calculation' })
+  @ApiPropertyOptional({
+    description: 'Excludes this item from tax calculation',
+  })
   @IsOptional()
   @IsBoolean()
   taxExempt?: boolean;
 
   @ApiPropertyOptional({
-    description: 'Stock on hand; leave unset for items that are not stock-tracked',
+    description:
+      'Stock on hand; leave unset for items that are not stock-tracked',
   })
   @IsOptional()
   @IsNumber()
   stockQuantity?: number;
 
   @ApiPropertyOptional({
-    description: 'Quantity at or below which the POS flags this item as low stock',
+    description:
+      'Quantity at or below which the POS flags this item as low stock',
   })
   @IsOptional()
   @IsNumber()

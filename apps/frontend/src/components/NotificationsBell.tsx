@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge, Button, Dropdown, Empty, Tag, Typography, theme } from "antd";
+import { Badge, Button, Dropdown, Empty, Typography, theme } from "antd";
 import {
   BellOutlined,
   ShoppingOutlined,

@@ -13,7 +13,6 @@ import {
   Tag,
   App,
   theme,
-  List,
   Switch,
   Breadcrumb,
   Steps,
@@ -22,7 +21,6 @@ import {
   Modal,
 } from "antd";
 import {
-  SettingOutlined,
   PlayCircleOutlined,
   StopOutlined,
   DeleteOutlined,

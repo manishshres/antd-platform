@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Card, Select, Typography, Tag, Alert, theme, Space, Steps } from "antd";
+import { Card, Select, Typography, Tag, theme, Space, Steps } from "antd";
 import {
   PhoneOutlined,
   InfoCircleOutlined,

@@ -63,7 +63,10 @@ export class PublicMenusController {
 
   @Post('categories')
   @ApiOperation({ summary: 'Create a new menu category' })
-  async createCategory(@Req() request: ApiRequest, @Body() dto: CreateCategoryDto) {
+  async createCategory(
+    @Req() request: ApiRequest,
+    @Body() dto: CreateCategoryDto,
+  ) {
     return this.menusService.createCategory(
       apiPrincipal(request.organizationId),
       dto.name,
@@ -78,13 +81,20 @@ export class PublicMenusController {
     @Param('id') id: string,
     @Body() dto: UpdateCategoryDto,
   ) {
-    return this.menusService.updateCategory(apiPrincipal(request.organizationId), id, dto);
+    return this.menusService.updateCategory(
+      apiPrincipal(request.organizationId),
+      id,
+      dto,
+    );
   }
 
   @Delete('categories/:id')
   @ApiOperation({ summary: 'Delete a menu category and all its items' })
   async deleteCategory(@Req() request: ApiRequest, @Param('id') id: string) {
-    return this.menusService.deleteCategory(apiPrincipal(request.organizationId), id);
+    return this.menusService.deleteCategory(
+      apiPrincipal(request.organizationId),
+      id,
+    );
   }
 
   @Post('items')
@@ -115,13 +125,20 @@ export class PublicMenusController {
     @Param('id') id: string,
     @Body() dto: UpdateItemDto,
   ) {
-    return this.menusService.updateMenuItem(apiPrincipal(request.organizationId), id, dto);
+    return this.menusService.updateMenuItem(
+      apiPrincipal(request.organizationId),
+      id,
+      dto,
+    );
   }
 
   @Delete('items/:id')
   @ApiOperation({ summary: 'Delete a menu item' })
   async deleteMenuItem(@Req() request: ApiRequest, @Param('id') id: string) {
-    return this.menusService.deleteMenuItem(apiPrincipal(request.organizationId), id);
+    return this.menusService.deleteMenuItem(
+      apiPrincipal(request.organizationId),
+      id,
+    );
   }
 
   @Get('modifiers/groups')
@@ -154,8 +171,14 @@ export class PublicMenusController {
 
   @Delete('modifiers/groups/:id')
   @ApiOperation({ summary: 'Delete a modifier group' })
-  async deleteModifierGroup(@Req() request: ApiRequest, @Param('id') id: string) {
-    return this.menusService.deleteModifierGroup(apiPrincipal(request.organizationId), id);
+  async deleteModifierGroup(
+    @Req() request: ApiRequest,
+    @Param('id') id: string,
+  ) {
+    return this.menusService.deleteModifierGroup(
+      apiPrincipal(request.organizationId),
+      id,
+    );
   }
 
   @Post('modifiers/:modifierId/options')
@@ -175,8 +198,14 @@ export class PublicMenusController {
 
   @Delete('modifiers/options/:id')
   @ApiOperation({ summary: 'Delete a modifier option' })
-  async deleteModifierOption(@Req() request: ApiRequest, @Param('id') id: string) {
-    return this.menusService.deleteModifierOption(apiPrincipal(request.organizationId), id);
+  async deleteModifierOption(
+    @Req() request: ApiRequest,
+    @Param('id') id: string,
+  ) {
+    return this.menusService.deleteModifierOption(
+      apiPrincipal(request.organizationId),
+      id,
+    );
   }
 
   @Post('items/:itemId/modifiers')

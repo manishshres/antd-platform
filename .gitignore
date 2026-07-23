@@ -31,3 +31,4 @@ apps/backend/patch*.js
 apps/backend/url.txt
 .agents/
 .claude/
+.scannerwork/

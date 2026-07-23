@@ -2,7 +2,7 @@
 
 import { useEffect, useState, Suspense } from "react";
 import { Form, Input, Button, Card, Typography, Alert, Space, theme, Spin } from "antd";
-import { LockOutlined, RobotOutlined, CheckCircleOutlined, UserOutlined, PhoneOutlined } from "@ant-design/icons";
+import { LockOutlined, UserOutlined, PhoneOutlined } from "@ant-design/icons";
 import { ConeekoLogo } from "@/components/Logo";
 import { api, onLoginSuccess } from "@/lib/api";
 import Link from "next/link";

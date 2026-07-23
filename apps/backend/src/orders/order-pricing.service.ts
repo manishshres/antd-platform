@@ -231,7 +231,10 @@ export class OrderPricingService {
         course: line.course ?? null,
         taxExempt: menuItem.taxExempt,
         priceOverridden: line.priceOverride !== undefined,
-        priceOverrideReason: line.priceOverride !== undefined ? (line.priceOverrideReason?.trim() || null) : null,
+        priceOverrideReason:
+          line.priceOverride !== undefined
+            ? line.priceOverrideReason?.trim() || null
+            : null,
       };
     });
 
@@ -244,8 +247,7 @@ export class OrderPricingService {
    */
   taxableSubtotal(resolvedItems: ResolvedCartItem[]): number {
     return resolvedItems.reduce(
-      (sum, item) =>
-        item.taxExempt ? sum : sum + item.price * item.quantity,
+      (sum, item) => (item.taxExempt ? sum : sum + item.price * item.quantity),
       0,
     );
   }

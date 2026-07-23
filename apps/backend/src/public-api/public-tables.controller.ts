@@ -70,11 +70,7 @@ export class PublicTablesController {
     @Param('id') id: string,
     @Body() dto: UpdateFloorPlanDto,
   ) {
-    return this.tablesService.updateFloorPlan(
-      request.organizationId,
-      id,
-      dto,
-    );
+    return this.tablesService.updateFloorPlan(request.organizationId, id, dto);
   }
 
   @Delete('floor-plans/:id')
