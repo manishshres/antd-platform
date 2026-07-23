@@ -59,7 +59,7 @@ export function mergeSignature(line: {
 }): string {
   const mods = (line.selectedModifiers ?? [])
     .map((m) => `${m.optionId}x${m.quantity ?? 1}`)
-    .sort()
+    .sort((a, b) => a.localeCompare(b))
     .join(',');
   return [
     line.product.id,

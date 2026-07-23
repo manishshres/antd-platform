@@ -552,14 +552,10 @@ export class OrderPaymentService {
           taxAmount: liveTax,
           totalAmount: liveTotal,
           updatedAt: new Date(),
-          // Un-pay when the new total outpaces the amount paid; re-pay is
-          // handled by the cashier via the payment flow, not here.
-          paidAt:
-            liveBalance > 0
-              ? null
-              : orderLocked.tipAmount != null
-                ? orderLocked.paidAt
-                : orderLocked.paidAt,
+          // Un-pay when the new total outpaces the amount paid; otherwise keep
+          // the existing paid timestamp. Re-pay is handled by the cashier via
+          // the payment flow, not here.
+          paidAt: liveBalance > 0 ? null : orderLocked.paidAt,
         })
         .where(eq(schema.orders.id, order.id));
 
