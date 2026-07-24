@@ -61,9 +61,25 @@ function truncateId(id: string) {
   return id.length > 16 ? `${id.slice(0, 8)}…${id.slice(-5)}` : id;
 }
 
+/**
+ * Flatten a voice transcript's SSML markup to plain text for display/copy.
+ *
+ * A single pass of `<[^>]+>` is bypassable — nested brackets like `<<b>b>`
+ * leave a intact tag behind once the inner match is removed. This output only
+ * ever lands in React text nodes and the clipboard (never `innerHTML`), so it
+ * isn't an injection sink today, but leaving a half-working tag stripper here
+ * invites one later. Strip repeatedly until stable, then drop any stray angle
+ * brackets so nothing tag-shaped can survive.
+ */
 function stripSSML(text: string) {
-  return text
-    .replace(/<[^>]+\/?>/g, "")
+  let out = text;
+  let prev: string;
+  do {
+    prev = out;
+    out = out.replace(/<[^<>]*>/g, "");
+  } while (out !== prev);
+  return out
+    .replace(/[<>]/g, "")
     .replace(/\s{2,}/g, " ")
     .trim();
 }
