@@ -362,7 +362,9 @@ export class PublicOrdersController {
 
   @Post(':id/print')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Reprint the kitchen ticket / receipt for an order' })
+  @ApiOperation({
+    summary: 'Reprint the kitchen ticket / receipt for an order',
+  })
   @ApiResponse({ status: 200, description: 'Print job(s) queued.' })
   @ApiResponse({ status: 401, description: 'Unauthorized. Invalid API key.' })
   @ApiResponse({ status: 404, description: 'Order not found.' })

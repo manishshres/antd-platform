@@ -123,7 +123,7 @@ export default function OrderDetailsPage() {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [orderId]);
 
   const updateStatus = async (newStatus: string) => {

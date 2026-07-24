@@ -1,6 +1,7 @@
 import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
+import unusedImports from "eslint-plugin-unused-imports";
 
 const eslintConfig = defineConfig([
   ...nextVitals,
@@ -14,12 +15,15 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
   ]),
   {
+    plugins: {
+      "unused-imports": unusedImports,
+    },
     rules: {
-      // Existing codebase has 100+ no-op imports (`Title`, `Space`, `RobotOutlined`,
-      // `CheckCircleOutlined` left over from earlier extraction) and 25+ `any`
-      // annotations across the API tables and event-handler callbacks. Tighten
-      // these are a separate cleanup pass; for now keep the gate at lint-clean
-      // so new code lands clean.
+      // Unused *imports* are auto-fixable via `eslint --fix` (the plugin's
+      // whole point); the old no-op imports were swept in that cleanup pass.
+      // `no-unused-vars` (locals/params) stays off for now — 25+ `any`
+      // annotations and dead locals remain a separate pass.
+      "unused-imports/no-unused-imports": "error",
       "@typescript-eslint/no-unused-vars": "off",
       "@typescript-eslint/no-explicit-any": "off",
       // `'` in TS comments and inline strings triggers `react/no-unescaped-entities`

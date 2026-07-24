@@ -10,7 +10,6 @@ import {
   Col,
   Descriptions,
   Tag,
-  Alert,
   Skeleton,
   App,
   theme,

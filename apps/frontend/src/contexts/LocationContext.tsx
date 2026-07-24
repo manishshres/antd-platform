@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { api } from "@/lib/api";
 import { getAccessToken, onTokenChange } from "@/lib/token-store";
-import { decodeRoleFromToken, decodeJwtPayload } from "@/lib/jwt";
+import { decodeRoleFromToken } from "@/lib/jwt";
 
 export interface Location {
   id: string;

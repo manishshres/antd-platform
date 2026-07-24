@@ -16,21 +16,13 @@ import {
   Modal,
   Form,
   Input,
-  Drawer,
-  Steps,
-  Popconfirm,
   Switch,
-  List,
   Dropdown,
 } from "antd";
 import type { MenuProps } from "antd";
 import {
   PlusOutlined,
   ReloadOutlined,
-  PlayCircleOutlined,
-  StopOutlined,
-  DeleteOutlined,
-  MailOutlined,
   SettingOutlined,
   EnvironmentOutlined,
   MoreOutlined,
@@ -41,7 +33,6 @@ import {
   ProvisioningSummary,
   Organization,
   CreateOrgProvisionDto,
-  ProvisioningStatusResponse,
 } from "./types";
 
 const { Title, Text } = Typography;

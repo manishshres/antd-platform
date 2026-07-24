@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Table, Card, Typography, Space, Button, Tag, Skeleton, Alert, Empty, theme } from "antd";
+import { Table, Card, Typography, Button, Tag, Skeleton, Alert, theme } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { MessageOutlined, EyeOutlined } from "@ant-design/icons";
 import { api } from "@/lib/api";

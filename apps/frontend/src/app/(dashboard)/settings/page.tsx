@@ -21,7 +21,7 @@ import {
   Upload,
   Radio,
 } from "antd";
-import { PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined, KeyOutlined, ApiOutlined, GlobalOutlined, BankOutlined, SecurityScanOutlined, BuildOutlined, CreditCardOutlined, NotificationOutlined, SettingOutlined, MailOutlined, UserAddOutlined, MinusCircleOutlined, LinkOutlined, SyncOutlined, ReloadOutlined, TagOutlined, QrcodeOutlined } from "@ant-design/icons";
+import { PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined, KeyOutlined, ApiOutlined, GlobalOutlined, BankOutlined, SecurityScanOutlined, BuildOutlined, CreditCardOutlined, SettingOutlined, MailOutlined, UserAddOutlined, MinusCircleOutlined, LinkOutlined, SyncOutlined, ReloadOutlined, TagOutlined, QrcodeOutlined } from "@ant-design/icons";
 import { QRCodeSVG } from "qrcode.react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";

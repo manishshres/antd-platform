@@ -64,7 +64,8 @@ export class PosOrderItemDto {
 
   @ApiProperty({
     required: false,
-    description: 'Free-text reason for the price override (e.g. "customer complaint, comped dessert").',
+    description:
+      'Free-text reason for the price override (e.g. "customer complaint, comped dessert").',
   })
   @IsOptional()
   @IsString()

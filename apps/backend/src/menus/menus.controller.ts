@@ -381,7 +381,11 @@ export class MenusController {
     @Param('categoryId') categoryId: string,
     @Body() dto: AssignModifierDto,
   ): Promise<unknown> {
-    return this.menusService.assignModifierToCategory(user, categoryId, dto.modifierId);
+    return this.menusService.assignModifierToCategory(
+      user,
+      categoryId,
+      dto.modifierId,
+    );
   }
 
   @Delete('categories/:categoryId/modifiers/:modifierId')
@@ -393,7 +397,11 @@ export class MenusController {
     @Param('categoryId') categoryId: string,
     @Param('modifierId') modifierId: string,
   ): Promise<unknown> {
-    return this.menusService.removeModifierFromCategory(user, categoryId, modifierId);
+    return this.menusService.removeModifierFromCategory(
+      user,
+      categoryId,
+      modifierId,
+    );
   }
 
   @Patch('items/:id')

@@ -31,7 +31,6 @@ import {
   removeLineFrom,
   setLineQuantity,
   setLinePriceOverride,
-  splitLines,
   tableFromOrder,
   updateLineDetails,
   type CartTotals,

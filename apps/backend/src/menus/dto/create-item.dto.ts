@@ -83,7 +83,8 @@ export class CreateItemDto {
   taxExempt?: boolean;
 
   @ApiProperty({
-    description: 'Stock on hand; leave unset for items that are not stock-tracked',
+    description:
+      'Stock on hand; leave unset for items that are not stock-tracked',
     required: false,
   })
   @IsNumber()
@@ -91,7 +92,8 @@ export class CreateItemDto {
   stockQuantity?: number;
 
   @ApiProperty({
-    description: 'Quantity at or below which the POS flags this item as low stock',
+    description:
+      'Quantity at or below which the POS flags this item as low stock',
     required: false,
   })
   @IsNumber()

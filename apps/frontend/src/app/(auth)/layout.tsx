@@ -1,5 +1,4 @@
 import React from "react";
-import { AntdRegistry } from "@ant-design/nextjs-registry";
 import { ConfigProvider, App, theme } from "antd";
 import { themeConfig } from "@/lib/theme";
 import "../globals.css";

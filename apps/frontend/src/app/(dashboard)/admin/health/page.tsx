@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Card, Typography, Spin, Alert, Row, Col, Badge, Statistic } from "antd";
+import { Card, Typography, Spin, Alert, Row, Col, Badge } from "antd";
 import { api } from "@/lib/api";
 import PageHeader from "@/components/PageHeader";
 import { ErrorState } from "@/components/PageStates";

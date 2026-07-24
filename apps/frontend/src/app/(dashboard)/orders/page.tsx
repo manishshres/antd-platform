@@ -12,19 +12,13 @@ import {
   Alert,
   Dropdown,
   MenuProps,
-  Descriptions,
-  Divider,
-  Input,
   Select,
   DatePicker,
-  Tooltip,
   theme,
   App,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import {
-  PrinterOutlined,
-  ShopOutlined,
   DownOutlined,
   EditOutlined,
   EyeOutlined,

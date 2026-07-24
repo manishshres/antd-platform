@@ -28,7 +28,6 @@ import PageHeader from "@/components/PageHeader";
 import {
   PlusOutlined,
   DeleteOutlined,
-  FolderAddOutlined,
   ReloadOutlined,
   UndoOutlined,
   StarFilled,

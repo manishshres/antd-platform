@@ -987,7 +987,9 @@ export class OrdersService {
     // already applied to the whole subtotal above.
     const taxableSubtotal = this.pricingService.taxableSubtotal(resolvedItems);
     const taxableAfterDiscount =
-      subtotal > 0 ? taxableSubtotal - (discountAmount * taxableSubtotal) / subtotal : 0;
+      subtotal > 0
+        ? taxableSubtotal - (discountAmount * taxableSubtotal) / subtotal
+        : 0;
     // Service charge is computed off the discounted taxable base, same as tax, and — unlike
     // tip — is itself taxable, matching how mandatory gratuities are commonly treated.
     const serviceChargeAmount = dto.applyServiceCharge
@@ -1071,7 +1073,10 @@ export class OrdersService {
 
         await this.pricingService.decrementStock(tx, resolvedItems);
 
-        if (dto.customerId && (redemptionAmount > 0 || loyaltyPointsEarned > 0)) {
+        if (
+          dto.customerId &&
+          (redemptionAmount > 0 || loyaltyPointsEarned > 0)
+        ) {
           await tx
             .update(schema.customers)
             .set({
