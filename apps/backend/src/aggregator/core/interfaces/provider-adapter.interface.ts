@@ -27,8 +27,16 @@ export interface OrderProvider {
     externalOrderId: string,
   ): Promise<NormalizedOrder | null>;
 
-  /** Accept / confirm an order on the marketplace side */
-  acceptOrder(connectionId: string, externalOrderId: string): Promise<void>;
+  /**
+   * Accept / confirm an order on the marketplace side. `options.externalReferenceId`
+   * is our own order id, which providers surface to merchant support tooling
+   * (Uber: `external_reference_id` on accept_pos_order).
+   */
+  acceptOrder(
+    connectionId: string,
+    externalOrderId: string,
+    options?: AcceptOrderOptions,
+  ): Promise<void>;
 
   /** Reject an incoming order (e.g. out of stock) */
   rejectOrder(
@@ -96,6 +104,11 @@ export interface WebhookOrderExtractor {
 
 // ── Shared Types ─────────────────────────────────────────────────────────
 
+export interface AcceptOrderOptions {
+  /** Coneeko's internal order id, passed through to the marketplace for reconciliation. */
+  externalReferenceId?: string;
+}
+
 export interface NormalizedWebhookEvent {
   externalEventId: string;
   eventType:
@@ -104,6 +117,11 @@ export interface NormalizedWebhookEvent {
     | 'order.canceled'
     | 'delivery.status'
     | 'menu.sync.status'
+    // Store lifecycle (Uber Eats): a store granting/removing app access, or toggling
+    // its online status. These carry a store id in the payload, not an order id.
+    | 'store.provisioned'
+    | 'store.deprovisioned'
+    | 'store.status'
     | 'unknown';
   externalOrderId?: string;
   rawPayload: any;

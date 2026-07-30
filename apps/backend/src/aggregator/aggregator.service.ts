@@ -17,8 +17,12 @@ import {
 import { ProviderRegistryService } from './core/services/provider-registry.service';
 import { AggregatorRepository } from './database/aggregator.repository';
 import { MenuSyncService } from './sync/menu-sync.service';
+import { UberEatsAdapter } from './providers/ubereats/ubereats.adapter';
 import { OrdersService } from '../orders/orders.service';
-import { CreateIntegrationAccountDto } from './dto/create-integration-account.dto';
+import {
+  CreateIntegrationAccountDto,
+  UpdateIntegrationAccountDto,
+} from './dto/create-integration-account.dto';
 
 /**
  * Internal (JWT-scoped) aggregator operations: manage integration accounts, list
@@ -38,6 +42,7 @@ export class AggregatorService {
     private readonly statusTransition: OrderStatusTransitionService,
     private readonly ordersService: OrdersService,
     private readonly menuSync: MenuSyncService,
+    private readonly uberEats: UberEatsAdapter,
   ) {}
 
   // ── Integration accounts ─────────────────────────────────────────────────────
@@ -73,9 +78,49 @@ export class AggregatorService {
       providerId: provider.id,
       credentials: this.encryption.encryptJson(dto.credentials),
       providerStoreId: dto.providerStoreId ?? null,
+      autoAcceptOrders: dto.autoAcceptOrders ?? true,
     });
 
     return this.sanitize(account);
+  }
+
+  /**
+   * Update mutable settings on the org's own account: the auto-accept toggle, the
+   * provider-side store id, and/or a full replacement of the stored credentials
+   * (re-encrypted at rest — this never merges with what's already saved).
+   */
+  async updateIntegrationAccount(
+    orgId: string,
+    integrationAccountId: string,
+    dto: UpdateIntegrationAccountDto,
+  ) {
+    const account =
+      await this.repo.findIntegrationAccountById(integrationAccountId);
+    if (!account || account.organizationId !== orgId) {
+      throw new NotFoundException('Integration account not found.');
+    }
+    const updated = await this.repo.setIntegrationAccountStatus(
+      integrationAccountId,
+      {
+        autoAcceptOrders: dto.autoAcceptOrders,
+        providerStoreId: dto.providerStoreId,
+        credentials: dto.credentials
+          ? this.encryption.encryptJson(dto.credentials)
+          : undefined,
+      },
+    );
+    return this.sanitize(updated ?? account);
+  }
+
+  /** Disconnect a marketplace. Past orders/menu mappings keep their history (FK set-null/cascade). */
+  async deleteIntegrationAccount(orgId: string, integrationAccountId: string) {
+    const account =
+      await this.repo.findIntegrationAccountById(integrationAccountId);
+    if (!account || account.organizationId !== orgId) {
+      throw new NotFoundException('Integration account not found.');
+    }
+    await this.repo.deleteIntegrationAccount(integrationAccountId);
+    return { success: true };
   }
 
   // ── Marketplace orders ────────────────────────────────────────────────────────
@@ -179,5 +224,73 @@ export class AggregatorService {
 
   async syncMenu(orgId: string, integrationAccountId: string) {
     return this.menuSync.syncAccountMenu(orgId, integrationAccountId);
+  }
+
+  // ── Uber Eats store integration config ────────────────────────────────────────
+
+  /**
+   * Resolve one of the org's accounts and assert it belongs to `expectedProvider`. Used by
+   * the provider-specific endpoints, which can't go through the capability registry.
+   */
+  private async ownAccountForProvider(
+    orgId: string,
+    integrationAccountId: string,
+    expectedProvider: string,
+  ) {
+    const account =
+      await this.repo.findIntegrationAccountById(integrationAccountId);
+    if (!account || account.organizationId !== orgId) {
+      throw new NotFoundException('Integration account not found.');
+    }
+    const provider = await this.repo.findProviderNameById(account.providerId);
+    if (provider !== expectedProvider) {
+      throw new BadRequestException(
+        `Integration account ${integrationAccountId} is not a ${expectedProvider} account.`,
+      );
+    }
+    return account;
+  }
+
+  /** What Uber currently has configured for this store (source of truth for debugging). */
+  async getUberStoreConfig(orgId: string, integrationAccountId: string) {
+    await this.ownAccountForProvider(orgId, integrationAccountId, 'ubereats');
+    return this.uberEats.getStoreConfig(integrationAccountId);
+  }
+
+  /**
+   * Push our integration config to Uber and turn order webhooks on. Safe to re-run — it's
+   * a PATCH of the same desired state — and returns Uber's post-update view.
+   */
+  async enableUberStoreIntegration(
+    orgId: string,
+    integrationAccountId: string,
+    merchantStoreId?: string,
+  ) {
+    await this.ownAccountForProvider(orgId, integrationAccountId, 'ubereats');
+    const config = await this.uberEats.enableStoreIntegration(
+      integrationAccountId,
+      { merchantStoreId },
+    );
+    await this.repo.setIntegrationAccountStatus(integrationAccountId, {
+      status: 'connected',
+    });
+    this.logger.log(
+      `Uber Eats integration enabled for account ${integrationAccountId}.`,
+    );
+    return config;
+  }
+
+  /** Stop Uber order webhooks for this store, leaving the association in place. */
+  async disableUberStoreIntegration(
+    orgId: string,
+    integrationAccountId: string,
+  ) {
+    await this.ownAccountForProvider(orgId, integrationAccountId, 'ubereats');
+    await this.uberEats.disableStoreIntegration(integrationAccountId);
+    await this.repo.setIntegrationAccountStatus(integrationAccountId, {
+      status: 'disabled',
+      isOnline: false,
+    });
+    return { success: true };
   }
 }

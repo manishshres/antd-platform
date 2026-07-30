@@ -2,11 +2,13 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
   UseGuards,
@@ -25,7 +27,11 @@ import {
   CurrentUserPayload,
 } from '../common/decorators/current-user.decorator';
 import { AggregatorService } from './aggregator.service';
-import { CreateIntegrationAccountDto } from './dto/create-integration-account.dto';
+import {
+  CreateIntegrationAccountDto,
+  UpdateIntegrationAccountDto,
+} from './dto/create-integration-account.dto';
+import { EnableUberIntegrationDto } from './dto/ubereats-integration.dto';
 
 /**
  * Internal, JWT-scoped API for managing marketplace integrations and acting on
@@ -65,6 +71,40 @@ export class AggregatorController {
     return this.aggregatorService.createIntegrationAccount(
       this.orgId(user),
       dto,
+    );
+  }
+
+  @Patch('integration-accounts/:id')
+  @Roles('owner', 'admin', 'manager')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Update marketplace account settings (e.g. auto-accept toggle)',
+  })
+  async updateAccount(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateIntegrationAccountDto,
+  ) {
+    return this.aggregatorService.updateIntegrationAccount(
+      this.orgId(user),
+      id,
+      dto,
+    );
+  }
+
+  @Delete('integration-accounts/:id')
+  @Roles('owner', 'admin', 'manager')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Disconnect a marketplace (deletes the stored credentials)',
+  })
+  async deleteAccount(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.aggregatorService.deleteIntegrationAccount(
+      this.orgId(user),
+      id,
     );
   }
 
@@ -108,6 +148,58 @@ export class AggregatorController {
       this.orgId(user),
       id,
       body?.reason,
+    );
+  }
+
+  @Get('integration-accounts/:id/ubereats/config')
+  @Roles('owner', 'admin', 'manager')
+  @ApiOperation({
+    summary: 'Read the Uber Eats store integration config from Uber',
+    description:
+      'Proxies GET /v1/eats/stores/{store_id}/pos_data — shows whether Uber has order ' +
+      'webhooks enabled, who the order manager is, and the store’s online status.',
+  })
+  async getUberConfig(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.aggregatorService.getUberStoreConfig(this.orgId(user), id);
+  }
+
+  @Post('integration-accounts/:id/ubereats/enable')
+  @Roles('owner', 'admin', 'manager')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Enable the Uber Eats POS integration for this store',
+    description:
+      'Pushes our integration config and sets integration_enabled=true, which is what ' +
+      'starts order-fulfillment webhooks on an already-associated store. Idempotent.',
+  })
+  async enableUberIntegration(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: EnableUberIntegrationDto,
+  ) {
+    return this.aggregatorService.enableUberStoreIntegration(
+      this.orgId(user),
+      id,
+      dto?.merchantStoreId,
+    );
+  }
+
+  @Post('integration-accounts/:id/ubereats/disable')
+  @Roles('owner', 'admin', 'manager')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Pause Uber Eats order webhooks for this store',
+  })
+  async disableUberIntegration(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.aggregatorService.disableUberStoreIntegration(
+      this.orgId(user),
+      id,
     );
   }
 
