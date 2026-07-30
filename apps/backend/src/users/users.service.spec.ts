@@ -257,5 +257,134 @@ describe('UsersService', () => {
       expect(result).toBeNull();
       expect(bcrypt.compare).not.toHaveBeenCalled();
     });
+
+    /**
+     * N3. A 4-digit PIN is 10,000 guesses and the PIN routes used to skip throttling
+     * entirely, so an authenticated junior session could walk the whole space.
+     */
+    describe('brute-force protection', () => {
+      it('counts a wrong PIN against the user and audit-logs the failure', async () => {
+        stubSelect([{ ...managerRow, posPinFailedAttempts: 0 }]);
+        (bcrypt.compare as jest.Mock).mockResolvedValueOnce(false);
+
+        const result = await service.verifyManagerPin('org-1', '9999', 'mgr-1');
+
+        expect(result).toBeNull();
+        // The failure is persisted (atomic increment) …
+        expect(dbMock.update).toHaveBeenCalled();
+        // … and recorded for the audit trail.
+        expect(auditServiceMock.log).toHaveBeenCalledWith(
+          expect.objectContaining({
+            action: 'pos.pin.verify_failed',
+            entityId: 'mgr-1',
+            newValue: { reason: 'wrong_pin' },
+          }),
+        );
+      });
+
+      it('rejects a locked-out user without ever comparing the PIN', async () => {
+        const lockedUntil = new Date(Date.now() + 10 * 60_000);
+        stubSelect([
+          {
+            ...managerRow,
+            posPinFailedAttempts: 5,
+            posPinLockedUntil: lockedUntil,
+          },
+        ]);
+
+        const result = await service.verifyManagerPin('org-1', '1234', 'mgr-1');
+
+        expect(result).toBeNull();
+        // Short-circuits before bcrypt — a locked PIN cannot be tested at all.
+        expect(bcrypt.compare).not.toHaveBeenCalled();
+        expect(auditServiceMock.log).toHaveBeenCalledWith(
+          expect.objectContaining({ newValue: { reason: 'locked_out' } }),
+        );
+      });
+
+      it('accepts the PIN again once the lockout has expired', async () => {
+        stubSelect([
+          {
+            ...managerRow,
+            posPinFailedAttempts: 5,
+            posPinLockedUntil: new Date(Date.now() - 60_000), // already elapsed
+          },
+        ]);
+        (bcrypt.compare as jest.Mock).mockResolvedValueOnce(true);
+
+        const result = await service.verifyManagerPin('org-1', '1234', 'mgr-1');
+
+        expect(result).toMatchObject({ id: 'mgr-1' });
+      });
+
+      it('skips locked-out managers in the org-wide branch', async () => {
+        // Dropping candidateEmployeeId must not be a way around the lockout.
+        stubSelect([
+          {
+            ...managerRow,
+            posPinLockedUntil: new Date(Date.now() + 10 * 60_000),
+          },
+        ]);
+
+        const result = await service.verifyManagerPin('org-1', '1234');
+
+        expect(result).toBeNull();
+        expect(bcrypt.compare).not.toHaveBeenCalled();
+      });
+    });
+  });
+
+  describe('setPosPin — per-org uniqueness (N3)', () => {
+    const stubSelectSequence = (...results: any[]) => {
+      for (const result of results) {
+        dbMock.select.mockReturnValueOnce({
+          from: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          limit: jest.fn().mockReturnThis(),
+          then: (resolve: any) => resolve(result),
+        });
+      }
+    };
+
+    it('rejects a PIN already used by another employee in the org', async () => {
+      stubSelectSequence(
+        [{ organizationId: 'org-1' }], // the target user
+        [{ id: 'mgr-2', posPinHash: 'someone_elses_hash' }], // peers holding PINs
+      );
+      (bcrypt.compare as jest.Mock).mockResolvedValueOnce(true); // collides
+
+      // Duplicate PINs make the org-wide branch attribute an override to the wrong
+      // manager, which corrupts the audit trail.
+      await expect(service.setPosPin('mgr-1', '1234')).rejects.toThrow(
+        ConflictException,
+      );
+      expect(dbMock.update).not.toHaveBeenCalled();
+    });
+
+    it('allows a PIN no one else in the org holds', async () => {
+      stubSelectSequence(
+        [{ organizationId: 'org-1' }],
+        [{ id: 'mgr-2', posPinHash: 'someone_elses_hash' }],
+      );
+      (bcrypt.compare as jest.Mock).mockResolvedValueOnce(false); // no collision
+
+      await service.setPosPin('mgr-1', '4321');
+
+      expect(bcrypt.hash).toHaveBeenCalledWith('4321', 12);
+      expect(dbMock.update).toHaveBeenCalled();
+    });
+
+    it('ignores the user’s own existing PIN when checking for collisions', async () => {
+      stubSelectSequence(
+        [{ organizationId: 'org-1' }],
+        [{ id: 'mgr-1', posPinHash: 'my_own_current_hash' }], // only self
+      );
+
+      await service.setPosPin('mgr-1', '1234');
+
+      // Self is skipped before bcrypt — re-setting your own PIN must not self-collide.
+      expect(bcrypt.compare).not.toHaveBeenCalled();
+      expect(dbMock.update).toHaveBeenCalled();
+    });
   });
 });

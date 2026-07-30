@@ -60,7 +60,11 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
       // Only send application-level 400s to Sentry (skip validation-pipe errors,
       // which have an array message — those are noise, not actionable).
-      if (status === HttpStatus.BAD_REQUEST && !Array.isArray(message)) {
+      // `status` is a plain number (from getStatus()), so compare against the enum's value.
+      if (
+        status === Number(HttpStatus.BAD_REQUEST) &&
+        !Array.isArray(message)
+      ) {
         Sentry.captureException(exception, {
           level: 'warning',
           tags: { type: 'bad_request' },

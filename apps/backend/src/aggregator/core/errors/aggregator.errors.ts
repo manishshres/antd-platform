@@ -19,6 +19,22 @@ export class ProviderAuthenticationError extends AggregatorError {
   }
 }
 
+/**
+ * A provider API call came back non-2xx for a reason other than authentication — a
+ * rejected body, a store we aren't the order manager for, an order past its window.
+ * Carries the HTTP status so callers can tell "retry this" from "this will never work".
+ */
+export class ProviderRequestError extends AggregatorError {
+  constructor(
+    provider: string,
+    message: string,
+    public readonly status?: number,
+    details?: any,
+  ) {
+    super(`[${provider}] ${message}`, 'PROVIDER_REQUEST_ERROR', details);
+  }
+}
+
 export class WebhookSignatureInvalidError extends AggregatorError {
   constructor(
     provider: string,

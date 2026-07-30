@@ -89,6 +89,16 @@ export interface FloorPlanPayload {
   }[];
 }
 
+export interface IntegrationAccountPayload {
+  id: string;
+  providerId: string;
+  providerName: string;
+  providerStoreId: string | null;
+  status: string;
+  isOnline: boolean;
+  autoAcceptOrders: boolean;
+}
+
 export interface PosOrderPayload {
   locationId: string;
   customerId?: string;
@@ -546,5 +556,18 @@ export class ApiClient {
     employeeId: string,
   ): Promise<{ clockedIn: boolean; since: string | null }> {
     return this.request('GET', `/employees/${employeeId}/clock-status`);
+  }
+
+  async getIntegrationAccounts(): Promise<IntegrationAccountPayload[]> {
+    return this.request('GET', '/aggregator/integration-accounts');
+  }
+
+  async setIntegrationAccountAutoAccept(
+    id: string,
+    autoAcceptOrders: boolean,
+  ): Promise<IntegrationAccountPayload> {
+    return this.request('PATCH', `/aggregator/integration-accounts/${id}`, {
+      autoAcceptOrders,
+    });
   }
 }

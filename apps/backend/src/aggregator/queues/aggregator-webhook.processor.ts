@@ -57,6 +57,11 @@ export class AggregatorWebhookProcessor extends WorkerHost {
         case 'order.canceled':
           result = await this.handleStatusChange(data);
           break;
+        case 'store.provisioned':
+        case 'store.deprovisioned':
+        case 'store.status':
+          result = await this.handleStoreLifecycle(data);
+          break;
         default:
           // delivery.status / menu.sync.status / unknown — recorded, not yet acted on.
           this.logger.log(
@@ -79,10 +84,15 @@ export class AggregatorWebhookProcessor extends WorkerHost {
     let normalized = this.registry
       .getOrderExtractor(data.provider)
       .orderFromWebhook(data.rawPayload);
-    if (!normalized && data.externalOrderId) {
+    if (!normalized && (data.resourceHref || data.externalOrderId)) {
+      // Notification-only providers: fetch the full order. Prefer the webhook's
+      // resource_href (it pins the store's API version) over rebuilding from the id.
       normalized = await this.registry
         .getOrderProvider(data.provider)
-        .getOrder(data.integrationAccountId, data.externalOrderId);
+        .getOrder(
+          data.integrationAccountId,
+          data.resourceHref ?? data.externalOrderId!,
+        );
     }
     if (!normalized) {
       this.logger.warn(
@@ -99,21 +109,75 @@ export class AggregatorWebhookProcessor extends WorkerHost {
       locationId: data.locationId,
     });
 
-    // Auto-accept on the marketplace (prepaid orders are confirmed to the customer).
+    // Auto-accept on the marketplace (prepaid orders are confirmed to the customer) unless
+    // the store opted into manual accept — then the order stays pending until a cashier
+    // accepts/denies it from the POS/dashboard within the provider's accept window.
+    const account = await this.repo.findIntegrationAccountById(
+      data.integrationAccountId,
+    );
+    if (account?.autoAcceptOrders === false) {
+      this.logger.log(
+        `Imported ${data.provider} order ${normalized.externalOrderId}; auto-accept disabled for this store, left pending for manual accept.`,
+      );
+      return { ...importResult, autoAccepted: false };
+    }
+
     // A failure here doesn't undo the import — log and let it be retried/accepted manually.
     try {
       await this.registry
         .getOrderProvider(data.provider)
-        .acceptOrder(data.integrationAccountId, normalized.externalOrderId);
+        .acceptOrder(data.integrationAccountId, normalized.externalOrderId, {
+          externalReferenceId: importResult.internalOrderId ?? undefined,
+        });
     } catch (err) {
       this.logger.warn(
         `Imported ${data.provider} order ${normalized.externalOrderId} but auto-accept failed: ${
           err instanceof Error ? err.message : String(err)
         }`,
       );
+      return { ...importResult, autoAccepted: false };
     }
 
-    return importResult;
+    return { ...importResult, autoAccepted: true };
+  }
+
+  /**
+   * Store lifecycle events (Uber Eats): provisioned/deprovisioned toggle the account's
+   * connection status; status.changed mirrors the store's online/paused state. The tenant
+   * was already resolved by store id at ingestion, so we act on the account directly.
+   */
+  private async handleStoreLifecycle(data: AggregatorWebhookJob) {
+    const meta =
+      (data.rawPayload as { meta?: { status?: string } } | undefined)?.meta ??
+      {};
+    switch (data.eventType) {
+      case 'store.provisioned':
+        await this.repo.setIntegrationAccountStatus(data.integrationAccountId, {
+          status: 'connected',
+        });
+        this.logger.log(
+          `${data.provider} store provisioned for account ${data.integrationAccountId}.`,
+        );
+        return { status: 'connected' };
+      case 'store.deprovisioned':
+        await this.repo.setIntegrationAccountStatus(data.integrationAccountId, {
+          status: 'disabled',
+          isOnline: false,
+        });
+        this.logger.log(
+          `${data.provider} store deprovisioned for account ${data.integrationAccountId}.`,
+        );
+        return { status: 'disabled' };
+      case 'store.status': {
+        const isOnline = (meta.status ?? '').toUpperCase() === 'ONLINE';
+        await this.repo.setIntegrationAccountStatus(data.integrationAccountId, {
+          isOnline,
+        });
+        return { isOnline };
+      }
+      default:
+        return { handled: false };
+    }
   }
 
   private async handleStatusChange(data: AggregatorWebhookJob) {
@@ -143,10 +207,11 @@ export class AggregatorWebhookProcessor extends WorkerHost {
       .limit(1);
     if (!order) return { updated: false };
 
-    const target: ConeekOrderStatus =
+    const target =
       data.eventType === 'order.canceled'
         ? 'cancelled'
-        : this.targetStatus(data);
+        : await this.targetStatus(data);
+    if (!target) return { updated: false };
 
     const current = order.status as ConeekOrderStatus;
     if (current === target) return { updated: false, status: current };
@@ -165,13 +230,35 @@ export class AggregatorWebhookProcessor extends WorkerHost {
     return { updated: true, status: target };
   }
 
-  private targetStatus(data: AggregatorWebhookJob): ConeekOrderStatus {
-    const normalized = this.registry
+  /**
+   * The Coneeko status an update event implies. Providers that embed the order read it
+   * straight from the payload; notification-only providers (Uber Eats) carry no status at
+   * all, so we re-fetch the order — defaulting to 'new' there would push a confirmed order
+   * back to 'pending' on every `orders.release`. Returns undefined when the status can't
+   * be established, so the caller leaves the order alone.
+   */
+  private async targetStatus(
+    data: AggregatorWebhookJob,
+  ): Promise<ConeekOrderStatus | undefined> {
+    const embedded = this.registry
       .getOrderExtractor(data.provider)
       .orderFromWebhook(data.rawPayload);
-    return this.statusTransition.mapExternalStatus(
-      normalized?.externalStatus ?? 'new',
-    );
+    if (embedded) {
+      return this.statusTransition.mapExternalStatus(embedded.externalStatus);
+    }
+
+    const orderRef = data.resourceHref ?? data.externalOrderId;
+    if (!orderRef) return undefined;
+    const fetched = await this.registry
+      .getOrderProvider(data.provider)
+      .getOrder(data.integrationAccountId, orderRef);
+    if (!fetched) {
+      this.logger.warn(
+        `${data.provider} ${data.eventType} for ${data.externalOrderId} could not be re-fetched; leaving status unchanged.`,
+      );
+      return undefined;
+    }
+    return this.statusTransition.mapExternalStatus(fetched.externalStatus);
   }
 
   private async markCompleted(webhookEventId: string) {

@@ -34,6 +34,11 @@ import { PrintJobsService } from '../printers/print-jobs.service';
 import { AuditService } from '../common/services/audit.service';
 import { EventsGateway } from '../events/events.gateway';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import {
+  MANUAL_ORDER_STATUSES,
+  ORDER_STATUS_TRANSITIONS,
+  type OrderStatus,
+} from '../common/constants/order-status';
 import { OrderPricingService } from './order-pricing.service';
 import { OrderPrintService } from './order-print.service';
 import { OrderPaymentService } from './order-payment.service';
@@ -1560,14 +1565,7 @@ export class OrdersService {
   ) {
     const orgId = await this.billingService.getRequiredOrg(user);
 
-    const validStatuses = [
-      'pending',
-      'preparing',
-      'ready',
-      'completed',
-      'cancelled',
-    ];
-    if (!validStatuses.includes(status)) {
+    if (!MANUAL_ORDER_STATUSES.includes(status as OrderStatus)) {
       throw new BadRequestException(`Invalid order status: ${status}`);
     }
 
@@ -1585,18 +1583,10 @@ export class OrdersService {
       throw new NotFoundException(`Order ${orderId} not found`);
     }
 
-    const currentStatus = orderRes[0].status;
-    const transitionMap: Record<string, string[]> = {
-      pending: ['preparing', 'cancelled'],
-      preparing: ['ready', 'cancelled'],
-      ready: ['completed'],
-      completed: [],
-      cancelled: [],
-    };
+    const currentStatus = orderRes[0].status as OrderStatus;
+    const allowedNextStatuses = ORDER_STATUS_TRANSITIONS[currentStatus] ?? [];
 
-    const allowedNextStatuses = transitionMap[currentStatus] || [];
-
-    if (!allowedNextStatuses.includes(status)) {
+    if (!allowedNextStatuses.includes(status as OrderStatus)) {
       throw new BadRequestException(
         `Cannot transition order status from '${currentStatus}' to '${status}'.`,
       );

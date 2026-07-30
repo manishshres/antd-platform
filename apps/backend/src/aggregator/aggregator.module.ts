@@ -12,7 +12,11 @@ import { KitchenHubAdapter } from './providers/kitchenhub/kitchenhub.adapter';
 import { UberEatsHttpClient } from './providers/ubereats/ubereats-http.client';
 import { UberEatsAdapter } from './providers/ubereats/ubereats.adapter';
 import { MenuSyncService } from './sync/menu-sync.service';
+import { UberEatsOnboardingController } from './onboarding/ubereats-onboarding.controller';
+import { UberEatsOnboardingService } from './onboarding/ubereats-onboarding.service';
 import { AggregatorWebhookController } from './webhooks/aggregator-webhook.controller';
+import { UberEatsWebhookController } from './webhooks/ubereats-webhook.controller';
+import { AggregatorWebhookIngestService } from './webhooks/aggregator-webhook-ingest.service';
 import { AggregatorWebhookProcessor } from './queues/aggregator-webhook.processor';
 
 /**
@@ -23,10 +27,16 @@ import { AggregatorWebhookProcessor } from './queues/aggregator-webhook.processo
  */
 @Module({
   imports: [OrdersModule],
-  controllers: [AggregatorController, AggregatorWebhookController],
+  controllers: [
+    AggregatorController,
+    AggregatorWebhookController,
+    UberEatsWebhookController,
+    UberEatsOnboardingController,
+  ],
   providers: [
     AggregatorService,
     AggregatorRepository,
+    AggregatorWebhookIngestService,
     CredentialEncryptionService,
     OrderStatusTransitionService,
     OrderNormalizationService,
@@ -35,6 +45,7 @@ import { AggregatorWebhookProcessor } from './queues/aggregator-webhook.processo
     KitchenHubAdapter,
     UberEatsHttpClient,
     UberEatsAdapter,
+    UberEatsOnboardingService,
     MenuSyncService,
     AggregatorWebhookProcessor,
   ],

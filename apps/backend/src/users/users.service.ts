@@ -10,7 +10,16 @@ import * as bcrypt from 'bcrypt';
 import { DRIZZLE } from '../database/database.module';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../database/schema';
-import { eq, count, and, isNotNull, isNull, inArray, desc } from 'drizzle-orm';
+import {
+  eq,
+  count,
+  and,
+  isNotNull,
+  isNull,
+  inArray,
+  desc,
+  sql,
+} from 'drizzle-orm';
 import { notDeleted } from '../database/db.utils';
 import { CreateUserDto } from './dto/create-user.dto';
 import { PaginationDto } from '../common/dto/pagination.dto';
@@ -21,6 +30,18 @@ import { UpdateMeDto } from './dto/update-me.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { AuditService } from '../common/services/audit.service';
 
+/** Roles allowed to hold a POS manager PIN. */
+const POS_PIN_ROLES = [
+  'manager',
+  'admin',
+  'sysadmin',
+  'platform_admin',
+] as const;
+
+/** Failed PIN entries before the PIN locks (N3). A 4-digit PIN is only 10k guesses. */
+const POS_PIN_MAX_ATTEMPTS = 5;
+const POS_PIN_LOCKOUT_MINUTES = 15;
+
 @Injectable()
 export class UsersService {
   constructor(
@@ -29,11 +50,23 @@ export class UsersService {
     private readonly auditService: AuditService,
   ) {}
 
+  /** Emails are matched and stored case-insensitively (RFC 5321 local-part
+   * case is technically significant, but no real mail provider enforces
+   * that, and users routinely type their own address inconsistently). */
+  private normalizeEmail(email: string): string {
+    return email.trim().toLowerCase();
+  }
+
   async findOneByEmail(email: string) {
     const results = await this.db
       .select()
       .from(schema.users)
-      .where(notDeleted(schema.users, eq(schema.users.email, email)))
+      .where(
+        notDeleted(
+          schema.users,
+          eq(sql`lower(${schema.users.email})`, this.normalizeEmail(email)),
+        ),
+      )
       .limit(1);
     return results[0] || null;
   }
@@ -60,7 +93,7 @@ export class UsersService {
     const results = await this.db
       .insert(schema.users)
       .values({
-        email,
+        email: this.normalizeEmail(email),
         passwordHash,
         role,
         organizationId,
@@ -152,7 +185,7 @@ export class UsersService {
     const [newUser] = await this.db
       .insert(schema.users)
       .values({
-        email: dto.email,
+        email: this.normalizeEmail(dto.email),
         passwordHash,
         role: dto.role,
         organizationId: dto.organizationId,
@@ -198,7 +231,9 @@ export class UsersService {
         ...(dto.firstName !== undefined ? { firstName: dto.firstName } : {}),
         ...(dto.lastName !== undefined ? { lastName: dto.lastName } : {}),
         ...(dto.role !== undefined ? { role: dto.role } : {}),
-        ...(dto.email !== undefined ? { email: dto.email } : {}),
+        ...(dto.email !== undefined
+          ? { email: this.normalizeEmail(dto.email) }
+          : {}),
         ...(dto.phoneNumber !== undefined
           ? { phoneNumber: dto.phoneNumber }
           : {}),
@@ -326,7 +361,9 @@ export class UsersService {
         ...(dto.firstName !== undefined ? { firstName: dto.firstName } : {}),
         ...(dto.lastName !== undefined ? { lastName: dto.lastName } : {}),
         ...(dto.role !== undefined ? { role: dto.role } : {}),
-        ...(dto.email !== undefined ? { email: dto.email } : {}),
+        ...(dto.email !== undefined
+          ? { email: this.normalizeEmail(dto.email) }
+          : {}),
         ...(dto.phoneNumber !== undefined
           ? { phoneNumber: dto.phoneNumber }
           : {}),
@@ -431,7 +468,9 @@ export class UsersService {
       .set({
         ...(dto.firstName !== undefined ? { firstName: dto.firstName } : {}),
         ...(dto.lastName !== undefined ? { lastName: dto.lastName } : {}),
-        ...(dto.email !== undefined ? { email: dto.email } : {}),
+        ...(dto.email !== undefined
+          ? { email: this.normalizeEmail(dto.email) }
+          : {}),
         ...(dto.phoneNumber !== undefined
           ? { phoneNumber: dto.phoneNumber }
           : {}),
@@ -533,21 +572,79 @@ export class UsersService {
     };
   }
 
+  /**
+   * Set a user's POS PIN.
+   *
+   * PINs must be unique within an organization (N3). `verifyManagerPin` may be called
+   * without a candidate id (a manager approving another employee's action), and in that
+   * mode it resolves the PIN to whichever manager matches first — with duplicate PINs the
+   * audit trail would name the wrong person. Rejecting duplicates at set time is the only
+   * point where that is cheap to enforce.
+   */
   async setPosPin(userId: string, pin: string): Promise<void> {
+    const [target] = await this.db
+      .select({ organizationId: schema.users.organizationId })
+      .from(schema.users)
+      .where(eq(schema.users.id, userId))
+      .limit(1);
+    if (!target) {
+      throw new NotFoundException(`User ${userId} not found`);
+    }
+
+    if (target.organizationId) {
+      const peers = await this.db
+        .select({ id: schema.users.id, posPinHash: schema.users.posPinHash })
+        .from(schema.users)
+        .where(
+          and(
+            eq(schema.users.organizationId, target.organizationId),
+            isNotNull(schema.users.posPinHash),
+            notDeleted(schema.users),
+          ),
+        );
+
+      for (const peer of peers) {
+        if (peer.id === userId || !peer.posPinHash) continue;
+        if (await bcrypt.compare(pin, peer.posPinHash)) {
+          throw new ConflictException(
+            'That PIN is already in use by another employee. Choose a different one.',
+          );
+        }
+      }
+    }
+
     const posPinHash = await bcrypt.hash(pin, 12);
     await this.db
       .update(schema.users)
-      .set({ posPinHash, updatedAt: new Date() })
+      .set({
+        posPinHash,
+        // A fresh PIN clears any standing lockout.
+        posPinFailedAttempts: 0,
+        posPinLockedUntil: null,
+        updatedAt: new Date(),
+      })
       .where(eq(schema.users.id, userId));
   }
 
+  /**
+   * Verify a POS manager PIN (N3).
+   *
+   * Two modes:
+   * - `actingUserId` given — check only that user's PIN. Failures are counted against that
+   *   user and lock the PIN after {@link POS_PIN_MAX_ATTEMPTS} tries.
+   * - omitted — a manager approving another employee's action. Every manager in the org is
+   *   compared, so failures cannot be attributed to one user; the caller-side rate limit
+   *   (`ApiKeyThrottlerGuard` on the PIN routes) is what bounds guessing here. PIN
+   *   uniqueness is enforced in {@link setPosPin} so a match names exactly one manager.
+   *
+   * Every failure is audit-logged. Returns null on any rejection — callers must not
+   * distinguish "no such user" from "wrong PIN" in their response.
+   */
   async verifyManagerPin(
     organizationId: string,
     pin: string,
     actingUserId?: string,
   ): Promise<typeof schema.users.$inferSelect | null> {
-    // When an acting user is specified, validate only that user's PIN.
-    // When omitted (legacy), iterate all managers — caller should migrate to providing actingUserId.
     if (actingUserId) {
       const [user] = await this.db
         .select()
@@ -557,21 +654,40 @@ export class UsersService {
             eq(schema.users.id, actingUserId),
             eq(schema.users.organizationId, organizationId),
             isNotNull(schema.users.posPinHash),
-            inArray(schema.users.role, [
-              'manager',
-              'admin',
-              'sysadmin',
-              'platform_admin',
-            ]),
+            inArray(schema.users.role, [...POS_PIN_ROLES]),
             notDeleted(schema.users),
           ),
         );
-      if (!user?.posPinHash) return null;
-      const isMatch = await bcrypt.compare(pin, user.posPinHash);
-      return isMatch ? user : null;
+      if (!user?.posPinHash) {
+        await this.recordPinFailure(
+          organizationId,
+          actingUserId,
+          'unknown_user',
+        );
+        return null;
+      }
+
+      if (user.posPinLockedUntil && user.posPinLockedUntil > new Date()) {
+        await this.recordPinFailure(organizationId, user.id, 'locked_out');
+        return null;
+      }
+
+      if (await bcrypt.compare(pin, user.posPinHash)) {
+        // Successful entry clears the counter.
+        if (user.posPinFailedAttempts > 0 || user.posPinLockedUntil) {
+          await this.db
+            .update(schema.users)
+            .set({ posPinFailedAttempts: 0, posPinLockedUntil: null })
+            .where(eq(schema.users.id, user.id));
+        }
+        return user;
+      }
+
+      await this.registerFailedPinAttempt(user.id);
+      await this.recordPinFailure(organizationId, user.id, 'wrong_pin');
+      return null;
     }
 
-    // Legacy fallback: iterate all managers (O(n) bcrypt — use actingUserId for new code paths).
     const managers = await this.db
       .select()
       .from(schema.users)
@@ -579,24 +695,63 @@ export class UsersService {
         and(
           eq(schema.users.organizationId, organizationId),
           isNotNull(schema.users.posPinHash),
-          inArray(schema.users.role, [
-            'manager',
-            'admin',
-            'sysadmin',
-            'platform_admin',
-          ]),
+          inArray(schema.users.role, [...POS_PIN_ROLES]),
           notDeleted(schema.users),
         ),
       );
 
+    const now = new Date();
     for (const manager of managers) {
       if (!manager.posPinHash) continue;
-      const isMatch = await bcrypt.compare(pin, manager.posPinHash);
-      if (isMatch) {
+      // A locked-out manager's PIN is inert in this mode too, otherwise the lockout
+      // would be trivially bypassed by dropping candidateEmployeeId from the request.
+      if (manager.posPinLockedUntil && manager.posPinLockedUntil > now)
+        continue;
+      if (await bcrypt.compare(pin, manager.posPinHash)) {
+        if (manager.posPinFailedAttempts > 0) {
+          await this.db
+            .update(schema.users)
+            .set({ posPinFailedAttempts: 0, posPinLockedUntil: null })
+            .where(eq(schema.users.id, manager.id));
+        }
         return manager;
       }
     }
+
+    await this.recordPinFailure(
+      organizationId,
+      undefined,
+      'wrong_pin_org_wide',
+    );
     return null;
+  }
+
+  /** Atomic increment + lockout once the attempt ceiling is reached (mirrors the M3 fix). */
+  private async registerFailedPinAttempt(userId: string): Promise<void> {
+    await this.db
+      .update(schema.users)
+      .set({
+        posPinFailedAttempts: sql`${schema.users.posPinFailedAttempts} + 1`,
+        posPinLockedUntil: sql`CASE WHEN ${schema.users.posPinFailedAttempts} + 1 >= ${POS_PIN_MAX_ATTEMPTS}
+          THEN now() + interval '${sql.raw(String(POS_PIN_LOCKOUT_MINUTES))} minutes'
+          ELSE ${schema.users.posPinLockedUntil} END`,
+      })
+      .where(eq(schema.users.id, userId));
+  }
+
+  private async recordPinFailure(
+    organizationId: string,
+    userId: string | undefined,
+    reason: string,
+  ): Promise<void> {
+    await this.auditService.log({
+      organizationId,
+      userId,
+      action: 'pos.pin.verify_failed',
+      entityType: 'user',
+      entityId: userId ?? 'unknown',
+      newValue: { reason },
+    });
   }
 
   /** The user's currently open shift, if any (clock_out_at is still null). */

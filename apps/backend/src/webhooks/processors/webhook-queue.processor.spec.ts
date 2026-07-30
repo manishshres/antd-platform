@@ -1,6 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { Job } from 'bullmq';
-import { WebhookQueueProcessor } from './webhook-queue.processor';
+import {
+  WebhookQueueProcessor,
+  type WebhookJobData,
+  type WebhookJobResult,
+} from './webhook-queue.processor';
 import { DRIZZLE } from '../../database/database.module';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
@@ -11,7 +15,7 @@ describe('WebhookQueueProcessor', () => {
 
   const updateWhere = jest.fn().mockResolvedValue(undefined);
   const updateSet = jest.fn(() => ({ where: updateWhere }));
-  const mockDb: any = {
+  const mockDb = {
     update: jest.fn(() => ({ set: updateSet })),
   };
 
@@ -29,8 +33,10 @@ describe('WebhookQueueProcessor', () => {
     set: jest.fn().mockResolvedValue(undefined),
   };
 
-  const makeJob = (data: Record<string, unknown>): Job =>
-    ({ data }) as unknown as Job;
+  const makeJob = (
+    data: Partial<WebhookJobData>,
+  ): Job<WebhookJobData, WebhookJobResult, string> =>
+    ({ data }) as unknown as Job<WebhookJobData, WebhookJobResult, string>;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -65,7 +71,8 @@ describe('WebhookQueueProcessor', () => {
       expect(updateSet).toHaveBeenCalledWith(
         expect.objectContaining({
           status: 'completed',
-          processedAt: expect.any(Date),
+          // jest's asymmetric matchers are typed `any`; widen to unknown at the boundary.
+          processedAt: expect.any(Date) as unknown,
         }),
       );
     });

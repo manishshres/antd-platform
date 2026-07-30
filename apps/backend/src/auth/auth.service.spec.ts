@@ -156,7 +156,10 @@ describe('AuthService', () => {
       expect(result).toBeNull();
       expect(mockDb.update).toHaveBeenCalled();
       expect(mockDb.set).toHaveBeenCalledWith(
-        expect.objectContaining({ failedLoginAttempts: expect.anything() }),
+        expect.objectContaining({
+          // jest's asymmetric matchers are typed `any`; widen to unknown at the boundary.
+          failedLoginAttempts: expect.anything() as unknown,
+        }),
       );
     });
   });

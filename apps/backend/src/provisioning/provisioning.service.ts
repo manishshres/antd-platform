@@ -119,30 +119,25 @@ export class ProvisioningService {
   }
 
   async listTelnyxAssistants() {
-    const res: any = await this.telnyxService.getAssistants();
-    if (!res.data) return [];
-    return res.data.map((a: any) => ({
+    const res = await this.telnyxService.getAssistants();
+    return (res.data ?? []).map((a) => ({
       id: a.id,
-      name: a.name || 'Unnamed Agent',
-      dynamicVariables: a.dynamic_variables || {},
+      name: a.name ?? 'Unnamed Agent',
+      dynamicVariables: a.dynamic_variables ?? {},
     }));
   }
 
   async searchAvailableNumbers(country: string, state?: string, city?: string) {
-    const res: any = await this.telnyxService.searchAvailableNumbers(
+    const res = await this.telnyxService.searchAvailableNumbers(
       country || 'US',
       state,
       city,
       10, // return up to 10 numbers
     );
 
-    if (!res.data || res.data.length === 0) {
-      return [];
-    }
-
-    return res.data.map((n: any) => ({
+    return (res.data ?? []).map((n) => ({
       phoneNumber: n.phone_number,
-      formatted: n.national_format || n.phone_number,
+      formatted: n.national_format ?? n.phone_number,
     }));
   }
 

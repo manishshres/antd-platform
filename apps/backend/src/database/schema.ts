@@ -57,6 +57,11 @@ export const locations = pgTable(
     state: varchar('state', { length: 100 }),
     country: varchar('country', { length: 10 }).default('US').notNull(),
     postalCode: varchar('postal_code', { length: 20 }),
+    // ISO 4217 currency for every money column belonging to this location (N8). All amounts
+    // are stored as integer minor units; this says which currency those units are in, which
+    // was previously USD-implicit everywhere. Formatting/rounding for zero-decimal
+    // currencies (JPY, KRW) is not handled yet — see the currency helper before adding one.
+    currency: varchar('currency', { length: 3 }).default('USD').notNull(),
     timezone: varchar('timezone', { length: 100 }).default('America/New_York'),
     businessHours: jsonb('business_hours'),
     aiSettings: jsonb('ai_settings'),
@@ -105,6 +110,8 @@ export const locations = pgTable(
       'locations_status_check',
       sql`${t.status} IN ('draft', 'active', 'suspended', 'archived', 'deprovisioned', 'provisioning')`,
     ),
+    // ISO 4217 is exactly three uppercase letters (N8).
+    check('locations_currency_check', sql`${t.currency} ~ '^[A-Z]{3}$'`),
   ],
 );
 
@@ -199,6 +206,14 @@ export const users = pgTable(
       onDelete: 'set null',
     }),
     posPinHash: varchar('pos_pin_hash', { length: 255 }),
+    // POS PIN brute-force protection (N3). Kept separate from the password
+    // lockout above so a PIN attack can't lock the user out of the dashboard.
+    posPinFailedAttempts: integer('pos_pin_failed_attempts')
+      .default(0)
+      .notNull(),
+    posPinLockedUntil: timestamp('pos_pin_locked_until', {
+      withTimezone: true,
+    }),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true })
       .defaultNow()
@@ -680,7 +695,7 @@ export const orders = pgTable(
     unique('idx_orders_org_client_id').on(t.organizationId, t.clientOrderId),
     check(
       'orders_status_check',
-      sql`${t.status} IN ('pending', 'confirmed', 'preparing', 'ready', 'delivered', 'cancelled', 'refunded')`,
+      sql`${t.status} IN ('pending', 'confirmed', 'preparing', 'ready', 'completed', 'cancelled', 'refunded')`,
     ),
     // Tips are never negative (P4-006). NULL is still allowed (no tip recorded).
     check('orders_tip_amount_check', sql`${t.tipAmount} >= 0`),
@@ -1212,6 +1227,10 @@ export const integrationAccounts = pgTable(
     providerStoreId: varchar('provider_store_id', { length: 255 }),
     status: varchar('status', { length: 30 }).default('waiting').notNull(), // waiting_menu | in_progress | waiting | connected | rejected | disabled
     isOnline: boolean('is_online').default(false).notNull(),
+    // When true (default), inbound marketplace orders are auto-accepted on the provider as
+    // soon as they import. When false, the order lands pending and a cashier accepts/denies
+    // it from the POS/dashboard within the provider's accept window (Uber Eats: 11.5 min).
+    autoAcceptOrders: boolean('auto_accept_orders').default(true).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -1222,6 +1241,63 @@ export const integrationAccounts = pgTable(
   (t) => [
     index('idx_integration_accounts_org').on(t.organizationId),
     index('idx_integration_accounts_provider').on(t.providerId),
+  ],
+);
+
+/**
+ * In-flight merchant OAuth handshakes for marketplace onboarding (Uber Eats
+ * `authorization_code` grant). A row is created when we hand the merchant off to the
+ * provider's login and consumed by the callback, which arrives on the merchant's browser
+ * with no JWT — `state` is the only thing tying that request back to an organization, so
+ * it is random, unique, single-use and short-lived.
+ *
+ * The resulting user access token is short-lived by design here: it exists only to list
+ * the merchant's stores and provision the chosen ones, and is wiped once the session
+ * completes. It is encrypted at rest like every other provider credential.
+ */
+export const integrationOauthSessions = pgTable(
+  'integration_oauth_sessions',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    organizationId: uuid('organization_id')
+      .references(() => organizations.id, { onDelete: 'cascade' })
+      .notNull(),
+    // Who started the handshake, for the audit trail.
+    userId: uuid('user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    providerId: uuid('provider_id')
+      .references(() => providers.id, { onDelete: 'cascade' })
+      .notNull(),
+    // Optional pre-selected location to bind the provisioned store(s) to.
+    locationId: uuid('location_id').references(() => locations.id, {
+      onDelete: 'cascade',
+    }),
+    state: varchar('state', { length: 128 }).notNull().unique(),
+    // pending → authorized → completed; or failed / expired.
+    status: varchar('status', { length: 20 }).default('pending').notNull(),
+    // Encrypted merchant user access token (null before the callback, wiped after use).
+    accessToken: jsonb('access_token'),
+    accessTokenExpiresAt: timestamp('access_token_expires_at', {
+      withTimezone: true,
+    }),
+    // The store list read back from the provider, for the merchant to choose from.
+    discoveredStores: jsonb('discovered_stores'),
+    error: varchar('error', { length: 1000 }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    index('idx_integration_oauth_sessions_org').on(t.organizationId),
+    check(
+      'integration_oauth_sessions_status_check',
+      sql`${t.status} IN ('pending', 'authorized', 'completed', 'failed', 'expired')`,
+    ),
   ],
 );
 

@@ -14,7 +14,15 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
 
-interface WebhookJobData {
+/** What the processor hands back to BullMQ: either the created order, or a skip notice. */
+export interface WebhookJobResult {
+  orderId?: string;
+  status?: string;
+  totalAmount?: number;
+  message?: string;
+}
+
+export interface WebhookJobData {
   orgId: string;
   idempotencyKey?: string;
   customerName: string;
@@ -42,7 +50,9 @@ export class WebhookQueueProcessor extends WorkerHost {
     super();
   }
 
-  async process(job: Job<WebhookJobData, any, string>): Promise<any> {
+  async process(
+    job: Job<WebhookJobData, WebhookJobResult, string>,
+  ): Promise<WebhookJobResult> {
     const {
       orgId,
       customerName,

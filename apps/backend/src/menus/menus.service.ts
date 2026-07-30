@@ -25,6 +25,40 @@ import { notDeleted } from '../database/db.utils';
 import { TelnyxService } from '../telnyx/telnyx.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 
+/**
+ * The nested menu tree `getMenuByOrg` assembles (categories → items → modifiers → options).
+ * It is built from several joined queries rather than one Drizzle relation, so its shape is
+ * declared here instead of inferred — previously it was read back as `any[]`, which is where
+ * a large share of this file's `no-unsafe-*` errors came from (N9).
+ */
+interface MenuTreeOption {
+  id: string;
+  name: string;
+  priceAdjustment: number | null;
+}
+
+interface MenuTreeModifier {
+  name: string;
+  isRequired: boolean | null;
+  options?: MenuTreeOption[];
+}
+
+interface MenuTreeItem {
+  id: string;
+  name: string;
+  description: string | null;
+  price: number;
+  isAvailable: boolean | null;
+  modifiers?: MenuTreeModifier[];
+}
+
+interface MenuTreeCategory {
+  id: string;
+  name: string;
+  description: string | null;
+  items?: MenuTreeItem[];
+}
+
 @Injectable()
 export class MenusService {
   private readonly logger = new Logger(MenusService.name);
@@ -1197,20 +1231,20 @@ export class MenusService {
       organizationId: orgId,
       locationId: loc.id,
       lastUpdated: new Date().toISOString(),
-      categories: (menuData.data as any[]).map((cat) => ({
+      categories: (menuData.data as MenuTreeCategory[]).map((cat) => ({
         id: cat.id,
         name: cat.name,
         description: cat.description,
-        items: cat.items.map((item: any) => ({
+        items: (cat.items ?? []).map((item) => ({
           id: item.id,
           name: item.name,
           description: item.description,
           price: item.price,
           available: item.isAvailable !== false,
-          modifiers: item.modifiers?.map((mod: any) => ({
+          modifiers: item.modifiers?.map((mod) => ({
             name: mod.name,
             required: mod.isRequired,
-            options: mod.options.map((opt: any) => ({
+            options: (mod.options ?? []).map((opt) => ({
               id: opt.id,
               name: opt.name,
               priceAdjustment: opt.priceAdjustment,
@@ -1243,8 +1277,7 @@ export class MenusService {
     );
 
     // Trigger the Telnyx embedding process for this location's bucket only.
-    const embedRes: any =
-      await this.telnyxService.embedKnowledgeDocuments(bucket);
+    const embedRes = await this.telnyxService.embedKnowledgeDocuments(bucket);
 
     // Telnyx may echo the bucket id under a few shapes; fall back to the bucket name (which is what
     // the retrieval tool keys on).

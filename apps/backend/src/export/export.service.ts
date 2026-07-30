@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Parser } from 'json2csv';
+// `json2csv` was abandoned on a 6.0.0-alpha tag; `@json2csv/plainjs` is the maintained
+// successor and ships its own types (no more @types/json2csv). Same Parser API.
+import { Parser } from '@json2csv/plainjs';
 import * as ExcelJS from 'exceljs';
 
 @Injectable()

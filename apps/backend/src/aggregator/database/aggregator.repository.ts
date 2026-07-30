@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, gt, inArray } from 'drizzle-orm';
 import { DRIZZLE } from '../../database/database.module';
 import * as schema from '../../database/schema';
 
@@ -17,6 +17,10 @@ export interface ExternalOrderInsert {
 
 type ExternalOrderRow = typeof schema.externalOrders.$inferSelect;
 type IntegrationAccountRow = typeof schema.integrationAccounts.$inferSelect;
+type IntegrationAccountWithProviderRow = IntegrationAccountRow & {
+  providerName: string;
+};
+type OauthSessionRow = typeof schema.integrationOauthSessions.$inferSelect;
 
 /**
  * Org-scoped Drizzle data access for the aggregator. All marketplace persistence
@@ -94,11 +98,45 @@ export class AggregatorRepository {
 
   async listIntegrationAccounts(
     organizationId: string,
-  ): Promise<IntegrationAccountRow[]> {
-    return this.db
+  ): Promise<IntegrationAccountWithProviderRow[]> {
+    const rows = await this.db
+      .select({
+        account: schema.integrationAccounts,
+        providerName: schema.providers.name,
+      })
+      .from(schema.integrationAccounts)
+      .innerJoin(
+        schema.providers,
+        eq(schema.integrationAccounts.providerId, schema.providers.id),
+      )
+      .where(eq(schema.integrationAccounts.organizationId, organizationId));
+    return rows.map((row) => ({
+      ...row.account,
+      providerName: row.providerName,
+    }));
+  }
+
+  /**
+   * Resolve an account by its provider-side store id. Uber Eats sends every store's
+   * events to one Primary Webhook URL, so this (store id from the webhook body) is the
+   * only way to map an inbound event to a tenant. Scoped by provider so the same store
+   * id under a different marketplace can't collide.
+   */
+  async findIntegrationAccountByProviderStoreId(
+    providerId: string,
+    providerStoreId: string,
+  ): Promise<IntegrationAccountRow | null> {
+    const [row] = await this.db
       .select()
       .from(schema.integrationAccounts)
-      .where(eq(schema.integrationAccounts.organizationId, organizationId));
+      .where(
+        and(
+          eq(schema.integrationAccounts.providerId, providerId),
+          eq(schema.integrationAccounts.providerStoreId, providerStoreId),
+        ),
+      )
+      .limit(1);
+    return row ?? null;
   }
 
   async createIntegrationAccount(values: {
@@ -107,12 +145,105 @@ export class AggregatorRepository {
     providerId: string;
     credentials: unknown;
     providerStoreId: string | null;
+    autoAcceptOrders?: boolean;
   }): Promise<IntegrationAccountRow> {
     const [row] = await this.db
       .insert(schema.integrationAccounts)
       .values(values)
       .returning();
     return row;
+  }
+
+  /** Update the lifecycle status / online flag of an account (store.provisioned etc.). */
+  async setIntegrationAccountStatus(
+    id: string,
+    values: {
+      status?: string;
+      isOnline?: boolean;
+      autoAcceptOrders?: boolean;
+      providerStoreId?: string;
+      credentials?: unknown;
+    },
+  ): Promise<IntegrationAccountRow | null> {
+    const [row] = await this.db
+      .update(schema.integrationAccounts)
+      .set({ ...values, updatedAt: new Date() })
+      .where(eq(schema.integrationAccounts.id, id))
+      .returning();
+    return row ?? null;
+  }
+
+  /** Disconnect a marketplace: removes the account (and its encrypted credentials). */
+  async deleteIntegrationAccount(id: string): Promise<void> {
+    await this.db
+      .delete(schema.integrationAccounts)
+      .where(eq(schema.integrationAccounts.id, id));
+  }
+
+  // ── Merchant OAuth onboarding sessions ───────────────────────────────────────
+
+  async createOauthSession(values: {
+    organizationId: string;
+    userId: string | null;
+    providerId: string;
+    locationId: string | null;
+    state: string;
+    expiresAt: Date;
+  }): Promise<OauthSessionRow> {
+    const [row] = await this.db
+      .insert(schema.integrationOauthSessions)
+      .values(values)
+      .returning();
+    return row;
+  }
+
+  /**
+   * Claim a pending session by its `state` — the callback's only credential. The status
+   * flip is part of the WHERE clause, so two concurrent callbacks with the same state
+   * can't both succeed: the loser matches no row and gets null (replay protection).
+   */
+  async claimOauthSessionByState(
+    state: string,
+  ): Promise<OauthSessionRow | null> {
+    const [row] = await this.db
+      .update(schema.integrationOauthSessions)
+      .set({ status: 'authorized', updatedAt: new Date() })
+      .where(
+        and(
+          eq(schema.integrationOauthSessions.state, state),
+          eq(schema.integrationOauthSessions.status, 'pending'),
+          gt(schema.integrationOauthSessions.expiresAt, new Date()),
+        ),
+      )
+      .returning();
+    return row ?? null;
+  }
+
+  async findOauthSessionById(id: string): Promise<OauthSessionRow | null> {
+    const [row] = await this.db
+      .select()
+      .from(schema.integrationOauthSessions)
+      .where(eq(schema.integrationOauthSessions.id, id))
+      .limit(1);
+    return row ?? null;
+  }
+
+  async updateOauthSession(
+    id: string,
+    values: {
+      status?: string;
+      accessToken?: unknown;
+      accessTokenExpiresAt?: Date | null;
+      discoveredStores?: unknown;
+      error?: string | null;
+    },
+  ): Promise<OauthSessionRow | null> {
+    const [row] = await this.db
+      .update(schema.integrationOauthSessions)
+      .set({ ...values, updatedAt: new Date() })
+      .where(eq(schema.integrationOauthSessions.id, id))
+      .returning();
+    return row ?? null;
   }
 
   // ── Order sources ────────────────────────────────────────────────────────────

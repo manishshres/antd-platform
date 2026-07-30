@@ -19,6 +19,7 @@ import {
 import { SkipThrottle } from '@nestjs/throttler';
 import { Public } from '../common/decorators/public.decorator';
 import { ApiKeyAuthGuard } from './guards/api-key-auth.guard';
+import { PinThrottle } from './decorators/pin-throttle.decorator';
 import { UsersService } from '../users/users.service';
 import {
   AuthEmployeeByPinDto,
@@ -38,6 +39,7 @@ export class PublicEmployeesController {
 
   @Post('auth/pin')
   @HttpCode(HttpStatus.OK)
+  @PinThrottle()
   @ApiOperation({
     summary:
       'Sign an employee onto the POS by email + 4-digit PIN. Returns the employee profile; rejects if PIN missing/wrong.',
@@ -66,6 +68,7 @@ export class PublicEmployeesController {
 
   @Post('verify-manager-pin')
   @HttpCode(HttpStatus.OK)
+  @PinThrottle()
   @ApiOperation({
     summary:
       'Verify a manager PIN. If candidateEmployeeId is provided the manager must be that user; otherwise any manager in the org is accepted.',
