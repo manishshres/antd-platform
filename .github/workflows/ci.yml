@@ -40,13 +40,11 @@ jobs:
         run: npx tsc --noEmit
         working-directory: apps/frontend
 
-  lint:
-    name: Lint (informational)
+  lint-backend:
+    name: Lint (backend, gating)
     runs-on: ubuntu-latest
-    # Non-blocking for now: the repo carries pre-existing lint debt. Remove
-    # continue-on-error once `npm run lint` is green in both workspaces so lint
-    # becomes a hard gate.
-    continue-on-error: true
+    # The backend is lint-clean (N9: 193 errors -> 0), so this is a hard gate now.
+    # Keep it that way: `npm run lint --workspace apps/backend` must stay at 0 errors.
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -56,5 +54,19 @@ jobs:
       - run: npm ci
       - name: Backend lint
         run: npm run lint --workspace apps/backend
+
+  lint-frontend:
+    name: Lint (frontend, informational)
+    runs-on: ubuntu-latest
+    # Still non-blocking: the frontend carries its own lint debt and had not been
+    # verified when the backend was cleaned. Drop continue-on-error once it is green.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
       - name: Frontend lint
         run: npm run lint --workspace apps/frontend
