@@ -1,29 +1,20 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
+import {
+  canTransitionOrderStatus,
+  type OrderStatus,
+} from '../../../common/constants/order-status';
 
 /**
  * Coneeko's internal order statuses.
  * Marketplace statuses (DoorDash: NEW → ACCEPTED → PICKED_UP → DELIVERED)
  * live on external_orders.external_status and are mapped here during import.
+ *
+ * The status set and the transition table are shared with the rest of the platform
+ * (`common/constants/order-status.ts`) — this module used to keep its own copy that
+ * called the terminal status `delivered` while `orders.service.ts` called it
+ * `completed` (N1). Marketplace "delivered"/"picked_up" map onto `completed`.
  */
-export type ConeekOrderStatus =
-  | 'pending'
-  | 'confirmed'
-  | 'preparing'
-  | 'ready'
-  | 'delivered'
-  | 'cancelled'
-  | 'refunded';
-
-/** Allowed Coneeko status transitions. Anything not listed here is illegal. */
-const ALLOWED_TRANSITIONS: Record<ConeekOrderStatus, ConeekOrderStatus[]> = {
-  pending: ['confirmed', 'cancelled'],
-  confirmed: ['preparing', 'cancelled', 'refunded'],
-  preparing: ['ready', 'cancelled'],
-  ready: ['delivered', 'cancelled'],
-  delivered: ['refunded'],
-  cancelled: [], // terminal
-  refunded: [], // terminal
-};
+export type ConeekOrderStatus = OrderStatus;
 
 @Injectable()
 export class OrderStatusTransitionService {
@@ -31,7 +22,7 @@ export class OrderStatusTransitionService {
    * Returns true if the transition is allowed.
    */
   canTransition(from: ConeekOrderStatus, to: ConeekOrderStatus): boolean {
-    return ALLOWED_TRANSITIONS[from]?.includes(to) ?? false;
+    return canTransitionOrderStatus(from, to);
   }
 
   /**
@@ -59,13 +50,17 @@ export class OrderStatusTransitionService {
       confirmed: 'confirmed',
       preparing: 'preparing',
       ready: 'ready',
-      completed: 'delivered',
+      completed: 'completed',
       canceled: 'cancelled',
       cancelled: 'cancelled',
       refunded: 'refunded',
-      // DoorDash-style
-      picked_up: 'delivered',
-      delivered: 'delivered',
+      // DoorDash-style — a delivered/picked-up marketplace order is a completed order here.
+      picked_up: 'completed',
+      delivered: 'completed',
+      // Uber Eats `current_state`: CREATED | ACCEPTED | DENIED | FINISHED | CANCELED.
+      created: 'pending',
+      denied: 'cancelled',
+      finished: 'completed',
     };
     return mapping[normalized] ?? 'pending';
   }
