@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { UnauthorizedException } from '@nestjs/common';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { PublicEmployeesController } from './public-employees.controller';
 import { UsersService } from '../users/users.service';
 import { DRIZZLE } from '../database/database.module';
@@ -30,6 +31,9 @@ describe('PublicEmployeesController', () => {
     };
 
     const mod: TestingModule = await Test.createTestingModule({
+      // The PIN routes carry @PinThrottle(), which binds ApiKeyThrottlerGuard and so
+      // needs the throttler's module options present even in a unit test.
+      imports: [ThrottlerModule.forRoot([{ ttl: 60_000, limit: 10 }])],
       controllers: [PublicEmployeesController],
       providers: [
         { provide: UsersService, useValue: usersService },
