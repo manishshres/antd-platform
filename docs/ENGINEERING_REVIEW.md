@@ -156,7 +156,7 @@ This is the single highest-leverage infra task: remote + CI gate (`lint`, `build
 | Reporting & analytics | ✅ Dashboard KPIs, usage, margin; ❌ sales/EOD/inventory reports |
 | Multi-location | ✅ Shipped (core architectural strength) |
 | Franchise support (rollups, royalties) | ❌ Not started (org→location gets you 80% of the model) |
-| Delivery integrations (DoorDash/UberEats/Grubhub) | ❌ Not started (inbound webhook infra + idempotency table are reusable) |
+| Delivery integrations (DoorDash/UberEats/Grubhub) | 🔄 Aggregator layer shipped; **Uber Eats** order flow + menu push complete (single-URL HMAC webhook, store lifecycle, auto-accept toggle); KitchenHub adapter present; DoorDash/Grubhub stubbed. Remaining: Uber production OAuth onboarding + dashboard UI |
 | Driver API | ❌ Not started |
 | Mobile APIs | ⚠️ The REST API is mobile-consumable; no purpose-built customer/driver surfaces |
 | API keys / public API / outbound webhooks / audit logs | ✅ Shipped |
