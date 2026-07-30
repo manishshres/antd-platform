@@ -7,6 +7,7 @@ import { PublicLocationsController } from './public-locations.controller';
 import { PublicDiscountsController } from './public-discounts.controller';
 import { PublicEmployeesController } from './public-employees.controller';
 import { PublicCallsController } from './public-calls.controller';
+import { PublicAggregatorController } from './public-aggregator.controller';
 import { MenusModule } from '../menus/menus.module';
 import { OrdersModule } from '../orders/orders.module';
 import { CustomersModule } from '../customers/customers.module';
@@ -15,6 +16,7 @@ import { LocationsModule } from '../locations/locations.module';
 import { DiscountsModule } from '../discounts/discounts.module';
 import { UsersModule } from '../users/users.module';
 import { CallsModule } from '../calls/calls.module';
+import { AggregatorModule } from '../aggregator/aggregator.module';
 
 @Module({
   imports: [
@@ -26,6 +28,7 @@ import { CallsModule } from '../calls/calls.module';
     DiscountsModule,
     UsersModule,
     CallsModule,
+    AggregatorModule,
   ],
   controllers: [
     PublicMenusController,
@@ -36,6 +39,7 @@ import { CallsModule } from '../calls/calls.module';
     PublicDiscountsController,
     PublicEmployeesController,
     PublicCallsController,
+    PublicAggregatorController,
   ],
 })
 export class PublicApiModule {}
