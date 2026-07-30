@@ -3,6 +3,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsObject,
+  IsISO4217CurrencyCode,
   MaxLength,
   IsInt,
   Min,
@@ -68,6 +69,16 @@ export class CreateLocationDto {
   @Min(0)
   @Max(10000)
   taxRateBps?: number;
+
+  @ApiPropertyOptional({
+    example: 'USD',
+    default: 'USD',
+    description:
+      'ISO 4217 currency for this location. All money is stored as integer minor units; this records which currency those units are in (N8). Zero-decimal currencies (JPY, KRW) are not formatted correctly yet.',
+  })
+  @IsOptional()
+  @IsISO4217CurrencyCode()
+  currency?: string;
 
   @ApiPropertyOptional({
     example: 1800,

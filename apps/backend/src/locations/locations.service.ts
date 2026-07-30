@@ -5,7 +5,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 import { DRIZZLE } from '../database/database.module';
 import * as schema from '../database/schema';
 import { TelnyxService } from '../telnyx/telnyx.service';
@@ -193,7 +193,9 @@ export class LocationsService {
     const [existingUser] = await this.db
       .select()
       .from(schema.users)
-      .where(eq(schema.users.email, dto.email))
+      .where(
+        eq(sql`lower(${schema.users.email})`, dto.email.trim().toLowerCase()),
+      )
       .limit(1);
 
     if (existingUser) {
