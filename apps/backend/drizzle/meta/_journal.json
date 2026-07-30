@@ -187,33 +187,40 @@
     {
       "idx": 26,
       "version": "7",
+      "when": 1784900000000,
+      "tag": "0026_add_category_to_modifiers",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
       "when": 1785000000000,
       "tag": "0027_order_status_completed",
       "breakpoints": true
     },
     {
-      "idx": 27,
+      "idx": 28,
       "version": "7",
       "when": 1785000100000,
       "tag": "0028_pos_pin_lockout",
       "breakpoints": true
     },
     {
-      "idx": 28,
+      "idx": 29,
       "version": "7",
       "when": 1785000200000,
       "tag": "0029_location_currency",
       "breakpoints": true
     },
     {
-      "idx": 29,
+      "idx": 30,
       "version": "7",
       "when": 1785000300000,
       "tag": "0030_integration_auto_accept",
       "breakpoints": true
     },
     {
-      "idx": 30,
+      "idx": 31,
       "version": "7",
       "when": 1785000400000,
       "tag": "0031_integration_oauth_sessions",

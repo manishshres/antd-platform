@@ -134,6 +134,16 @@ Use `@Public()` to bypass `JwtAuthGuard` checks for public paths. Expose current
 1. **ALL** table definitions go in `src/database/schema.ts`. Never create tables elsewhere.
 2. **Never** write raw SQL strings. Use Drizzle query builders.
 3. **Always** apply changes locally via `npx drizzle-kit push` or generate migrations with `npx drizzle-kit generate` + `npx drizzle-kit migrate`.
+   - `drizzle-orm` and `pg` are also declared in the **root** `package.json` devDependencies.
+     That is deliberate, not a stray duplicate: npm hoists `drizzle-kit` to the root, and
+     drizzle-kit resolves `drizzle-orm/version` relative to its own location, so without a
+     root-level copy every command dies with the misleading *"Please install latest version
+     of drizzle-orm"*. `pg` has to come along because `drizzle-orm/node-postgres` requires
+     it as a peer from wherever drizzle-orm ends up. Keep all four version ranges in step
+     with `apps/backend/package.json`, and don't delete them.
+   - Journal `idx` must equal the numeric prefix of the migration's `tag`, and every `.sql`
+     file needs an entry in `drizzle/meta/_journal.json` — a file with no entry is silently
+     never applied by `migrate`, and it shifts every later tag out of alignment.
 4. **Soft deletes**: Add `deletedAt` timestamp column to schemas requiring soft deletes. Filter using `isNull(table.deletedAt)`.
 5. **No JS Filtering**: Use `inArray` to query items inside categories. Never pull all rows and filter using `Array.prototype.filter` in JS memory.
 
