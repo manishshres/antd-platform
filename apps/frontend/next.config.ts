@@ -23,10 +23,14 @@ const nextConfig: NextConfig = {
       process.env.BACKEND_INTERNAL_URL ||
       process.env.NEXT_PUBLIC_API_URL ||
       'http://localhost:4000';
+    // Proxy every /api/* path, not just /api/v1 — the backend also serves
+    // /api/v2 (POS public API) and the Telnyx/aggregator webhook routes, and
+    // those must be reachable on the same public origin as the UI. The frontend
+    // defines no route handlers of its own, so nothing is shadowed here.
     return [
       {
-        source: '/api/v1/:path*',
-        destination: `${apiUrl}/api/v1/:path*`,
+        source: '/api/:path*',
+        destination: `${apiUrl}/api/:path*`,
       },
     ];
   },

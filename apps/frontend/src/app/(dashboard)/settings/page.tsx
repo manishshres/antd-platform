@@ -28,6 +28,7 @@ import { api } from "@/lib/api";
 import { getAccessToken } from "@/lib/token-store";
 import PageHeader from "@/components/PageHeader";
 import DiscountsSettings from "@/components/DiscountsSettings";
+import MarketplaceIntegrations from "@/components/MarketplaceIntegrations";
 import { useLocation, Location } from "@/contexts/LocationContext";
 import dayjs from "dayjs";
 
@@ -483,6 +484,11 @@ export default function SettingsHubPage() {
       key: "discounts",
       label: <span><TagOutlined /> Discounts</span>,
       children: <DiscountsSettings />,
+    },
+    {
+      key: "marketplace-integrations",
+      label: <span><ApiOutlined /> Marketplace Integrations</span>,
+      children: <MarketplaceIntegrations />,
     },
     {
       key: "menu-link",
