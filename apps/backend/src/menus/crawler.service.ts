@@ -25,9 +25,10 @@ export class CrawlerService {
     }
 
     try {
+      // Firecrawl's SDK types the scrape result as a broad union; we only read `markdown`.
       const response = (await this.firecrawl.scrapeUrl(url, {
         formats: ['markdown'],
-      })) as any;
+      })) as { markdown?: string };
 
       const markdown = response.markdown;
 

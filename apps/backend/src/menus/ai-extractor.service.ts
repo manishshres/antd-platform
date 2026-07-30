@@ -28,6 +28,19 @@ export interface ExtractedMenu {
   categories: ExtractedCategory[];
 }
 
+/**
+ * Minimal shape of an OpenAI-compatible chat-completions response (DeepSeek speaks the same
+ * protocol). Only the fields this service reads are modelled — the provider is external and
+ * may add fields at any time (N9).
+ */
+interface ChatCompletionResponse {
+  choices?: {
+    message?: {
+      content?: string;
+    };
+  }[];
+}
+
 @Injectable()
 export class AiExtractorService {
   private readonly logger = new Logger(AiExtractorService.name);
@@ -126,7 +139,8 @@ Ensure your response is valid JSON.
         );
       }
 
-      const data = await response.json();
+      // OpenAI-compatible chat-completions envelope; we only read the first choice.
+      const data = (await response.json()) as ChatCompletionResponse;
       const rawJson = data.choices?.[0]?.message?.content;
 
       if (!rawJson) {

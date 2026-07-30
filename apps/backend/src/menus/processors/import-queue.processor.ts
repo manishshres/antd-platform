@@ -9,7 +9,13 @@ import { DRIZZLE } from '../../database/database.module';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../../database/schema';
 import { eq, inArray } from 'drizzle-orm';
-const pdfParse = require('pdf-parse');
+// `pdf-parse` is CommonJS with no bundled types; declare the one call we make rather than
+// pulling it in via `require`, which defeats type-checking entirely (N9).
+import pdfParseImport from 'pdf-parse';
+
+const pdfParse = pdfParseImport as unknown as (
+  data: Buffer,
+) => Promise<{ text: string }>;
 
 interface ImportJobData {
   orgId: string;
