@@ -58,6 +58,16 @@ export class CreateIntegrationAccountDto {
  */
 export class UpdateIntegrationAccountDto {
   @ApiPropertyOptional({
+    description:
+      'The Coneeko location this store maps to. Inbound marketplace orders inherit it, ' +
+      'so without it an imported order has no location for kitchen print routing or ' +
+      'location-scoped reporting.',
+  })
+  @IsOptional()
+  @IsUUID()
+  locationId?: string;
+
+  @ApiPropertyOptional({
     description: 'Flip auto-accept of inbound marketplace orders.',
   })
   @IsOptional()

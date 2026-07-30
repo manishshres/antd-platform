@@ -21,6 +21,7 @@ import {
   EditOutlined,
   LinkOutlined,
   SyncOutlined,
+  CloudSyncOutlined,
 } from "@ant-design/icons";
 import { api } from "@/lib/api";
 
@@ -31,6 +32,7 @@ interface IntegrationAccount {
   providerId: string;
   providerName: string;
   providerStoreId: string | null;
+  locationId: string | null;
   status: string; // waiting_menu | in_progress | waiting | connected | rejected | disabled
   isOnline: boolean;
   autoAcceptOrders: boolean;
@@ -50,8 +52,14 @@ const PROVIDERS: ProviderOption[] = [
   { label: "Grubhub", value: "grubhub", live: false },
 ];
 
+interface LocationOption {
+  id: string;
+  name: string;
+}
+
 interface ConnectFormValues {
   providerName: string;
+  locationId: string;
   providerStoreId: string;
   clientId: string;
   clientSecret: string;
@@ -77,6 +85,8 @@ export default function MarketplaceIntegrations() {
   const [submitting, setSubmitting] = useState(false);
   const [syncingId, setSyncingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [activatingId, setActivatingId] = useState<string | null>(null);
+  const [locations, setLocations] = useState<LocationOption[]>([]);
 
   const load = useCallback(async () => {
     try {
@@ -91,9 +101,20 @@ export default function MarketplaceIntegrations() {
     }
   }, [message]);
 
+  const loadLocations = useCallback(async () => {
+    try {
+      const { data } = await api.get<LocationOption[]>("/locations");
+      setLocations(data ?? []);
+    } catch {
+      // Non-fatal: the form still renders, it just can't offer a location to pick.
+      message.error("Failed to load locations.");
+    }
+  }, [message]);
+
   useEffect(() => {
     load();
-  }, [load]);
+    loadLocations();
+  }, [load, loadLocations]);
 
   const openConnectModal = () => {
     setEditingAccount(null);
@@ -105,6 +126,7 @@ export default function MarketplaceIntegrations() {
     setEditingAccount(account);
     form.setFieldsValue({
       providerName: account.providerName,
+      locationId: account.locationId ?? undefined,
       providerStoreId: account.providerStoreId ?? "",
       clientId: "",
       clientSecret: "",
@@ -132,6 +154,7 @@ export default function MarketplaceIntegrations() {
         await api.patch(
           `/aggregator/integration-accounts/${editingAccount.id}`,
           {
+            locationId: values.locationId,
             providerStoreId: values.providerStoreId.trim(),
             autoAcceptOrders: values.autoAcceptOrders ?? true,
             ...(clientId && clientSecret
@@ -149,6 +172,7 @@ export default function MarketplaceIntegrations() {
       } else {
         await api.post("/aggregator/integration-accounts", {
           providerName: values.providerName,
+          locationId: values.locationId,
           providerStoreId: values.providerStoreId.trim(),
           autoAcceptOrders: values.autoAcceptOrders ?? true,
           credentials: {
@@ -226,6 +250,34 @@ export default function MarketplaceIntegrations() {
     }
   };
 
+  /**
+   * Ask Uber what it actually has configured and write the answer back to the account.
+   * Status/online are otherwise only ever set by inbound webhooks, so an account added
+   * after the store was provisioned sits at "waiting" forever with nothing to nudge it.
+   */
+  const activateUber = async (account: IntegrationAccount) => {
+    setActivatingId(account.id);
+    try {
+      const { data } = await api.post<{
+        integration_enabled?: boolean;
+        online_status?: string;
+      }>(`/aggregator/integration-accounts/${account.id}/ubereats/enable`);
+      message.success(
+        data?.integration_enabled
+          ? "Uber Eats integration is enabled — order webhooks are on."
+          : "Uber accepted the config, but reports the integration as not enabled yet.",
+      );
+      await load();
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { message?: string } } })?.response?.data
+          ?.message ?? "Could not reach Uber Eats.";
+      message.error(msg);
+    } finally {
+      setActivatingId(null);
+    }
+  };
+
   const providerLabel = (providerName: string) =>
     PROVIDERS.find((p) => p.value === providerName)?.label ?? providerName;
 
@@ -272,6 +324,16 @@ export default function MarketplaceIntegrations() {
       align: "right",
       render: (_, r) => (
         <Space>
+          {r.providerName === "ubereats" && (
+            <Button
+              size="small"
+              icon={<CloudSyncOutlined />}
+              onClick={() => activateUber(r)}
+              loading={activatingId === r.id}
+            >
+              {r.status === "connected" ? "Re-check" : "Activate"}
+            </Button>
+          )}
           <Button
             size="small"
             icon={<SyncOutlined spin={syncingId === r.id} />}
@@ -375,6 +437,18 @@ export default function MarketplaceIntegrations() {
                 value: p.value,
                 disabled: !p.live,
               }))}
+            />
+          </Form.Item>
+          <Form.Item
+            name="locationId"
+            label="Location"
+            extra="Orders from this store are filed against this location — it drives kitchen print routing and location reporting."
+            rules={[{ required: true, message: "Pick the location this store maps to." }]}
+          >
+            <Select
+              placeholder="Select a location"
+              loading={locations.length === 0}
+              options={locations.map((l) => ({ label: l.name, value: l.id }))}
             />
           </Form.Item>
           <Form.Item
