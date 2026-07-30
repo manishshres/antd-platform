@@ -1,4 +1,4 @@
-import { Injectable, Inject, NotFoundException } from '@nestjs/common';
+import { Injectable, Inject, Logger, NotFoundException } from '@nestjs/common';
 import { CurrentUserPayload } from '../common/decorators/current-user.decorator';
 import { DRIZZLE } from '../database/database.module';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
@@ -17,8 +17,15 @@ export interface ChatMessage {
   sentAt: string | Date;
 }
 
+/** Telnyx `metadata` is free-form JSON; read a field only when it really is a string. */
+function asString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
 @Injectable()
 export class ConversationsService {
+  private readonly logger = new Logger(ConversationsService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: NodePgDatabase<typeof schema>,
     private readonly billingService: BillingService,
@@ -141,32 +148,32 @@ export class ConversationsService {
 
     do {
       // 1. Fetch AI conversations for this assistant from Telnyx (server-side filtered using PostgREST syntax)
-      const res: any = await this.telnyxService.getConversations(
+      const res = await this.telnyxService.getConversations(
         telnyxAssistantId,
         pageNumber,
       );
-      const matchingConversations = res?.data || [];
-      totalPages = res?.meta?.total_pages || 1;
+      const matchingConversations = res?.data ?? [];
+      totalPages = res?.meta?.total_pages ?? 1;
 
       // For each matching conversation, fetch messages and upsert
       for (const conv of matchingConversations) {
         const callSessionId = conv.id; // Using Telnyx conversation ID as callSessionId
 
         // Fetch messages for this conversation
-        const msgRes: any = await this.telnyxService.getConversationMessages(
+        const msgRes = await this.telnyxService.getConversationMessages(
           conv.id,
         );
-        const telnyxMessages = msgRes?.data || [];
+        const telnyxMessages = msgRes?.data ?? [];
 
         // Map to our local ChatMessage type, sorting by sentAt to ensure chronological order
         const messages: ChatMessage[] = telnyxMessages
-          .map((m: any) => ({
-            role: m.role,
-            text: m.text,
-            sentAt: m.sent_at || m.created_at,
+          .map((m) => ({
+            role: m.role ?? 'assistant',
+            text: m.text ?? '',
+            sentAt: m.sent_at ?? m.created_at ?? new Date().toISOString(),
           }))
           .sort(
-            (a: ChatMessage, b: ChatMessage) =>
+            (a, b) =>
               new Date(a.sentAt).getTime() - new Date(b.sentAt).getTime(),
           );
 
@@ -237,8 +244,8 @@ export class ConversationsService {
             organizationId,
             locationId,
             callSessionId,
-            fromNumber: conv.metadata?.from || null,
-            toNumber: conv.metadata?.to || null,
+            fromNumber: asString(conv.metadata?.from) ?? null,
+            toNumber: asString(conv.metadata?.to) ?? null,
             transcript: transcriptStr,
             durationMs: Math.max(0, endMs - startMs),
             status: 'completed',
@@ -248,26 +255,33 @@ export class ConversationsService {
 
         // Try to fetch recording from Telnyx and enqueue import job
         try {
-          const telnyxSessionId = conv.metadata?.call_session_id;
+          // `metadata` is free-form on Telnyx's side, so narrow before use.
+          const telnyxSessionId = asString(conv.metadata?.call_session_id);
           if (telnyxSessionId) {
-            const recsRes: any =
+            const recsRes =
               await this.telnyxService.getRecordings(telnyxSessionId);
-            const recordings = recsRes?.data || [];
+            const recordings = recsRes?.data ?? [];
             const wavRecording = recordings.find(
-              (r: any) => r.channels === 'single' || r.download_urls?.wav,
+              (r) => r.channels === 'single' || r.download_urls?.wav,
             );
             if (wavRecording) {
               await this.recordingsQueue.add('import-recording', {
                 callSessionId, // Maps to schema.recordings.callSessionId (which is conv.id)
                 recordingId: wavRecording.id,
-                toNumber: conv.metadata?.to,
+                toNumber: asString(conv.metadata?.to),
                 organizationId,
                 locationId,
               });
             }
           }
         } catch (err) {
-          // ignore
+          // A missing or unreadable recording must not abort the conversation sync — but it
+          // shouldn't vanish silently either (it used to be an empty catch).
+          this.logger.warn(
+            `Could not attach a recording to conversation ${conv.id}: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
         }
 
         syncedCount++;

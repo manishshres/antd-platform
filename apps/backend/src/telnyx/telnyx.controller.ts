@@ -64,7 +64,8 @@ export class TelnyxController {
   @Roles('platform_admin', 'sysadmin')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'List default AI voice agent templates' })
-  async listAgentTemplates() {
+  // Static catalogue — no I/O, so intentionally not async.
+  listAgentTemplates() {
     return {
       data: [
         {

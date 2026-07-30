@@ -4,6 +4,16 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import {
+  TelnyxAssistantResponse,
+  TelnyxAssistantsResponse,
+  TelnyxAvailableNumbersResponse,
+  TelnyxAssistantTool,
+  TelnyxConversationMessagesResponse,
+  TelnyxEmbeddingResponse,
+  TelnyxConversationsResponse,
+  TelnyxRecordingsResponse,
+} from './telnyx.types';
 
 /**
  * Raised when Telnyx Cloud Storage rejects an operation with `UserSuspended` — per Telnyx billing
@@ -62,11 +72,15 @@ export class TelnyxService {
     return res.json() as Promise<unknown>;
   }
 
-  async getRecordings(callSessionId?: string): Promise<any> {
+  async getRecordings(
+    callSessionId?: string,
+  ): Promise<TelnyxRecordingsResponse> {
     const params = new URLSearchParams();
     if (callSessionId) params.set('filter[call_session_id]', callSessionId);
     const queryString = params.toString();
-    return this.fetchJson(`/recordings${queryString ? `?${queryString}` : ''}`);
+    return (await this.fetchJson(
+      `/recordings${queryString ? `?${queryString}` : ''}`,
+    )) as TelnyxRecordingsResponse;
   }
 
   async getTranscriptions(recordingId?: string): Promise<unknown> {
@@ -76,12 +90,14 @@ export class TelnyxService {
     return this.fetchJson(`/recording_transcriptions${params}`);
   }
 
-  async getAssistants(): Promise<unknown> {
-    return this.fetchJson('/ai/assistants');
+  async getAssistants(): Promise<TelnyxAssistantsResponse> {
+    return (await this.fetchJson('/ai/assistants')) as TelnyxAssistantsResponse;
   }
 
-  async getAssistant(id: string): Promise<unknown> {
-    return this.fetchJson(`/ai/assistants/${encodeURIComponent(id)}`);
+  async getAssistant(id: string): Promise<TelnyxAssistantResponse> {
+    return (await this.fetchJson(
+      `/ai/assistants/${encodeURIComponent(id)}`,
+    )) as TelnyxAssistantResponse;
   }
 
   async updateAssistant(
@@ -100,16 +116,16 @@ export class TelnyxService {
     variables: Record<string, string>,
   ): Promise<void> {
     try {
-      const res: any = await this.getAssistant(id);
-      const assistant = res?.data || res;
-      if (!assistant || !assistant.id) {
-        console.warn(
+      const res = await this.getAssistant(id);
+      const assistant = res?.data ?? res;
+      if (!assistant?.id) {
+        this.logger.warn(
           `Assistant ${id} not found when trying to update dynamic variables.`,
         );
         return;
       }
 
-      const existingVariables = assistant.dynamic_variables || {};
+      const existingVariables = assistant.dynamic_variables ?? {};
       const newVariables = { ...existingVariables, ...variables };
 
       const updatePayload = {
@@ -130,7 +146,10 @@ export class TelnyxService {
     }
   }
 
-  async getConversations(assistantId?: string, pageNumber = 1): Promise<any> {
+  async getConversations(
+    assistantId?: string,
+    pageNumber = 1,
+  ): Promise<TelnyxConversationsResponse> {
     const params = new URLSearchParams({
       'page[size]': '100',
       'page[number]': String(pageNumber),
@@ -138,13 +157,17 @@ export class TelnyxService {
     if (assistantId) {
       params.set('metadata->assistant_id', `eq.${assistantId}`);
     }
-    return this.fetchJson(`/ai/conversations?${params.toString()}`);
+    return (await this.fetchJson(
+      `/ai/conversations?${params.toString()}`,
+    )) as TelnyxConversationsResponse;
   }
 
-  async getConversationMessages(conversationId: string): Promise<any> {
-    return this.fetchJson(
+  async getConversationMessages(
+    conversationId: string,
+  ): Promise<TelnyxConversationMessagesResponse> {
+    return (await this.fetchJson(
       `/ai/conversations/${encodeURIComponent(conversationId)}/messages?page[size]=100`,
-    );
+    )) as TelnyxConversationMessagesResponse;
   }
 
   async getDocuments(): Promise<unknown> {
@@ -193,7 +216,7 @@ export class TelnyxService {
     state?: string,
     city?: string,
     limit = 10,
-  ): Promise<unknown> {
+  ): Promise<TelnyxAvailableNumbersResponse> {
     const params = new URLSearchParams({
       'filter[country_code]': countryCode,
       'filter[phone_number_type]': 'local',
@@ -205,7 +228,9 @@ export class TelnyxService {
     if (state) params.set('filter[administrative_area]', state);
     if (city) params.set('filter[locality]', city);
 
-    return this.fetchJson(`/available_phone_numbers?${params.toString()}`);
+    return (await this.fetchJson(
+      `/available_phone_numbers?${params.toString()}`,
+    )) as TelnyxAvailableNumbersResponse;
   }
   async getPhoneNumbersByNumber(phoneNumber: string): Promise<unknown> {
     const params = new URLSearchParams({ 'filter[phone_number]': phoneNumber });
@@ -353,14 +378,16 @@ export class TelnyxService {
     }
   }
 
-  async embedKnowledgeDocuments(bucketName?: string): Promise<unknown> {
+  async embedKnowledgeDocuments(
+    bucketName?: string,
+  ): Promise<TelnyxEmbeddingResponse> {
     const bucket =
       bucketName || this.configService.get<string>('TELNYX_STORAGE_BUCKET');
     if (!bucket) {
       throw new Error('TELNYX_STORAGE_BUCKET is not configured.');
     }
 
-    return this.fetchJson('/ai/embeddings', {
+    return (await this.fetchJson('/ai/embeddings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -370,7 +397,7 @@ export class TelnyxService {
         embedding_model: 'thenlper/gte-large',
         loader: 'default',
       }),
-    });
+    })) as TelnyxEmbeddingResponse;
   }
 
   async createOrUpdateMenuAssistant(
@@ -384,9 +411,9 @@ export class TelnyxService {
       try {
         const existingRes = (await this.fetchJson(
           `/ai/assistants/${encodeURIComponent(assistantId)}`,
-        )) as Record<string, any>;
+        )) as TelnyxAssistantResponse;
         const assistant = existingRes?.data ?? existingRes;
-        const tools: Record<string, any>[] = Array.isArray(assistant?.tools)
+        const tools: TelnyxAssistantTool[] = Array.isArray(assistant?.tools)
           ? assistant.tools
           : [];
         const retrieval = tools.find((t) => t?.type === 'retrieval');
@@ -452,8 +479,12 @@ export class TelnyxService {
           },
         ],
       }),
-    })) as any;
+    })) as TelnyxAssistantResponse;
 
-    return createRes?.data?.id;
+    const createdId = createRes?.data?.id ?? createRes?.id;
+    if (!createdId) {
+      throw new Error('Telnyx did not return an id for the created assistant.');
+    }
+    return createdId;
   }
 }
