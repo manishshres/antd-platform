@@ -161,6 +161,7 @@ export class AggregatorRepository {
       status?: string;
       isOnline?: boolean;
       autoAcceptOrders?: boolean;
+      locationId?: string;
       providerStoreId?: string;
       credentials?: unknown;
     },

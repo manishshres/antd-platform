@@ -18,6 +18,7 @@ import { ProviderRegistryService } from './core/services/provider-registry.servi
 import { AggregatorRepository } from './database/aggregator.repository';
 import { MenuSyncService } from './sync/menu-sync.service';
 import { UberEatsAdapter } from './providers/ubereats/ubereats.adapter';
+import { UberPosDataResponse } from './providers/ubereats/ubereats.types';
 import { OrdersService } from '../orders/orders.service';
 import {
   CreateIntegrationAccountDto,
@@ -71,6 +72,9 @@ export class AggregatorService {
     if (!provider) {
       throw new BadRequestException(`Unknown provider: ${dto.providerName}`);
     }
+    if (dto.locationId) {
+      await this.assertOwnLocation(orgId, dto.locationId);
+    }
 
     const account = await this.repo.createIntegrationAccount({
       organizationId: orgId,
@@ -85,9 +89,10 @@ export class AggregatorService {
   }
 
   /**
-   * Update mutable settings on the org's own account: the auto-accept toggle, the
-   * provider-side store id, and/or a full replacement of the stored credentials
-   * (re-encrypted at rest — this never merges with what's already saved).
+   * Update mutable settings on the org's own account: the location binding, the
+   * auto-accept toggle, the provider-side store id, and/or a full replacement of the
+   * stored credentials (re-encrypted at rest — this never merges with what's already
+   * saved).
    */
   async updateIntegrationAccount(
     orgId: string,
@@ -99,9 +104,13 @@ export class AggregatorService {
     if (!account || account.organizationId !== orgId) {
       throw new NotFoundException('Integration account not found.');
     }
+    if (dto.locationId !== undefined) {
+      await this.assertOwnLocation(orgId, dto.locationId);
+    }
     const updated = await this.repo.setIntegrationAccountStatus(
       integrationAccountId,
       {
+        locationId: dto.locationId,
         autoAcceptOrders: dto.autoAcceptOrders,
         providerStoreId: dto.providerStoreId,
         credentials: dto.credentials
@@ -110,6 +119,30 @@ export class AggregatorService {
       },
     );
     return this.sanitize(updated ?? account);
+  }
+
+  /**
+   * A location id arrives from the client, so it must be proven to belong to the caller's
+   * organization — otherwise an org could bind its marketplace orders onto someone else's
+   * location and have them print in that kitchen.
+   */
+  private async assertOwnLocation(
+    orgId: string,
+    locationId: string,
+  ): Promise<void> {
+    const [location] = await this.db
+      .select({ id: schema.locations.id })
+      .from(schema.locations)
+      .where(
+        and(
+          eq(schema.locations.id, locationId),
+          eq(schema.locations.organizationId, orgId),
+        ),
+      )
+      .limit(1);
+    if (!location) {
+      throw new BadRequestException('Unknown location for this organization.');
+    }
   }
 
   /** Disconnect a marketplace. Past orders/menu mappings keep their history (FK set-null/cascade). */
@@ -251,10 +284,39 @@ export class AggregatorService {
     return account;
   }
 
-  /** What Uber currently has configured for this store (source of truth for debugging). */
+  /**
+   * What Uber currently has configured for this store, reconciled onto our row.
+   *
+   * `status`/`isOnline` are otherwise written only by inbound webhooks — so an account
+   * created *after* the store was provisioned (or one whose `store.provisioned` webhook
+   * was missed while the receiver was unreachable) sits at 'waiting' forever even though
+   * Uber considers it live. This asks Uber directly and believes the answer.
+   */
   async getUberStoreConfig(orgId: string, integrationAccountId: string) {
     await this.ownAccountForProvider(orgId, integrationAccountId, 'ubereats');
-    return this.uberEats.getStoreConfig(integrationAccountId);
+    const config = await this.uberEats.getStoreConfig(integrationAccountId);
+    await this.reconcileUberAccount(integrationAccountId, config);
+    return config;
+  }
+
+  /**
+   * Mirror Uber's view of a store onto the integration account. `integration_enabled` is
+   * the switch that actually governs whether order webhooks are delivered, so it — not the
+   * mere existence of an association — is what makes us 'connected'.
+   */
+  private async reconcileUberAccount(
+    integrationAccountId: string,
+    config: UberPosDataResponse,
+  ): Promise<void> {
+    const enabled =
+      config.integration_enabled ?? config.pos_integration_enabled;
+    await this.repo.setIntegrationAccountStatus(integrationAccountId, {
+      status: enabled ? 'connected' : 'waiting',
+      isOnline: config.online_status === 'online',
+    });
+    this.logger.log(
+      `Reconciled Uber account ${integrationAccountId} from Uber: enabled=${String(enabled)}, online_status=${config.online_status ?? 'unknown'}.`,
+    );
   }
 
   /**
@@ -271,12 +333,9 @@ export class AggregatorService {
       integrationAccountId,
       { merchantStoreId },
     );
-    await this.repo.setIntegrationAccountStatus(integrationAccountId, {
-      status: 'connected',
-    });
-    this.logger.log(
-      `Uber Eats integration enabled for account ${integrationAccountId}.`,
-    );
+    // Believe the post-update read rather than assuming success — if Uber didn't actually
+    // flip integration_enabled, the row must not claim 'connected'.
+    await this.reconcileUberAccount(integrationAccountId, config);
     return config;
   }
 
