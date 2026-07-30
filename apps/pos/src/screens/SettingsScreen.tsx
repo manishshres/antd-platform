@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, Linking, Platform, ScrollView, StyleSheet, View } from 'react-native';
-import { Button, Divider, Menu, Text, TextInput, TouchableRipple } from 'react-native-paper';
+import { ActivityIndicator, Button, Divider, Menu, Switch, Text, TextInput, TouchableRipple } from 'react-native-paper';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
@@ -13,6 +13,7 @@ import * as printerStationsRepo from '../db/printerStationsRepo';
 import type { Location, PrinterStation } from '../types';
 import { usePrinterDiscovery } from '../printing/usePrinterDiscovery';
 import { testPrint } from '../printing/printerService';
+import { ApiClient, type IntegrationAccountPayload } from '../api/client';
 import { BarcodeScannerModal } from '../components/BarcodeScannerModal';
 import { FontSizeSlider } from '../components/FontSizeSlider';
 import { PrinterSizePreview } from '../components/PrinterSizePreview';
@@ -32,7 +33,7 @@ const PRIVACY_POLICY_URL = 'https://www.coneeko.com/privacy-policy';
 const TERMS_OF_SERVICE_URL = 'https://www.coneeko.com/terms-and-condition';
 const CONTACT_URL = 'https://www.coneeko.com/contact-us';
 
-type SettingsTab = 'connection' | 'location' | 'printer' | 'data' | 'about';
+type SettingsTab = 'connection' | 'location' | 'printer' | 'delivery' | 'data' | 'about';
 
 interface TabConfig {
   id: SettingsTab;
@@ -44,6 +45,7 @@ const TABS: TabConfig[] = [
   { id: 'connection', label: 'Connection & Sync', icon: 'server-network' },
   { id: 'location', label: 'Location', icon: 'map-marker-outline' },
   { id: 'printer', label: 'Receipt Printer', icon: 'printer-outline' },
+  { id: 'delivery', label: 'Delivery Marketplaces', icon: 'moped-outline' },
   { id: 'data', label: 'Data Management', icon: 'database-outline' },
   { id: 'about', label: 'About & Legal', icon: 'information-outline' },
 ];
@@ -70,6 +72,11 @@ export function SettingsScreen() {
   const [serviceChargeText, setServiceChargeText] = useState('');
   const [locationSaved, setLocationSaved] = useState(false);
   const [closeStoreOpen, setCloseStoreOpen] = useState(false);
+
+  const [integrationAccounts, setIntegrationAccounts] = useState<IntegrationAccountPayload[]>([]);
+  const [integrationAccountsLoading, setIntegrationAccountsLoading] = useState(false);
+  const [integrationAccountsError, setIntegrationAccountsError] = useState<string | null>(null);
+  const [togglingAccountId, setTogglingAccountId] = useState<string | null>(null);
 
   const [stations, setStations] = useState<PrinterStation[]>([]);
   const [categoryStationMap, setCategoryStationMap] = useState<Record<string, string>>({});
@@ -199,6 +206,44 @@ export function SettingsScreen() {
       taxRateBps: loc.taxRateBps,
       serviceChargeBps: loc.serviceChargeBps,
     });
+  };
+
+  const loadIntegrationAccounts = useCallback(async () => {
+    if (!online) return;
+    const client = new ApiClient(settings.apiUrl, settings.apiKey);
+    if (!client.isConfigured) return;
+    setIntegrationAccountsLoading(true);
+    setIntegrationAccountsError(null);
+    try {
+      const accounts = await client.getIntegrationAccounts();
+      setIntegrationAccounts(accounts);
+    } catch {
+      setIntegrationAccountsError('Failed to load delivery marketplaces.');
+    } finally {
+      setIntegrationAccountsLoading(false);
+    }
+  }, [online, settings.apiUrl, settings.apiKey]);
+
+  useEffect(() => {
+    if (activeTab === 'delivery') {
+      loadIntegrationAccounts();
+    }
+  }, [activeTab, loadIntegrationAccounts]);
+
+  const toggleAccountAutoAccept = async (account: IntegrationAccountPayload, next: boolean) => {
+    setIntegrationAccounts((prev) =>
+      prev.map((a) => (a.id === account.id ? { ...a, autoAcceptOrders: next } : a)),
+    );
+    setTogglingAccountId(account.id);
+    const client = new ApiClient(settings.apiUrl, settings.apiKey);
+    try {
+      await client.setIntegrationAccountAutoAccept(account.id, next);
+    } catch {
+      Alert.alert('Error', 'Failed to update auto-accept. Please try again.');
+      await loadIntegrationAccounts();
+    } finally {
+      setTogglingAccountId(null);
+    }
   };
 
   const clearLocalData = useCallback(() => {
@@ -828,6 +873,60 @@ export function SettingsScreen() {
                 </View>
               )}
             </>
+          )}
+
+          {activeTab === 'delivery' && (
+            <View style={styles.card}>
+              <Text variant="titleMedium" style={styles.cardTitle}>
+                Delivery Marketplaces
+              </Text>
+              <Text variant="bodySmall" style={styles.cardSub}>
+                When auto-accept is on, orders from this marketplace are accepted the
+                moment they arrive. Turn it off to review and accept each order here or
+                on the dashboard before the marketplace's acceptance window closes.
+              </Text>
+              {!online && (
+                <StatusLine icon="wifi-off" color={antd.error} text="Connect to the network to manage marketplaces." />
+              )}
+              {online && integrationAccountsLoading && (
+                <View style={{ paddingVertical: 16, alignItems: 'center' }}>
+                  <ActivityIndicator />
+                </View>
+              )}
+              {online && integrationAccountsError && (
+                <StatusLine icon="alert-circle-outline" color={antd.error} text={integrationAccountsError} />
+              )}
+              {online && !integrationAccountsLoading && !integrationAccountsError && integrationAccounts.length === 0 && (
+                <Text variant="bodySmall" style={styles.cardSub}>
+                  No marketplaces connected yet. Connect one from the dashboard's Settings
+                  → Marketplace Integrations tab.
+                </Text>
+              )}
+              {integrationAccounts.map((account) => (
+                <View key={account.id} style={styles.location}>
+                  <View style={styles.locationInner}>
+                    <MaterialCommunityIcons name="moped-outline" size={22} color={antd.textSecondary} />
+                    <View style={{ flex: 1 }}>
+                      <Text variant="bodyLarge" style={{ color: antd.text, fontWeight: '600' }}>
+                        {account.providerName === 'ubereats' ? 'Uber Eats' : account.providerName}
+                      </Text>
+                      <Text variant="bodySmall" style={{ color: antd.textSecondary }}>
+                        {account.providerStoreId ?? '—'} · {account.isOnline ? 'Online' : 'Offline'} · {account.status.replace(/_/g, ' ')}
+                      </Text>
+                    </View>
+                    {togglingAccountId === account.id ? (
+                      <ActivityIndicator />
+                    ) : (
+                      <Switch
+                        value={account.autoAcceptOrders}
+                        onValueChange={(next) => toggleAccountAutoAccept(account, next)}
+                        accessibilityLabel={`Toggle auto-accept for ${account.providerName}`}
+                      />
+                    )}
+                  </View>
+                </View>
+              ))}
+            </View>
           )}
 
           {activeTab === 'data' && (
