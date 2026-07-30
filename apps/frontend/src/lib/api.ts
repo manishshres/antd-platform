@@ -78,8 +78,51 @@ function scheduleProactiveRefresh(token: string) {
 let isRefreshing = false;
 let refreshPromise: Promise<string | null> | null = null;
 
+/**
+ * Endpoints that establish a session rather than consume one. They must never wait on,
+ * or be retried by, the refresh machinery — a login request that queues behind a doomed
+ * refresh just pays for a round-trip that was always going to 401.
+ */
+const AUTH_ENDPOINTS = [
+  "/auth/login",
+  "/auth/register",
+  "/auth/refresh",
+  "/auth/logout",
+  "/auth/forgot-password",
+  "/auth/reset-password",
+];
+
+function isAuthEndpoint(url?: string): boolean {
+  return !!url && AUTH_ENDPOINTS.some((path) => url.includes(path));
+}
+
+/**
+ * Pages a signed-out visitor is expected to be on. The refresh cookie is HttpOnly so the
+ * client cannot test for a session directly — but on these routes there is by definition
+ * nothing to refresh, and attempting it costs a guaranteed 401 that also makes the server
+ * clear the cookie. Anywhere else, the bootstrap refresh is what restores a returning
+ * user's session from the cookie alone.
+ */
+const AUTH_PAGES = [
+  "/login",
+  "/register",
+  "/forgot-password",
+  "/reset-password",
+  "/invite",
+  "/invitations",
+  "/verify-email",
+];
+
+function onAuthPage(): boolean {
+  if (typeof window === "undefined") return false;
+  return AUTH_PAGES.some((path) => window.location.pathname.startsWith(path));
+}
+
 // On page load, try to refresh via the HttpOnly cookie (no localStorage read).
-if (typeof window !== "undefined") {
+// Restore a returning user's session from the HttpOnly refresh cookie on first load —
+// but not on the auth pages, where there is no session yet and the call only produces a
+// 401 that the login request then has to queue behind.
+if (typeof window !== "undefined" && !onAuthPage()) {
   isRefreshing = true;
   refreshPromise = doRefresh().finally(() => {
     isRefreshing = false;
@@ -95,6 +138,10 @@ if (typeof window !== "undefined") {
 // ---------------------------------------------------------------------------
 
 api.interceptors.request.use(async (config) => {
+  // Sending credentials, not using them: go straight out, without waiting on a refresh
+  // or attaching a (possibly stale) access token.
+  if (isAuthEndpoint(config.url)) return config;
+
   if (typeof window !== "undefined") {
     let token = getAccessToken();
 
@@ -154,15 +201,10 @@ api.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config;
 
-    const isAuthEndpoint =
-      originalRequest?.url?.includes("/auth/login") ||
-      originalRequest?.url?.includes("/auth/refresh") ||
-      originalRequest?.url?.includes("/auth/register");
-
     if (
       error.response?.status === 401 &&
       !originalRequest._retry &&
-      !isAuthEndpoint &&
+      !isAuthEndpoint(originalRequest?.url) &&
       typeof window !== "undefined"
     ) {
       if (isRefreshing) {
