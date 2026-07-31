@@ -139,11 +139,25 @@ Use `@Public()` to bypass `JwtAuthGuard` checks for public paths. Expose current
      drizzle-kit resolves `drizzle-orm/version` relative to its own location, so without a
      root-level copy every command dies with the misleading *"Please install latest version
      of drizzle-orm"*. `pg` has to come along because `drizzle-orm/node-postgres` requires
-     it as a peer from wherever drizzle-orm ends up. Keep all four version ranges in step
-     with `apps/backend/package.json`, and don't delete them.
+     it as a peer from wherever drizzle-orm ends up. **Keep all four version ranges in step
+     with `apps/backend/package.json`, and don't delete them.**
    - Journal `idx` must equal the numeric prefix of the migration's `tag`, and every `.sql`
      file needs an entry in `drizzle/meta/_journal.json` — a file with no entry is silently
      never applied by `migrate`, and it shifts every later tag out of alignment.
+   - **Pre-commit validation**: When you commit changes to migrations or `schema.ts`, husky hooks
+     automatically validate that:
+     - Every `.sql` migration file has a corresponding journal entry with matching `idx`
+     - The Drizzle snapshot (`0NNN_snapshot.json`) is in sync with `schema.ts` (regenerated if needed)
+     
+     If validation fails, fix it by running:
+     ```bash
+     npx drizzle-kit generate
+     ```
+     then re-stage and commit. If the pre-commit hook doesn't run, manually validate:
+     ```bash
+     node scripts/validate-migrations.mjs
+     node scripts/validate-drizzle-snapshot.mjs
+     ```
 4. **Soft deletes**: Add `deletedAt` timestamp column to schemas requiring soft deletes. Filter using `isNull(table.deletedAt)`.
 5. **No JS Filtering**: Use `inArray` to query items inside categories. Never pull all rows and filter using `Array.prototype.filter` in JS memory.
 

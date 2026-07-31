@@ -30,7 +30,7 @@ ALTER TABLE "users" ALTER COLUMN "updated_at" TYPE timestamptz USING "updated_at
 ALTER TABLE "users" ALTER COLUMN "deleted_at" TYPE timestamptz USING "deleted_at" AT TIME ZONE 'UTC';
 ALTER TABLE "users" ALTER COLUMN "email_verified_at" TYPE timestamptz USING "email_verified_at" AT TIME ZONE 'UTC';
 ALTER TABLE "users" ALTER COLUMN "onboarding_completed_at" TYPE timestamptz USING "onboarding_completed_at" AT TIME ZONE 'UTC';
-ALTER TABLE "users" ALTER COLUMN "last_login_at" TYPE timestamptz USING "last_login_at" AT TIME ZONE 'UTC";
+ALTER TABLE "users" ALTER COLUMN "last_login_at" TYPE timestamptz USING "last_login_at" AT TIME ZONE 'UTC';
 ALTER TABLE "users" ALTER COLUMN "locked_until" TYPE timestamptz USING "locked_until" AT TIME ZONE 'UTC';
 
 -- refresh_tokens
@@ -55,7 +55,7 @@ ALTER TABLE "categories" ALTER COLUMN "deleted_at" TYPE timestamptz USING "delet
 
 -- menu_items
 ALTER TABLE "menu_items" ALTER COLUMN "created_at" TYPE timestamptz USING "created_at" AT TIME ZONE 'UTC';
-ALTER TABLE "menu_items" ALTER COLUMN "updated_at" TYPE timestamptz USING "updated_at" AT TIME ZONE 'UTC";
+ALTER TABLE "menu_items" ALTER COLUMN "updated_at" TYPE timestamptz USING "updated_at" AT TIME ZONE 'UTC';
 ALTER TABLE "menu_items" ALTER COLUMN "deleted_at" TYPE timestamptz USING "deleted_at" AT TIME ZONE 'UTC';
 
 -- menu_modifiers
@@ -71,7 +71,7 @@ ALTER TABLE "menu_item_modifiers" ALTER COLUMN "deleted_at" TYPE timestamptz USI
 -- discounts
 ALTER TABLE "discounts" ALTER COLUMN "created_at" TYPE timestamptz USING "created_at" AT TIME ZONE 'UTC';
 ALTER TABLE "discounts" ALTER COLUMN "updated_at" TYPE timestamptz USING "updated_at" AT TIME ZONE 'UTC';
-ALTER TABLE "discounts" ALTER COLUMN "deleted_at" TYPE timestamptz USING "deleted_at" AT TIME ZONE 'UTC";
+ALTER TABLE "discounts" ALTER COLUMN "deleted_at" TYPE timestamptz USING "deleted_at" AT TIME ZONE 'UTC';
 
 -- customers
 ALTER TABLE "customers" ALTER COLUMN "created_at" TYPE timestamptz USING "created_at" AT TIME ZONE 'UTC';
@@ -79,7 +79,7 @@ ALTER TABLE "customers" ALTER COLUMN "updated_at" TYPE timestamptz USING "update
 
 -- floor_plans
 ALTER TABLE "floor_plans" ALTER COLUMN "created_at" TYPE timestamptz USING "created_at" AT TIME ZONE 'UTC';
-ALTER TABLE "floor_plans" ALTER COLUMN "updated_at" TYPE timestamptz USING "updated_at" AT TIME ZONE 'UTC";
+ALTER TABLE "floor_plans" ALTER COLUMN "updated_at" TYPE timestamptz USING "updated_at" AT TIME ZONE 'UTC';
 
 -- tables
 ALTER TABLE "tables" ALTER COLUMN "created_at" TYPE timestamptz USING "created_at" AT TIME ZONE 'UTC';
@@ -107,53 +107,53 @@ ALTER TABLE "audit_logs" ALTER COLUMN "created_at" TYPE timestamptz USING "creat
 -- org_agents
 ALTER TABLE "org_agents" ALTER COLUMN "created_at" TYPE timestamptz USING "created_at" AT TIME ZONE 'UTC';
 ALTER TABLE "org_agents" ALTER COLUMN "updated_at" TYPE timestamptz USING "updated_at" AT TIME ZONE 'UTC';
-ALTER TABLE "org_agents" ALTER COLUMN "deleted_at" TYPE timestamptz USING "deleted_at" AT TIME ZONE 'UTC";
+ALTER TABLE "org_agents" ALTER COLUMN "deleted_at" TYPE timestamptz USING "deleted_at" AT TIME ZONE 'UTC';
 
 -- org_documents
-ALTER TABLE "org_documents" ALTER COLUMN "created_at" TYPE timestamptz USING "created_at" AT TIME ZONE 'UTC";
-ALTER TABLE "org_documents" ALTER COLUMN "deleted_at" TYPE timestamptz USING "deleted_at" AT TIME ZONE 'UTC";
+ALTER TABLE "org_documents" ALTER COLUMN "created_at" TYPE timestamptz USING "created_at" AT TIME ZONE 'UTC';
+ALTER TABLE "org_documents" ALTER COLUMN "deleted_at" TYPE timestamptz USING "deleted_at" AT TIME ZONE 'UTC';
 
 -- org_phone_numbers
 ALTER TABLE "org_phone_numbers" ALTER COLUMN "created_at" TYPE timestamptz USING "created_at" AT TIME ZONE 'UTC';
-ALTER TABLE "org_phone_numbers" ALTER COLUMN "updated_at" TYPE timestamptz USING "updated_at" AT TIME ZONE 'UTC";
-ALTER TABLE "org_phone_numbers" ALTER COLUMN "deleted_at" TYPE timestamptz USING "deleted_at" AT TIME ZONE 'UTC";
+ALTER TABLE "org_phone_numbers" ALTER COLUMN "updated_at" TYPE timestamptz USING "updated_at" AT TIME ZONE 'UTC';
+ALTER TABLE "org_phone_numbers" ALTER COLUMN "deleted_at" TYPE timestamptz USING "deleted_at" AT TIME ZONE 'UTC';
 
 -- printers
 ALTER TABLE "printers" ALTER COLUMN "created_at" TYPE timestamptz USING "created_at" AT TIME ZONE 'UTC';
-ALTER TABLE "printers" ALTER COLUMN "updated_at" TYPE timestamptz USING "updated_at" AT TIME ZONE 'UTC";
-ALTER TABLE "printers" ALTER COLUMN "deleted_at" TYPE timestamptz USING "deleted_at" AT TIME ZONE 'UTC";
-ALTER TABLE "printers" ALTER COLUMN "last_heartbeat_at" TYPE timestamptz USING "last_heartbeat_at" AT TIME ZONE 'UTC";
+ALTER TABLE "printers" ALTER COLUMN "updated_at" TYPE timestamptz USING "updated_at" AT TIME ZONE 'UTC';
+ALTER TABLE "printers" ALTER COLUMN "deleted_at" TYPE timestamptz USING "deleted_at" AT TIME ZONE 'UTC';
+ALTER TABLE "printers" ALTER COLUMN "last_heartbeat_at" TYPE timestamptz USING "last_heartbeat_at" AT TIME ZONE 'UTC';
 
 -- password_reset_tokens
-ALTER TABLE "password_reset_tokens" ALTER COLUMN "created_at" TYPE timestamptz USING "created_at" AT TIME ZONE 'UTC";
-ALTER TABLE "password_reset_tokens" ALTER COLUMN "expires_at" TYPE timestamptz USING "expires_at" AT TIME ZONE 'UTC";
-ALTER TABLE "password_reset_tokens" ALTER COLUMN "used_at" TYPE timestamptz USING "used_at" AT TIME ZONE 'UTC";
+ALTER TABLE "password_reset_tokens" ALTER COLUMN "created_at" TYPE timestamptz USING "created_at" AT TIME ZONE 'UTC';
+ALTER TABLE "password_reset_tokens" ALTER COLUMN "expires_at" TYPE timestamptz USING "expires_at" AT TIME ZONE 'UTC';
+ALTER TABLE "password_reset_tokens" ALTER COLUMN "used_at" TYPE timestamptz USING "used_at" AT TIME ZONE 'UTC';
 
 -- email_verification_tokens
-ALTER TABLE "email_verification_tokens" ALTER COLUMN "created_at" TYPE timestamptz USING "created_at" AT TIME ZONE 'UTC";
-ALTER TABLE "email_verification_tokens" ALTER COLUMN "expires_at" TYPE timestamptz USING "expires_at" AT TIME ZONE 'UTC";
+ALTER TABLE "email_verification_tokens" ALTER COLUMN "created_at" TYPE timestamptz USING "created_at" AT TIME ZONE 'UTC';
+ALTER TABLE "email_verification_tokens" ALTER COLUMN "expires_at" TYPE timestamptz USING "expires_at" AT TIME ZONE 'UTC';
 
 -- recordings
-ALTER TABLE "recordings" ALTER COLUMN "created_at" TYPE timestamptz USING "created_at" AT TIME ZONE 'UTC";
-ALTER TABLE "recordings" ALTER COLUMN "updated_at" TYPE timestamptz USING "updated_at" AT TIME ZONE 'UTC";
-ALTER TABLE "recordings" ALTER COLUMN "deleted_at" TYPE timestamptz USING "deleted_at" AT TIME ZONE 'UTC";
-ALTER TABLE "recordings" ALTER COLUMN "expires_at" TYPE timestamptz USING "expires_at" AT TIME ZONE 'UTC";
+ALTER TABLE "recordings" ALTER COLUMN "created_at" TYPE timestamptz USING "created_at" AT TIME ZONE 'UTC';
+ALTER TABLE "recordings" ALTER COLUMN "updated_at" TYPE timestamptz USING "updated_at" AT TIME ZONE 'UTC';
+ALTER TABLE "recordings" ALTER COLUMN "deleted_at" TYPE timestamptz USING "deleted_at" AT TIME ZONE 'UTC';
+ALTER TABLE "recordings" ALTER COLUMN "expires_at" TYPE timestamptz USING "expires_at" AT TIME ZONE 'UTC';
 
 -- conversations
-ALTER TABLE "conversations" ALTER COLUMN "created_at" TYPE timestamptz USING "created_at" AT TIME ZONE 'UTC";
-ALTER TABLE "conversations" ALTER COLUMN "updated_at" TYPE timestamptz USING "updated_at" AT TIME ZONE 'UTC";
+ALTER TABLE "conversations" ALTER COLUMN "created_at" TYPE timestamptz USING "created_at" AT TIME ZONE 'UTC';
+ALTER TABLE "conversations" ALTER COLUMN "updated_at" TYPE timestamptz USING "updated_at" AT TIME ZONE 'UTC';
 
 -- usage_events
-ALTER TABLE "usage_events" ALTER COLUMN "created_at" TYPE timestamptz USING "created_at" AT TIME ZONE 'UTC";
+ALTER TABLE "usage_events" ALTER COLUMN "created_at" TYPE timestamptz USING "created_at" AT TIME ZONE 'UTC';
 
 -- org_webhooks
-ALTER TABLE "org_webhooks" ALTER COLUMN "created_at" TYPE timestamptz USING "created_at" AT TIME ZONE 'UTC";
-ALTER TABLE "org_webhooks" ALTER COLUMN "updated_at" TYPE timestamptz USING "updated_at" AT TIME ZONE 'UTC";
+ALTER TABLE "org_webhooks" ALTER COLUMN "created_at" TYPE timestamptz USING "created_at" AT TIME ZONE 'UTC';
+ALTER TABLE "org_webhooks" ALTER COLUMN "updated_at" TYPE timestamptz USING "updated_at" AT TIME ZONE 'UTC';
 
 -- webhook_events
-ALTER TABLE "webhook_events" ALTER COLUMN "received_at" TYPE timestamptz USING "received_at" AT TIME ZONE 'UTC";
-ALTER TABLE "webhook_events" ALTER COLUMN "processed_at" TYPE timestamptz USING "processed_at" AT TIME ZONE 'UTC";
+ALTER TABLE "webhook_events" ALTER COLUMN "received_at" TYPE timestamptz USING "received_at" AT TIME ZONE 'UTC';
+ALTER TABLE "webhook_events" ALTER COLUMN "processed_at" TYPE timestamptz USING "processed_at" AT TIME ZONE 'UTC';
 
 -- plans (no timestamp columns to convert - only created_at/updated_at)
-ALTER TABLE "plans" ALTER COLUMN "created_at" TYPE timestamptz USING "created_at" AT TIME ZONE 'UTC";
-ALTER TABLE "plans" ALTER COLUMN "updated_at" TYPE timestamptz USING "updated_at" AT TIME ZONE 'UTC";
+ALTER TABLE "plans" ALTER COLUMN "created_at" TYPE timestamptz USING "created_at" AT TIME ZONE 'UTC';
+ALTER TABLE "plans" ALTER COLUMN "updated_at" TYPE timestamptz USING "updated_at" AT TIME ZONE 'UTC';

@@ -1,0 +1,3 @@
+#!/bin/sh
+# Validate Drizzle migrations and snapshots before committing
+npx lint-staged --verbose

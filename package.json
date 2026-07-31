@@ -7,7 +7,8 @@
     "packages/*"
   ],
   "scripts": {
-    "postinstall": "patch-package && npm run build --workspace @platform/shared-types",
+    "postinstall": "patch-package && npm run build --workspace @platform/shared-types && husky install",
+    "prepare": "husky install",
     "release": "node scripts/release.mjs"
   },
   "dependencies": {
@@ -16,7 +17,17 @@
   },
   "devDependencies": {
     "drizzle-orm": "^0.45.2",
+    "husky": "^9.0.0",
+    "lint-staged": "^15.0.0",
     "patch-package": "^8.0.1",
     "pg": "^8.22.0"
+  },
+  "lint-staged": {
+    "apps/backend/drizzle/*.sql": [
+      "node scripts/validate-migrations.mjs"
+    ],
+    "apps/backend/src/database/schema.ts": [
+      "node scripts/validate-drizzle-snapshot.mjs"
+    ]
   }
 }
