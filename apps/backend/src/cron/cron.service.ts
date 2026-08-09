@@ -132,6 +132,13 @@ export class CronService {
           .delete(schema.conversations)
           .where(eq(schema.conversations.callSessionId, rec.callSessionId));
 
+        this.auditService.fireAndForget({
+          action: 'recording.hard_delete',
+          organizationId: rec.organizationId,
+          entityId: rec.id,
+          entityType: 'recording',
+        });
+
         deletedCount++;
       } catch (err: unknown) {
         this.logger.error(
@@ -181,56 +188,6 @@ export class CronService {
     }
 
     this.logger.log('Finished Telnyx resource sync.');
-  }
-
-  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
-  async sweepExpiredRecordings() {
-    this.logger.log('Starting GDPR and retention sweep for recordings...');
-
-    const now = new Date();
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-
-    const recordingsToDelete = await this.db
-      .select()
-      .from(schema.recordings)
-      .where(
-        or(
-          and(
-            isNotNull(schema.recordings.expiresAt),
-            lt(schema.recordings.expiresAt, now),
-          ),
-          and(
-            isNotNull(schema.recordings.deletedAt),
-            lt(schema.recordings.deletedAt, thirtyDaysAgo),
-          ),
-        ),
-      );
-
-    for (const rec of recordingsToDelete) {
-      if (rec.objectKey) {
-        try {
-          await this.storageService.deleteObject(rec.objectKey);
-          this.logger.log(`Deleted S3 object ${rec.objectKey}`);
-        } catch (e: unknown) {
-          this.logger.error(
-            `Failed to delete S3 object ${rec.objectKey}: ${e instanceof Error ? e.message : String(e)}`,
-          );
-        }
-      }
-
-      await this.db
-        .delete(schema.recordings)
-        .where(eq(schema.recordings.id, rec.id));
-
-      this.auditService.fireAndForget({
-        action: 'recording.hard_delete',
-        organizationId: rec.organizationId,
-        entityId: rec.id,
-        entityType: 'recording',
-      });
-    }
-
-    this.logger.log(`Swept ${recordingsToDelete.length} expired recordings.`);
   }
 
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)

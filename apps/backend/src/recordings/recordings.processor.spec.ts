@@ -71,9 +71,14 @@ describe('RecordingsProcessor — tenant resolution (C2)', () => {
 
   it('proceeds once the number resolves to an org phone mapping', async () => {
     const db = makeDb();
-    db.select.mockReturnValueOnce(
-      selectResult([{ organizationId: 'org-1', locationId: 'loc-1' }]),
-    );
+    // 1st select: tenant resolution -> mapped org phone
+    // 2nd select: idempotency check -> not uploaded yet
+    db.select
+      .mockReturnValueOnce(
+        selectResult([{ organizationId: 'org-1', locationId: 'loc-1' }]),
+      )
+      .mockReturnValueOnce(selectResult([]));
+
     // getRecordings returns nothing → the processor throws downstream, but the point is that
     // tenant resolution succeeded and it did NOT skip.
     const telnyx = { getRecordings: jest.fn().mockResolvedValue({ data: [] }) };
@@ -89,6 +94,6 @@ describe('RecordingsProcessor — tenant resolution (C2)', () => {
       ),
     ).rejects.toBeDefined();
 
-    expect(telnyx.getRecordings).toHaveBeenCalled();
+    expect(telnyx.getRecordings).toHaveBeenCalledWith('s3');
   });
 });

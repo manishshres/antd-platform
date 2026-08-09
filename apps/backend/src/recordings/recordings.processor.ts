@@ -64,15 +64,32 @@ export class RecordingsProcessor extends WorkerHost {
       locationId = resolved.locationId;
     }
 
+    // Idempotency check: Skip downloading & uploading to R2 if already uploaded
+    const [existing] = await this.db
+      .select({
+        status: schema.recordings.status,
+        objectKey: schema.recordings.objectKey,
+      })
+      .from(schema.recordings)
+      .where(eq(schema.recordings.callSessionId, callSessionId))
+      .limit(1);
+
+    if (existing && existing.status === 'uploaded' && existing.objectKey) {
+      this.logger.log(
+        `Recording for session ${callSessionId} is already uploaded to R2 at ${existing.objectKey}. Skipping re-upload.`,
+      );
+      return;
+    }
+
     try {
-      // 1. Fetch recording details from Telnyx
-      const rawRecRes = (await this.telnyxService.getRecordings()) as Record<
-        string,
-        unknown
-      >;
+      // 1. Fetch recording details from Telnyx for this specific session (H3 fix)
+      const rawRecRes = (await this.telnyxService.getRecordings(
+        callSessionId,
+      )) as Record<string, unknown>;
       const allRecordings =
         (rawRecRes?.data as Record<string, unknown>[]) || [];
-      const recording = allRecordings.find((r) => r.id === recordingId);
+      const recording =
+        allRecordings.find((r) => r.id === recordingId) || allRecordings[0];
 
       if (!recording) {
         throw new Error(`Recording ${recordingId} not found in Telnyx.`);
@@ -85,8 +102,8 @@ export class RecordingsProcessor extends WorkerHost {
 
       // 2. Download and upload to S3
       const durationMs = (recording.duration_millis as number) || 0;
-      const fromNumber = (recording.from as string) || '';
-      const toNumber = (recording.to as string) || '';
+      const recordingFromNumber = (recording.from as string) || '';
+      const recordingToNumber = (recording.to as string) || '';
       const objectKey = `recordings/${organizationId}/${locationId}/${callSessionId}.wav`;
 
       this.logger.log(`Downloading recording from ${wavUrl}`);
@@ -159,8 +176,8 @@ export class RecordingsProcessor extends WorkerHost {
           organizationId,
           locationId,
           callSessionId,
-          fromNumber,
-          toNumber,
+          fromNumber: recordingFromNumber,
+          toNumber: recordingToNumber,
           objectKey,
           durationMs,
           transcript: transcriptText,
@@ -173,8 +190,8 @@ export class RecordingsProcessor extends WorkerHost {
         .onConflictDoUpdate({
           target: schema.recordings.callSessionId,
           set: {
-            fromNumber,
-            toNumber,
+            fromNumber: recordingFromNumber,
+            toNumber: recordingToNumber,
             objectKey,
             durationMs,
             transcript: transcriptText,

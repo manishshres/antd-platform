@@ -253,35 +253,37 @@ export class ConversationsService {
           });
         }
 
-        // Try to fetch recording from Telnyx and enqueue import job
-        try {
-          // `metadata` is free-form on Telnyx's side, so narrow before use.
-          const telnyxSessionId = asString(conv.metadata?.call_session_id);
-          if (telnyxSessionId) {
-            const recsRes =
-              await this.telnyxService.getRecordings(telnyxSessionId);
-            const recordings = recsRes?.data ?? [];
-            const wavRecording = recordings.find(
-              (r) => r.channels === 'single' || r.download_urls?.wav,
-            );
-            if (wavRecording) {
-              await this.recordingsQueue.add('import-recording', {
-                callSessionId, // Maps to schema.recordings.callSessionId (which is conv.id)
-                recordingId: wavRecording.id,
-                toNumber: asString(conv.metadata?.to),
-                organizationId,
-                locationId,
-              });
+        // Try to fetch recording from Telnyx and enqueue import job ONLY if not already uploaded
+        if (!existingRec[0]?.objectKey || existingRec[0]?.status !== 'uploaded') {
+          try {
+            // `metadata` is free-form on Telnyx's side, so narrow before use.
+            const telnyxSessionId = asString(conv.metadata?.call_session_id);
+            if (telnyxSessionId) {
+              const recsRes =
+                await this.telnyxService.getRecordings(telnyxSessionId);
+              const recordings = recsRes?.data ?? [];
+              const wavRecording = recordings.find(
+                (r) => r.channels === 'single' || r.download_urls?.wav,
+              );
+              if (wavRecording) {
+                await this.recordingsQueue.add('import-recording', {
+                  callSessionId, // Maps to schema.recordings.callSessionId (which is conv.id)
+                  recordingId: wavRecording.id,
+                  toNumber: asString(conv.metadata?.to),
+                  organizationId,
+                  locationId,
+                });
+              }
             }
+          } catch (err) {
+            // A missing or unreadable recording must not abort the conversation sync — but it
+            // shouldn't vanish silently either (it used to be an empty catch).
+            this.logger.warn(
+              `Could not attach a recording to conversation ${conv.id}: ${
+                err instanceof Error ? err.message : String(err)
+              }`,
+            );
           }
-        } catch (err) {
-          // A missing or unreadable recording must not abort the conversation sync — but it
-          // shouldn't vanish silently either (it used to be an empty catch).
-          this.logger.warn(
-            `Could not attach a recording to conversation ${conv.id}: ${
-              err instanceof Error ? err.message : String(err)
-            }`,
-          );
         }
 
         syncedCount++;
