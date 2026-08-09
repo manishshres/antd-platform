@@ -70,11 +70,16 @@ export class PrintJobsService {
     return job;
   }
 
-  async getPrintJob(id: string) {
+  async getPrintJob(id: string, organizationId?: string) {
+    const conditions = [eq(schema.printJobs.id, id)];
+    if (organizationId) {
+      conditions.push(eq(schema.printJobs.organizationId, organizationId));
+    }
+
     const [job] = await this.db
       .select()
       .from(schema.printJobs)
-      .where(eq(schema.printJobs.id, id))
+      .where(and(...conditions))
       .limit(1);
     return job ?? null;
   }
@@ -108,6 +113,8 @@ export class PrintJobsService {
         updated,
       );
     }
+
+    return updated;
   }
 
   async listPrintJobs(

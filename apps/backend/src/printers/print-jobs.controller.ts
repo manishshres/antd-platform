@@ -18,6 +18,7 @@ import {
   ApiQuery,
 } from '@nestjs/swagger';
 import { PrintJobsService } from './print-jobs.service';
+import { BillingService } from '../billing/billing.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import {
   CurrentUser,
@@ -29,7 +30,10 @@ import {
 @UseGuards(JwtAuthGuard)
 @Controller('print-jobs')
 export class PrintJobsController {
-  constructor(private readonly printJobsService: PrintJobsService) {}
+  constructor(
+    private readonly printJobsService: PrintJobsService,
+    private readonly billingService: BillingService,
+  ) {}
 
   @Get()
   @HttpCode(HttpStatus.OK)
@@ -49,10 +53,7 @@ export class PrintJobsController {
     @Query('status') status?: string,
     @Query('jobType') jobType?: string,
   ): Promise<unknown> {
-    const organizationId = user.organizationId;
-    if (!organizationId) {
-      throw new BadRequestException('User organization is required.');
-    }
+    const organizationId = await this.billingService.getRequiredOrg(user);
 
     return this.printJobsService.listPrintJobs(organizationId, {
       status,
@@ -72,10 +73,7 @@ export class PrintJobsController {
   async getDeadLetterJobs(
     @CurrentUser() user: CurrentUserPayload,
   ): Promise<unknown> {
-    const organizationId = user.organizationId;
-    if (!organizationId) {
-      throw new BadRequestException('User organization is required.');
-    }
+    const organizationId = await this.billingService.getRequiredOrg(user);
 
     return this.printJobsService.getDeadLetterJobs(organizationId);
   }
@@ -92,10 +90,7 @@ export class PrintJobsController {
     @CurrentUser() user: CurrentUserPayload,
     @Param('id') id: string,
   ): Promise<unknown> {
-    const organizationId = user.organizationId;
-    if (!organizationId) {
-      throw new BadRequestException('User organization is required.');
-    }
+    const organizationId = await this.billingService.getRequiredOrg(user);
     if (!id) {
       throw new BadRequestException('Print job ID is required.');
     }
@@ -117,10 +112,7 @@ export class PrintJobsController {
       throw new BadRequestException('Print job ID is required.');
     }
 
-    const organizationId = user.organizationId;
-    if (!organizationId) {
-      throw new BadRequestException('User organization is required.');
-    }
+    const organizationId = await this.billingService.getRequiredOrg(user);
 
     try {
       return await this.printJobsService.getOrganizationPrintJobById(

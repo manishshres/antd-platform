@@ -30,7 +30,8 @@ export function verifyTelnyxSignature(input: TelnyxSignatureInput): boolean {
     return false;
   }
 
-  // Reject stale timestamps to blunt replay attacks.
+  // Reject stale or malformed timestamps to blunt replay attacks.
+  if (!/^\d+$/.test(timestamp)) return false;
   const ts = Number(timestamp);
   if (!Number.isFinite(ts)) return false;
   const now = input.nowSeconds ?? Math.floor(Date.now() / 1000);

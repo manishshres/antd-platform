@@ -7,7 +7,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, gt } from 'drizzle-orm';
 import { DRIZZLE } from '../database/database.module';
 import * as schema from '../database/schema';
 import { CreateInvitationDto } from './dto/create-invitation.dto';
@@ -230,6 +230,7 @@ export class InvitationsService {
         and(
           eq(schema.orgInvitations.tokenHash, tokenHash),
           eq(schema.orgInvitations.status, 'pending'),
+          gt(schema.orgInvitations.expiresAt, new Date()),
         ),
       )
       .limit(1);
