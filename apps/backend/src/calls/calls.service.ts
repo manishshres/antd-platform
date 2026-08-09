@@ -215,10 +215,18 @@ export class CallsService {
       'Call Outcome': r.callOutcome ?? '',
     }));
 
-    return this.exportService.exportCsv(
-      exportData,
-      Object.keys(exportData[0] || {}),
-    );
+    const headers = [
+      'ID',
+      'Date',
+      'From',
+      'To',
+      'Duration (ms)',
+      'Status',
+      'Sentiment',
+      'Call Outcome',
+    ];
+
+    return this.exportService.exportCsv(exportData, headers);
   }
 
   async exportCallsExcel(organizationId: string | null): Promise<Buffer> {
