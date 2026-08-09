@@ -66,6 +66,7 @@
     "drizzle-orm": "^0.45.2",
     "exceljs": "^4.4.0",
     "helmet": "^8.2.0",
+    "ioredis": "^5.10.1",
     "mqtt": "^5.10.1",
     "nestjs-pino": "^4.6.1",
     "nodemailer": "^9.0.1",

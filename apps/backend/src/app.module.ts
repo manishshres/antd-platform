@@ -47,6 +47,7 @@ import { CacheModule } from '@nestjs/cache-manager';
 import { AuditLogsModule } from './audit-logs/audit-logs.module';
 import { AggregatorModule } from './aggregator/aggregator.module';
 import * as redisStore from 'cache-manager-ioredis';
+import Redis from 'ioredis';
 import { validateEnv } from './config/env.validation';
 import { APP_GUARD } from '@nestjs/core';
 import { GlobalJwtAuthGuard } from './auth/guards/global-jwt-auth.guard';
@@ -78,7 +79,13 @@ const prettyTransport = ((): { target: string } | undefined => {
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
         store: redisStore,
-        url: configService.get<string>('REDIS_URL') || 'redis://localhost:6379',
+        // cache-manager-ioredis hands this options object straight to
+        // `new Redis(opts)`, and ioredis ignores an unrecognised `url` key — a
+        // `url:` here silently connected to localhost:6379 no matter what
+        // REDIS_URL said. Build the client from the URL ourselves.
+        redisInstance: new Redis(
+          configService.get<string>('REDIS_URL') || 'redis://localhost:6379',
+        ),
         ttl: 3600,
       }),
     }),
