@@ -55,15 +55,23 @@ export class AgentsService {
    * If the org has local agent records (orgAgents table), we use those IDs
    * to filter the Telnyx response, ensuring cross-org isolation.
    */
-  async listAgents(organizationId: string | null): Promise<AgentDto[]> {
-    this.logger.log(`Fetching agents for org: ${organizationId ?? 'unscoped'}`);
+  async listAgents(
+    organizationId: string | null,
+    locationId?: string,
+  ): Promise<AgentDto[]> {
+    this.logger.log(
+      `Fetching agents for org: ${organizationId ?? 'unscoped'}, location: ${locationId ?? 'all'}`,
+    );
 
     const raw = await this.telnyxService.getAssistants();
     const list = this.toRecordArray(raw);
 
     if (organizationId) {
+      const allowedIds = new Set<string>();
+
+      // 1. Check org_agents table
       const orgAgentRecords = await this.db
-        .select()
+        .select({ externalId: schema.orgAgents.externalId })
         .from(schema.orgAgents)
         .where(
           and(
@@ -71,9 +79,26 @@ export class AgentsService {
             notDeleted(schema.orgAgents),
           ),
         );
+      orgAgentRecords.forEach((r) => allowedIds.add(r.externalId));
 
-      if (orgAgentRecords.length > 0) {
-        const allowedIds = new Set(orgAgentRecords.map((r) => r.externalId));
+      // 2. Check locations table (telnyxAssistantId)
+      const locConditions = [
+        eq(schema.locations.organizationId, organizationId),
+        notDeleted(schema.locations),
+      ];
+      if (locationId) {
+        locConditions.push(eq(schema.locations.id, locationId));
+      }
+      const locRecords = await this.db
+        .select({ assistantId: schema.locations.telnyxAssistantId })
+        .from(schema.locations)
+        .where(and(...locConditions));
+
+      locRecords.forEach((r) => {
+        if (r.assistantId) allowedIds.add(r.assistantId);
+      });
+
+      if (allowedIds.size > 0) {
         return list
           .filter((a) => allowedIds.has(a.id as string))
           .map(mapToAgentDto);

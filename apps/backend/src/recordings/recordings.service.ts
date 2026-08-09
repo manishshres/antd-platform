@@ -23,22 +23,37 @@ export class RecordingsService {
     @InjectQueue('recordings-queue') private readonly recordingsQueue: Queue,
   ) {}
 
-  async syncRecording(user: CurrentUserPayload, telnyxRecordingId: string) {
+  async syncRecording(
+    user: CurrentUserPayload,
+    telnyxRecordingId: string,
+    locationId?: string,
+  ) {
     const orgId = await this.billingService.getRequiredOrg(user);
-    const [loc] = await this.db
+
+    const targetLocId = locationId || user.locationId;
+    const locQuery = this.db
       .select()
       .from(schema.locations)
-      .where(eq(schema.locations.organizationId, orgId))
+      .where(
+        targetLocId
+          ? and(
+              eq(schema.locations.id, targetLocId),
+              eq(schema.locations.organizationId, orgId),
+            )
+          : eq(schema.locations.organizationId, orgId),
+      )
       .limit(1);
+
+    const [loc] = await locQuery;
 
     if (!loc) {
       throw new NotFoundException(
-        'No active locations found for this organization to sync recordings.',
+        'No matching location found for this organization to sync recordings.',
       );
     }
 
     await this.recordingsQueue.add('import', {
-      callSessionId: telnyxRecordingId, // fallback mapping if session is unknown
+      callSessionId: telnyxRecordingId,
       recordingId: telnyxRecordingId,
       organizationId: orgId,
       locationId: loc.id,
@@ -71,13 +86,20 @@ export class RecordingsService {
       );
     }
 
+    const whereClause = and(...conditions);
+
     const data = await this.db
       .select()
       .from(schema.recordings)
-      .where(and(...conditions))
+      .where(whereClause)
       .orderBy(desc(schema.recordings.createdAt))
       .limit(limit)
       .offset(offset);
+
+    const [{ total }] = await this.db
+      .select({ total: sql<number>`cast(count(*) as int)` })
+      .from(schema.recordings)
+      .where(whereClause);
 
     // Get signed URLs for playback
     const recordsWithUrls = await Promise.all(
@@ -93,11 +115,10 @@ export class RecordingsService {
       }),
     );
 
-    // In a real app we'd do a count query, omitting for brevity or we can do it:
     return {
       data: recordsWithUrls,
-      total: data.length, // Mocked total, normally would run a count query
-      hasMore: data.length === limit,
+      total,
+      hasMore: offset + limit < total,
     };
   }
 

@@ -88,6 +88,14 @@ export class ProvisioningService {
         });
       }
 
+      // 4. Create a default free subscription for this location
+      await tx.insert(schema.subscriptions).values({
+        organizationId: newOrg.id,
+        locationId: newLocation.id,
+        planId: 'free',
+        status: 'active',
+      });
+
       return { organizationId: newOrg.id, locationId: newLocation.id };
     });
 
@@ -291,7 +299,7 @@ export class ProvisioningService {
       .orderBy(desc(schema.organizations.createdAt));
   }
 
-  async getProvisioningStatus(organizationId: string) {
+  async getProvisioningStatus(organizationId: string, locationId?: string) {
     const [org] = await this.db
       .select()
       .from(schema.organizations)
@@ -300,55 +308,94 @@ export class ProvisioningService {
 
     if (!org) throw new NotFoundException('Organization not found.');
 
-    const [location] = await this.db
+    const locationsQuery = this.db
       .select()
       .from(schema.locations)
-      .where(eq(schema.locations.organizationId, org.id))
-      .limit(1);
+      .where(
+        locationId
+          ? and(
+              eq(schema.locations.organizationId, org.id),
+              eq(schema.locations.id, locationId),
+            )
+          : eq(schema.locations.organizationId, org.id),
+      );
 
-    if (!location) throw new NotFoundException('Location not found.');
+    const locations = await locationsQuery;
+    if (locations.length === 0) throw new NotFoundException('Location not found.');
 
-    const steps = await this.db
-      .select()
-      .from(schema.orgProvisioningSteps)
-      .where(eq(schema.orgProvisioningSteps.locationId, location.id))
-      .orderBy(schema.orgProvisioningSteps.stepOrder);
+    const locationsWithSteps = await Promise.all(
+      locations.map(async (loc) => {
+        const steps = await this.db
+          .select()
+          .from(schema.orgProvisioningSteps)
+          .where(eq(schema.orgProvisioningSteps.locationId, loc.id))
+          .orderBy(schema.orgProvisioningSteps.stepOrder);
+
+        return {
+          locationId: loc.id,
+          locationName: loc.name,
+          locationStatus: loc.status,
+          provisioningError: loc.provisioningError,
+          steps: steps.map((s) => ({
+            id: s.id,
+            stepName: s.stepName,
+            stepOrder: s.stepOrder,
+            status: s.status,
+            attempts: s.attempts,
+            lastError: s.lastError,
+            startedAt: s.startedAt,
+            completedAt: s.completedAt,
+          })),
+        };
+      }),
+    );
 
     return {
       organizationId: org.id,
-      locationId: location.id,
       organizationStatus: org.status,
-      locationStatus: location.status,
-      provisioningError: location.provisioningError,
-      steps: steps.map((s) => ({
-        id: s.id,
-        stepName: s.stepName,
-        stepOrder: s.stepOrder,
-        status: s.status,
-        attempts: s.attempts,
-        lastError: s.lastError,
-        startedAt: s.startedAt,
-        completedAt: s.completedAt,
-      })),
+      locations: locationsWithSteps,
+      // Backward compatibility fields for single location
+      locationId: locationsWithSteps[0]?.locationId,
+      locationStatus: locationsWithSteps[0]?.locationStatus,
+      provisioningError: locationsWithSteps[0]?.provisioningError,
+      steps: locationsWithSteps[0]?.steps || [],
     };
   }
 
-  async retryProvisioning(organizationId: string) {
-    const status = await this.getProvisioningStatus(organizationId);
+  async retryProvisioning(organizationId: string, targetLocationId?: string) {
+    const status = await this.getProvisioningStatus(organizationId, targetLocationId);
+    const locId = targetLocationId || status.locationId;
 
-    if (status.locationStatus === 'active') {
+    const [loc] = await this.db
+      .select()
+      .from(schema.locations)
+      .where(eq(schema.locations.id, locId))
+      .limit(1);
+
+    if (!loc) throw new NotFoundException('Location not found.');
+
+    if (loc.status === 'active') {
       throw new BadRequestException('Location is already active.');
     }
 
     await this.db
       .update(schema.locations)
       .set({ status: 'provisioning', provisioningError: null })
-      .where(eq(schema.locations.id, status.locationId));
+      .where(eq(schema.locations.id, locId));
 
-    await this.db
-      .update(schema.organizations)
-      .set({ status: 'provisioning' })
-      .where(eq(schema.organizations.id, status.organizationId));
+    // M5 fix: Only mark org as provisioning if it isn't already active
+    const [org] = await this.db
+      .select({ status: schema.organizations.status })
+      .from(schema.organizations)
+      .where(eq(schema.organizations.id, organizationId))
+      .limit(1);
+
+    if (org?.status !== 'active') {
+      await this.db
+        .update(schema.organizations)
+        .set({ status: 'provisioning' })
+        .where(eq(schema.organizations.id, organizationId));
+    }
 
     // Reset failed steps to pending
     await this.db
@@ -356,7 +403,7 @@ export class ProvisioningService {
       .set({ status: 'pending', lastError: null })
       .where(
         and(
-          eq(schema.orgProvisioningSteps.locationId, status.locationId),
+          eq(schema.orgProvisioningSteps.locationId, locId),
           eq(schema.orgProvisioningSteps.status, 'failed'),
         ),
       );

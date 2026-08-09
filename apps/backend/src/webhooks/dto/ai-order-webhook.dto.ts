@@ -88,4 +88,13 @@ export class AiOrderWebhookDto {
   @IsString()
   @MaxLength(1000)
   specialInstructions?: string;
+
+  @ApiProperty({
+    example: 'd0ad21bb-452f-488f-9a4f-561bcf7bf812',
+    description: 'Target location ID. Optional.',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  locationId?: string;
 }

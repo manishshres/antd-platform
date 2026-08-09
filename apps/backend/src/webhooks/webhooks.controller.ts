@@ -149,6 +149,7 @@ export class WebhooksController {
       // Add to BullMQ webhook queue to process asynchronously
       job = await this.webhookQueue.add('process-ai-order', {
         orgId: org.id,
+        locationId: dto.locationId,
         customerName: dto.customerName,
         customerPhone: dto.customerPhone,
         items: dto.items,

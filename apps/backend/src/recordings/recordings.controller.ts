@@ -82,8 +82,9 @@ export class RecordingsController {
   async syncRecording(
     @CurrentUser() user: CurrentUserPayload,
     @Param('id') id: string,
+    @Query('locationId') locationId?: string,
   ) {
-    return this.recordingsService.syncRecording(user, id);
+    return this.recordingsService.syncRecording(user, id, locationId);
   }
 
   @Get(':id/export')

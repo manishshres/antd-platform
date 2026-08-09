@@ -48,6 +48,8 @@ export default function EditLocationPage() {
       const dynVars = location.aiSettings?.dynamicVariables ?? {};
       form.setFieldsValue({
         name: location.name,
+        phoneNumber: location.phoneNumber,
+        telnyxAssistantId: location.telnyxAssistantId,
         address: location.address,
         city: location.city,
         state: location.state,
@@ -185,7 +187,25 @@ export default function EditLocationPage() {
             />
           </Form.Item>
 
-          <Divider>AI Agent Config</Divider>
+          <Divider>Voice AI & Telephony Config</Divider>
+          <Space style={{ display: "flex" }} align="start">
+            <Form.Item
+              name="phoneNumber"
+              label="Assigned Phone Number"
+              extra="Primary E.164 phone number for receiving customer calls at this location (e.g. +12025550123)."
+              style={{ flex: 1 }}
+            >
+              <Input placeholder="+12025550123" />
+            </Form.Item>
+            <Form.Item
+              name="telnyxAssistantId"
+              label="Telnyx AI Assistant ID"
+              extra="ID of the Telnyx Voice AI agent handling incoming phone orders."
+              style={{ flex: 1 }}
+            >
+              <Input placeholder="ast_123456789..." />
+            </Form.Item>
+          </Space>
           <Form.Item
             name="menuBucket"
             label="Menu Knowledge Bucket"

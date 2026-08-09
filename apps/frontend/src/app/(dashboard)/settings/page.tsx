@@ -351,16 +351,16 @@ export default function SettingsHubPage() {
 
   const locColumns = [
     { title: "Name", dataIndex: "name", key: "name", render: (text: string) => <Text strong>{text}</Text> },
-    { title: "Address", dataIndex: "address", key: "address" },
+    { title: "Phone", dataIndex: "phoneNumber", key: "phoneNumber", render: (phone?: string) => phone ? <Tag color="blue">{phone}</Tag> : "—" },
+    { title: "Voice AI Agent", dataIndex: "telnyxAssistantId", key: "telnyxAssistantId", render: (id?: string) => id ? <Tag color="purple">{id.length > 16 ? `${id.slice(0, 14)}...` : id}</Tag> : <Tag color="orange">Unassigned</Tag> },
     { title: "City", dataIndex: "city", key: "city" },
-    { title: "State", dataIndex: "state", key: "state" },
     { title: "Timezone", dataIndex: "timezone", key: "timezone" },
     {
       title: "Status",
       dataIndex: "status",
       key: "status",
-      render: (s: string) => (
-        <Tag color={s === "active" ? "green" : "default"}>{s.toUpperCase()}</Tag>
+      render: (s?: string) => (
+        <Tag color={s === "active" ? "green" : "default"}>{(s || "draft").toUpperCase()}</Tag>
       ),
     },
     {
@@ -757,8 +757,8 @@ export default function SettingsHubPage() {
           <Form.Item name="city" label="City"><Input /></Form.Item>
           <Form.Item name="state" label="State"><Input /></Form.Item>
           <Form.Item name="country" label="Country"><Input /></Form.Item>
-          <Form.Item name="timezone" label="Timezone"><Input placeholder="e.g. America/New_York" /></Form.Item>
-          
+          <Form.Item name="phoneNumber" label="Phone Number" extra="Primary phone number (+1...)"><Input placeholder="+12025550123" /></Form.Item>
+          <Form.Item name="telnyxAssistantId" label="Telnyx AI Assistant ID" extra="Telnyx Voice Agent ID"><Input placeholder="ast_123456789..." /></Form.Item>
           <Divider>AI Agent Config</Divider>
           <Form.List name="dynamicVariables">
             {(fields, { add, remove }) => (

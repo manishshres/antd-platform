@@ -3,6 +3,7 @@ import {
   Get,
   Patch,
   Param,
+  Query,
   Body,
   UseGuards,
   HttpCode,
@@ -36,8 +37,11 @@ export class AgentsController {
   })
   @ApiResponse({ status: 200, description: 'Returns list of agents.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
-  async listAgents(@CurrentUser() user: CurrentUserPayload): Promise<unknown> {
-    return this.agentsService.listAgents(user.organizationId);
+  async listAgents(
+    @CurrentUser() user: CurrentUserPayload,
+    @Query('locationId') locationId?: string,
+  ): Promise<unknown> {
+    return this.agentsService.listAgents(user.organizationId, locationId);
   }
 
   @Get(':id')
@@ -54,15 +58,6 @@ export class AgentsController {
     return this.agentsService.getAgent(id, user.organizationId);
   }
 
-  @Patch(':id')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Update a voice AI agent configuration' })
-  @ApiResponse({ status: 200, description: 'Returns updated agent.' })
-  @ApiResponse({ status: 401, description: 'Unauthorized.' })
-  @ApiResponse({
-    status: 403,
-    description: 'Agent does not belong to your organization.',
-  })
   @Patch(':id')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Update a voice AI agent configuration' })

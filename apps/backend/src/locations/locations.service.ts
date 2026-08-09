@@ -86,14 +86,52 @@ export class LocationsService {
       throw new NotFoundException('Location not found in your organization.');
     }
 
+    const updatePayload: Record<string, any> = {
+      ...dto,
+      updatedAt: new Date(),
+    };
+
+    // Auto-activate location if phone number or AI agent is added manually and no status specified
+    if (!dto.status && (dto.phoneNumber || dto.telnyxAssistantId)) {
+      if (location.status === 'draft' || location.status === 'provisioning') {
+        updatePayload.status = 'active';
+      }
+    }
+
     const [updated] = await this.db
       .update(schema.locations)
-      .set({
-        ...dto,
-        updatedAt: new Date(),
-      })
+      .set(updatePayload)
       .where(eq(schema.locations.id, locationId))
       .returning();
+
+    // Map phone number to orgPhoneNumbers table for routing & plan limit tracking
+    if (dto.phoneNumber) {
+      const existingMapping = await this.db
+        .select()
+        .from(schema.orgPhoneNumbers)
+        .where(eq(schema.orgPhoneNumbers.phoneNumber, dto.phoneNumber))
+        .limit(1);
+
+      if (existingMapping.length === 0) {
+        await this.db.insert(schema.orgPhoneNumbers).values({
+          organizationId,
+          locationId,
+          phoneNumber: dto.phoneNumber,
+          externalId: dto.telnyxPhoneNumberId || null,
+          name: `${updated.name} Phone`,
+        });
+      } else {
+        await this.db
+          .update(schema.orgPhoneNumbers)
+          .set({
+            organizationId,
+            locationId,
+            externalId: dto.telnyxPhoneNumberId || null,
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.orgPhoneNumbers.phoneNumber, dto.phoneNumber));
+      }
+    }
 
     this.auditService.fireAndForget({
       action: 'location.updated',

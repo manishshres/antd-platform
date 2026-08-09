@@ -87,11 +87,14 @@ describe('WebhooksController', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('should enqueue job if valid', async () => {
+    it('should enqueue job with locationId and order metadata if valid', async () => {
       mockDb.limit.mockResolvedValueOnce([{ id: 'org-1' }]);
       const res = await controller.handleAiOrder('valid-key', {
+        locationId: 'loc-100',
         customerName: 'Alice',
         customerPhone: '555-1234',
+        orderType: 'takeout',
+        specialInstructions: 'No onions',
         items: [{ menuItemId: 'item-1', quantity: 1 }],
       });
 
@@ -103,12 +106,18 @@ describe('WebhooksController', () => {
           order_status: 'confirmed',
         },
       });
-      expect(mockWebhookQueue.add).toHaveBeenCalledWith('process-ai-order', {
-        orgId: 'org-1',
-        customerName: 'Alice',
-        customerPhone: '555-1234',
-        items: [{ menuItemId: 'item-1', quantity: 1 }],
-      });
+      expect(mockWebhookQueue.add).toHaveBeenCalledWith(
+        'process-ai-order',
+        expect.objectContaining({
+          orgId: 'org-1',
+          locationId: 'loc-100',
+          customerName: 'Alice',
+          customerPhone: '555-1234',
+          orderType: 'takeout',
+          specialInstructions: 'No onions',
+          items: [{ menuItemId: 'item-1', quantity: 1 }],
+        }),
+      );
     });
   });
 });

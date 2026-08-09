@@ -98,4 +98,28 @@ export class CreateLocationDto {
   @IsOptional()
   @IsObject()
   printSettings?: Record<string, unknown>;
+
+  @ApiPropertyOptional({ example: '+12025550123' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  phoneNumber?: string;
+
+  @ApiPropertyOptional({ example: 'phone-number-id-123' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  telnyxPhoneNumberId?: string;
+
+  @ApiPropertyOptional({ example: 'assistant-id-123' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  telnyxAssistantId?: string;
+
+  @ApiPropertyOptional({ example: 'active' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  status?: string;
 }
