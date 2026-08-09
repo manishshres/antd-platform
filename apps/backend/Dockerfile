@@ -1,12 +1,14 @@
 # Build stage
-FROM node:22-alpine AS builder
+FROM node:24-alpine AS builder
 WORKDIR /app
 
 # Copy the entire monorepo
 COPY . .
 
-# Install dependencies at the root
-RUN npm ci
+# Install dependencies at the root. Skip lifecycle scripts: the root postinstall
+# runs patch-package (patches only the Expo POS app) and husky, and .git isn't in
+# the build context — none of it is needed to build the backend.
+RUN npm ci --ignore-scripts
 
 # Build the shared packages and backend
 RUN npm run build -w packages/shared-types
@@ -17,7 +19,7 @@ RUN npm run build -w apps/backend
 RUN test -f apps/backend/dist/main.js
 
 # Production stage
-FROM node:22-alpine AS production
+FROM node:24-alpine AS production
 WORKDIR /app
 
 # Copy the root package.json and workspace configuration
@@ -25,8 +27,9 @@ COPY package.json package-lock.json ./
 COPY apps/backend/package.json ./apps/backend/
 COPY packages/shared-types/package.json ./packages/shared-types/
 
-# Install production dependencies only
-RUN npm ci --omit=dev
+# Install production dependencies only. --ignore-scripts is required: the root
+# postinstall shells out to patch-package, a devDependency that isn't installed here.
+RUN npm ci --omit=dev --ignore-scripts
 
 # Copy built outputs
 COPY --from=builder /app/apps/backend/dist ./apps/backend/dist
