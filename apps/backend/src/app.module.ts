@@ -52,6 +52,22 @@ import { APP_GUARD } from '@nestjs/core';
 import { GlobalJwtAuthGuard } from './auth/guards/global-jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 
+const isProduction = process.env.NODE_ENV === 'production';
+
+// pino-pretty is a devDependency, so it is absent from the production image.
+// Resolve it before asking pino to load it — otherwise a container that boots
+// without NODE_ENV=production dies at startup on "unable to determine transport
+// target for pino-pretty" instead of just logging JSON.
+const prettyTransport = ((): { target: string } | undefined => {
+  if (isProduction) return undefined;
+  try {
+    require.resolve('pino-pretty');
+    return { target: 'pino-pretty' };
+  } catch {
+    return undefined;
+  }
+})();
+
 @Module({
   imports: [
     // ── Core infrastructure
@@ -70,11 +86,8 @@ import { RolesGuard } from './auth/guards/roles.guard';
     PrometheusModule.register(),
     LoggerModule.forRoot({
       pinoHttp: {
-        level: process.env.NODE_ENV !== 'production' ? 'debug' : 'info',
-        transport:
-          process.env.NODE_ENV !== 'production'
-            ? { target: 'pino-pretty' }
-            : undefined,
+        level: isProduction ? 'info' : 'debug',
+        transport: prettyTransport,
       },
       forRoutes: ['*path'],
     }),
