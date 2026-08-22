@@ -87,13 +87,14 @@ export class AuthService {
     const passwordValid = await bcrypt.compare(pass, user.passwordHash);
 
     if (!passwordValid) {
-      const maxAttempts = this.configService.get<number>(
-        'ACCOUNT_MAX_FAILED_ATTEMPTS',
-        5,
+      // Values read from .env arrive as strings even when the generic says number, so
+      // coerce: `Date.now() + '60000'` concatenates into a nonsense timestamp and the
+      // lockout write then dies with "Invalid time value", turning a 401 into a 500.
+      const maxAttempts = Number(
+        this.configService.get<number>('ACCOUNT_MAX_FAILED_ATTEMPTS', 5),
       );
-      const lockoutDuration = this.configService.get<number>(
-        'ACCOUNT_LOCKOUT_DURATION_MS',
-        60000,
+      const lockoutDuration = Number(
+        this.configService.get<number>('ACCOUNT_LOCKOUT_DURATION_MS', 60000),
       );
 
       // M3: Atomic increment — eliminates the read-modify-write race on concurrent requests.
