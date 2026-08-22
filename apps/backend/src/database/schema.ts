@@ -36,6 +36,13 @@ export const organizations = pgTable(
       .notNull(),
   },
   (t) => [
+    // One live organization per name. Provisioning generates a random slug suffix, so the
+    // slug never collided and nothing stopped the same company being provisioned twice —
+    // including by double-clicking the wizard. Case-insensitive, and partial so a
+    // soft-deleted org releases its name for a clean re-provision.
+    uniqueIndex('idx_organizations_name_unique')
+      .on(sql`lower(${t.name})`)
+      .where(sql`${t.deletedAt} IS NULL`),
     check(
       'organizations_status_check',
       sql`${t.status} IN ('draft', 'active', 'suspended', 'archived', 'provisioning')`,
@@ -107,6 +114,11 @@ export const locations = pgTable(
   },
   (t) => [
     index('idx_locations_organization_id').on(t.organizationId),
+    // One live location per name within an organization, on the same reasoning as the
+    // organizations index above.
+    uniqueIndex('idx_locations_org_name_unique')
+      .on(t.organizationId, sql`lower(${t.name})`)
+      .where(sql`${t.deletedAt} IS NULL`),
     // A phone number backs exactly one live location. Partial so that soft-deleted
     // locations release their number and locations without one aren't constrained.
     uniqueIndex('idx_locations_phone_number_unique')

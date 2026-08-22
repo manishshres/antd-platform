@@ -32,7 +32,81 @@ export class ProvisioningService {
     private readonly auditService: AuditService,
   ) {}
 
+  /**
+   * Postgres unique-violation code. The partial indexes on organizations(lower(name)) and
+   * locations(organization_id, lower(name)) are what actually stop a duplicate — the
+   * pre-flight checks below lose to a simultaneous second submit, which is exactly the
+   * double-click case. Translate the raw violation into a 409 the UI can show.
+   */
+  private static readonly UNIQUE_VIOLATION = '23505';
+
+  private async runOrConflict<T>(
+    work: () => Promise<T>,
+    message: string,
+  ): Promise<T> {
+    try {
+      return await work();
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      if (code === ProvisioningService.UNIQUE_VIOLATION) {
+        throw new ConflictException(message);
+      }
+      throw error;
+    }
+  }
+
+  /** Rejects a name already held by a live organization (case-insensitive). */
+  private async assertOrganizationNameFree(name: string): Promise<void> {
+    const [existing] = await this.db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(
+        notDeleted(
+          schema.organizations,
+          sql`lower(${schema.organizations.name}) = lower(${name})`,
+        ),
+      )
+      .limit(1);
+
+    if (existing) {
+      throw new ConflictException(
+        `An organization named "${name}" already exists. Rename it, or deprovision the existing one first.`,
+      );
+    }
+  }
+
+  /** Rejects a location name already used within the same organization. */
+  private async assertLocationNameFree(
+    organizationId: string,
+    name: string,
+  ): Promise<void> {
+    const [existing] = await this.db
+      .select({ id: schema.locations.id })
+      .from(schema.locations)
+      .where(
+        notDeleted(
+          schema.locations,
+          and(
+            eq(schema.locations.organizationId, organizationId),
+            sql`lower(${schema.locations.name}) = lower(${name})`,
+          ),
+        ),
+      )
+      .limit(1);
+
+    if (existing) {
+      throw new ConflictException(
+        `This organization already has a location named "${name}".`,
+      );
+    }
+  }
+
   async createOrganizationProvisioning(dto: CreateOrgProvisionDto) {
+    // Reject the duplicate before any Telnyx work happens. The DB index is the real
+    // guarantee (two simultaneous submits both pass this check), but reaching it first
+    // gives a usable message instead of a raw constraint violation.
+    await this.assertOrganizationNameFree(dto.orgName);
+
     const uniqueSlug = generateUniqueSlug(dto.orgName);
     const uniqueLocationSlug = generateUniqueSlug(dto.locationName);
 
@@ -55,73 +129,77 @@ export class ProvisioningService {
       );
     }
 
-    const result = await this.db.transaction(async (tx) => {
-      // 1. Create Organization
-      const [newOrg] = await tx
-        .insert(schema.organizations)
-        .values({
-          name: dto.orgName,
-          slug: uniqueSlug,
-          status: 'provisioning',
-        })
-        .returning();
+    const result = await this.runOrConflict(
+      () =>
+        this.db.transaction(async (tx) => {
+          // 1. Create Organization
+          const [newOrg] = await tx
+            .insert(schema.organizations)
+            .values({
+              name: dto.orgName,
+              slug: uniqueSlug,
+              status: 'provisioning',
+            })
+            .returning();
 
-      // 2. Create Location
-      const [newLocation] = await tx
-        .insert(schema.locations)
-        .values({
-          organizationId: newOrg.id,
-          name: dto.locationName,
-          slug: uniqueLocationSlug,
-          country: dto.country,
-          state: dto.state,
-          city: dto.city,
-          phoneNumber: reusedNumber?.phoneNumber ?? dto.phoneNumber ?? null,
-          telnyxPhoneNumberId: reusedNumber?.telnyxPhoneNumberId ?? null,
-          aiSettings: {
-            baseAgentId: dto.baseAgentId,
-            dynamicVariables: dto.dynamicVariables,
-            menuUrl: dto.menuUrl,
-            useAgentPhoneNumber: dto.useAgentPhoneNumber ?? false,
-          },
-          status: 'provisioning',
-        })
-        .returning();
+          // 2. Create Location
+          const [newLocation] = await tx
+            .insert(schema.locations)
+            .values({
+              organizationId: newOrg.id,
+              name: dto.locationName,
+              slug: uniqueLocationSlug,
+              country: dto.country,
+              state: dto.state,
+              city: dto.city,
+              phoneNumber: reusedNumber?.phoneNumber ?? dto.phoneNumber ?? null,
+              telnyxPhoneNumberId: reusedNumber?.telnyxPhoneNumberId ?? null,
+              aiSettings: {
+                baseAgentId: dto.baseAgentId,
+                dynamicVariables: dto.dynamicVariables,
+                menuUrl: dto.menuUrl,
+                useAgentPhoneNumber: dto.useAgentPhoneNumber ?? false,
+              },
+              status: 'provisioning',
+            })
+            .returning();
 
-      // 3. Create Provisioning Steps — the search/purchase pair is omitted entirely when
-      // reusing the agent's number, so no billable number order is ever placed.
-      const steps = [
-        ...(reusedNumber
-          ? []
-          : ['search_phone_number', 'purchase_phone_number']),
-        'clone_agent',
-        'assign_phone_to_agent',
-        'configure_agent',
-        'import_menu',
-        'register_webhook',
-        'send_admin_invitation',
-      ];
+          // 3. Create Provisioning Steps — the search/purchase pair is omitted entirely when
+          // reusing the agent's number, so no billable number order is ever placed.
+          const steps = [
+            ...(reusedNumber
+              ? []
+              : ['search_phone_number', 'purchase_phone_number']),
+            'clone_agent',
+            'assign_phone_to_agent',
+            'configure_agent',
+            'import_menu',
+            'register_webhook',
+            'send_admin_invitation',
+          ];
 
-      for (let i = 0; i < steps.length; i++) {
-        await tx.insert(schema.orgProvisioningSteps).values({
-          organizationId: newOrg.id,
-          locationId: newLocation.id,
-          stepName: steps[i],
-          stepOrder: i + 1,
-          status: 'pending',
-        });
-      }
+          for (let i = 0; i < steps.length; i++) {
+            await tx.insert(schema.orgProvisioningSteps).values({
+              organizationId: newOrg.id,
+              locationId: newLocation.id,
+              stepName: steps[i],
+              stepOrder: i + 1,
+              status: 'pending',
+            });
+          }
 
-      // 4. Create a default free subscription for this location
-      await tx.insert(schema.subscriptions).values({
-        organizationId: newOrg.id,
-        locationId: newLocation.id,
-        planId: 'free',
-        status: 'active',
-      });
+          // 4. Create a default free subscription for this location
+          await tx.insert(schema.subscriptions).values({
+            organizationId: newOrg.id,
+            locationId: newLocation.id,
+            planId: 'free',
+            status: 'active',
+          });
 
-      return { organizationId: newOrg.id, locationId: newLocation.id };
-    });
+          return { organizationId: newOrg.id, locationId: newLocation.id };
+        }),
+      `An organization named "${dto.orgName}" already exists.`,
+    );
 
     // Enqueue job
     await this.provisioningQueue.add(
@@ -274,52 +352,58 @@ export class ProvisioningService {
       throw new NotFoundException('Organization not found');
     }
 
+    await this.assertLocationNameFree(organizationId, dto.locationName);
+
     const uniqueLocationSlug = generateUniqueSlug(dto.locationName);
 
-    const result = await this.db.transaction(async (tx) => {
-      // 1. Create Location
-      const [newLocation] = await tx
-        .insert(schema.locations)
-        .values({
-          organizationId: organizationId,
-          name: dto.locationName,
-          slug: uniqueLocationSlug,
-          country: dto.country,
-          state: dto.state,
-          city: dto.city,
-          status: 'provisioning',
-        })
-        .returning();
+    const result = await this.runOrConflict(
+      () =>
+        this.db.transaction(async (tx) => {
+          // 1. Create Location
+          const [newLocation] = await tx
+            .insert(schema.locations)
+            .values({
+              organizationId: organizationId,
+              name: dto.locationName,
+              slug: uniqueLocationSlug,
+              country: dto.country,
+              state: dto.state,
+              city: dto.city,
+              status: 'provisioning',
+            })
+            .returning();
 
-      // 2. Create Provisioning Steps for a new location
-      const steps = [
-        'search_phone_number',
-        'purchase_phone_number',
-        'clone_agent',
-        'assign_phone_to_agent',
-        'configure_agent',
-      ];
+          // 2. Create Provisioning Steps for a new location
+          const steps = [
+            'search_phone_number',
+            'purchase_phone_number',
+            'clone_agent',
+            'assign_phone_to_agent',
+            'configure_agent',
+          ];
 
-      for (let i = 0; i < steps.length; i++) {
-        await tx.insert(schema.orgProvisioningSteps).values({
-          organizationId: organizationId,
-          locationId: newLocation.id,
-          stepName: steps[i],
-          stepOrder: i + 1,
-          status: 'pending',
-        });
-      }
+          for (let i = 0; i < steps.length; i++) {
+            await tx.insert(schema.orgProvisioningSteps).values({
+              organizationId: organizationId,
+              locationId: newLocation.id,
+              stepName: steps[i],
+              stepOrder: i + 1,
+              status: 'pending',
+            });
+          }
 
-      // 3. Create a default subscription for this location
-      await tx.insert(schema.subscriptions).values({
-        organizationId: organizationId,
-        locationId: newLocation.id,
-        planId: 'free',
-        status: 'active',
-      });
+          // 3. Create a default subscription for this location
+          await tx.insert(schema.subscriptions).values({
+            organizationId: organizationId,
+            locationId: newLocation.id,
+            planId: 'free',
+            status: 'active',
+          });
 
-      return { organizationId, locationId: newLocation.id };
-    });
+          return { organizationId, locationId: newLocation.id };
+        }),
+      `This organization already has a location named "${dto.locationName}".`,
+    );
 
     // Enqueue job to provision the location resources
     await this.provisioningQueue.add(
@@ -357,6 +441,9 @@ export class ProvisioningService {
         count: sql<number>`cast(count(${schema.organizations.id}) as int)`,
       })
       .from(schema.organizations)
+      // Soft-deleted orgs were still counted here, so a deprovisioned company kept
+      // showing up in the provisioning dashboard long after it was gone.
+      .where(notDeleted(schema.organizations))
       .groupBy(schema.organizations.status);
 
     const summary = {
@@ -391,7 +478,12 @@ export class ProvisioningService {
         schema.organizations,
         eq(schema.orgProvisioningSteps.organizationId, schema.organizations.id),
       )
-      .where(eq(schema.orgProvisioningSteps.status, 'failed'))
+      .where(
+        notDeleted(
+          schema.organizations,
+          eq(schema.orgProvisioningSteps.status, 'failed'),
+        ),
+      )
       .orderBy(desc(schema.orgProvisioningSteps.startedAt));
 
     return failedSteps;

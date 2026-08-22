@@ -160,13 +160,27 @@ export class OrganizationsService {
   async deleteOrganizationGlobal(id: string) {
     const org = await this.getMyOrganization(id);
 
-    await this.db
-      .update(schema.organizations)
-      .set({
-        deletedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(schema.organizations.id, org.id));
+    const deletedAt = new Date();
+
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(schema.organizations)
+        .set({ deletedAt, updatedAt: deletedAt })
+        .where(eq(schema.organizations.id, org.id));
+
+      // Cascade to locations. Deleting only the org left its locations live: they kept
+      // their claim on the phone-number unique index (so the number could never be
+      // reused) and still answered location-scoped queries.
+      await tx
+        .update(schema.locations)
+        .set({ deletedAt, updatedAt: deletedAt, status: 'archived' })
+        .where(
+          notDeleted(
+            schema.locations,
+            eq(schema.locations.organizationId, org.id),
+          ),
+        );
+    });
 
     this.auditService.fireAndForget({
       action: 'organization.delete',
