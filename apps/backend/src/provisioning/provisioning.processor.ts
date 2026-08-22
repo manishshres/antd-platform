@@ -14,8 +14,9 @@ import { randomBytes, createHash } from 'crypto';
 
 import { Queue } from 'bullmq';
 import { InjectQueue } from '@nestjs/bullmq';
+import { SHARED_WORKER_OPTIONS } from '../queues/queues.module';
 
-@Processor('provisioning-queue')
+@Processor('provisioning-queue', SHARED_WORKER_OPTIONS)
 export class ProvisioningProcessor extends WorkerHost {
   private readonly logger = new Logger(ProvisioningProcessor.name);
 

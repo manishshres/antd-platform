@@ -7,6 +7,7 @@ import {
   SalesReportPrintPayload,
 } from '../printer.service';
 import { PrintJobsService } from '../print-jobs.service';
+import { SHARED_WORKER_OPTIONS } from '../../queues/queues.module';
 
 interface PrintJobData {
   orgId: string;
@@ -16,7 +17,7 @@ interface PrintJobData {
   printJobId?: string;
 }
 
-@Processor('print-queue')
+@Processor('print-queue', SHARED_WORKER_OPTIONS)
 export class PrintQueueProcessor extends WorkerHost {
   private readonly logger = new Logger(PrintQueueProcessor.name);
 

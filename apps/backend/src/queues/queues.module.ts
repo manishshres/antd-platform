@@ -5,6 +5,24 @@ import { buildRedisConnection } from '../common/redis-connection';
 
 const queueRedisLogger = new Logger('QueueRedis');
 
+/**
+ * Worker tuning shared by every processor.
+ *
+ * A BullMQ worker waits for jobs with `BZPOPMIN <marker> <drainDelay>`; when a job is
+ * added, the marker is pushed and the block returns immediately. `drainDelay` is therefore
+ * only how long an *idle* worker blocks before re-issuing the command — raising it does not
+ * delay job pickup at all. At the 5s default, 8 idle queues cost 8 × 86400/5 ≈ 138k
+ * commands a day doing nothing; at 60s that is ~11.5k. Upstash bills per command.
+ *
+ * `stalledInterval` is the sweep that reclaims jobs from workers that died mid-job. The
+ * tradeoff is bounded: a crashed worker's job now waits up to 5 minutes to be retried
+ * instead of 30 seconds.
+ */
+export const SHARED_WORKER_OPTIONS = {
+  drainDelay: 60,
+  stalledInterval: 300_000,
+} as const;
+
 @Global()
 @Module({
   imports: [

@@ -6,6 +6,7 @@ import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
 
 import { Redis } from 'ioredis';
+import { SHARED_WORKER_OPTIONS } from '../../queues/queues.module';
 
 interface OutboundWebhookJobData {
   url: string;
@@ -14,7 +15,7 @@ interface OutboundWebhookJobData {
   payload: Record<string, unknown>;
 }
 
-@Processor('outbound-webhooks-queue')
+@Processor('outbound-webhooks-queue', SHARED_WORKER_OPTIONS)
 export class OutboundWebhookProcessor extends WorkerHost {
   private readonly logger = new Logger(OutboundWebhookProcessor.name);
 

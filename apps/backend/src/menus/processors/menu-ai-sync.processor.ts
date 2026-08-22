@@ -3,6 +3,7 @@ import { Logger } from '@nestjs/common';
 import { Job, UnrecoverableError } from 'bullmq';
 import { MenusService } from '../menus.service';
 import { TelnyxStorageSuspendedError } from '../../telnyx/telnyx.service';
+import { SHARED_WORKER_OPTIONS } from '../../queues/queues.module';
 
 interface MenuAiSyncJobData {
   orgId: string;
@@ -14,7 +15,7 @@ interface MenuAiSyncJobData {
  * only runs once edits have settled. It re-syncs already-published locations; first-time publish
  * stays a manual action from the menu page.
  */
-@Processor('menu-ai-sync-queue')
+@Processor('menu-ai-sync-queue', SHARED_WORKER_OPTIONS)
 export class MenuAiSyncProcessor extends WorkerHost {
   private readonly logger = new Logger(MenuAiSyncProcessor.name);
 
