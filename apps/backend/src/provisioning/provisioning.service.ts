@@ -165,11 +165,7 @@ export class ProvisioningService {
    * the ones that are taken instead of failing at submit time.
    */
   async getAgentPhoneNumbers(agentId: string) {
-    const assistant = await this.telnyxService.getAssistant(agentId);
-    const texmlAppId =
-      assistant.telephony_settings?.default_texml_app_id ??
-      assistant.data?.telephony_settings?.default_texml_app_id;
-
+    const texmlAppId = await this.getAgentTexmlAppId(agentId);
     if (!texmlAppId) return [];
 
     const res =
@@ -205,13 +201,35 @@ export class ProvisioningService {
     });
   }
 
+  /**
+   * The TeXML app a number must be routed through to count as this agent's. Telnyx returns
+   * the assistant either bare or wrapped in `data` depending on the endpoint, so check both.
+   */
+  private async getAgentTexmlAppId(agentId: string): Promise<string | null> {
+    const assistant = await this.telnyxService.getAssistant(agentId);
+    return (
+      assistant.telephony_settings?.default_texml_app_id ??
+      assistant.data?.telephony_settings?.default_texml_app_id ??
+      null
+    );
+  }
+
   /** Picks the agent's first unclaimed number, or explains why none is usable. */
   private async resolveAgentPhoneNumberForClaim(agentId: string) {
+    // Distinguish the two ways this comes up empty. Collapsing them into one message sent
+    // operators looking for a missing number when the agent had no TeXML app at all.
+    const texmlAppId = await this.getAgentTexmlAppId(agentId);
+    if (!texmlAppId) {
+      throw new BadRequestException(
+        'The selected agent has no telephony app configured in Telnyx, so no number can be traced to it. Attach one to the assistant, or provision a new number instead.',
+      );
+    }
+
     const numbers = await this.getAgentPhoneNumbers(agentId);
 
     if (numbers.length === 0) {
       throw new BadRequestException(
-        'The selected agent has no phone number attached. Provision a new number instead.',
+        "No phone numbers are routed to the selected agent's telephony app. Provision a new number instead.",
       );
     }
 

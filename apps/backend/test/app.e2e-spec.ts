@@ -20,7 +20,9 @@ describe('RootController (e2e)', () => {
     const res = await request(app.getHttpServer()).get('/').expect(200);
 
     expect(res.body).toMatchObject({ name: 'Coneeko', status: 'ok' });
-    expect(res.body.contact.website).toBeDefined();
+    expect(
+      (res.body as { contact: { website?: string } }).contact.website,
+    ).toBeDefined();
   });
 
   afterEach(async () => {

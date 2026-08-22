@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Logger, Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from './app.controller';
@@ -51,6 +51,10 @@ import Redis from 'ioredis';
 import { validateEnv } from './config/env.validation';
 import { APP_GUARD, Reflector } from '@nestjs/core';
 import { createThrottleSkipIf } from './common/throttle-skip';
+import {
+  attachThrottledErrorLogger,
+  buildRedisConnection,
+} from './common/redis-connection';
 import { RootController } from './root.controller';
 import { GlobalJwtAuthGuard } from './auth/guards/global-jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
@@ -71,6 +75,8 @@ const prettyTransport = ((): { target: string } | undefined => {
   }
 })();
 
+const cacheRedisLogger = new Logger('CacheRedis');
+
 @Module({
   imports: [
     // ── Core infrastructure
@@ -79,17 +85,22 @@ const prettyTransport = ((): { target: string } | undefined => {
       isGlobal: true,
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (configService: ConfigService) => ({
-        store: redisStore,
+      useFactory: (configService: ConfigService) => {
         // cache-manager-ioredis hands this options object straight to
         // `new Redis(opts)`, and ioredis ignores an unrecognised `url` key — a
         // `url:` here silently connected to localhost:6379 no matter what
         // REDIS_URL said. Build the client from the URL ourselves.
-        redisInstance: new Redis(
-          configService.get<string>('REDIS_URL') || 'redis://localhost:6379',
-        ),
-        ttl: 3600,
-      }),
+        const { url, options } = buildRedisConnection(
+          configService.get<string>('REDIS_URL'),
+          'cache',
+          cacheRedisLogger,
+        );
+        const redisInstance = new Redis(url, options);
+        // Without a listener ioredis re-emits every failure as an unhandled error event.
+        attachThrottledErrorLogger(redisInstance, cacheRedisLogger);
+
+        return { store: redisStore, redisInstance, ttl: 3600 };
+      },
     }),
     ScheduleModule.forRoot(),
     PrometheusModule.register(),

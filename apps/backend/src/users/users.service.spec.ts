@@ -267,7 +267,11 @@ describe('UsersService', () => {
         stubSelect([{ ...managerRow, posPinFailedAttempts: 0 }]);
         (bcrypt.compare as jest.Mock).mockResolvedValueOnce(false);
 
-        const result = await service.verifyManagerPin('org-1', '999999', 'mgr-1');
+        const result = await service.verifyManagerPin(
+          'org-1',
+          '999999',
+          'mgr-1',
+        );
 
         expect(result).toBeNull();
         // The failure is persisted (atomic increment) …
@@ -292,7 +296,11 @@ describe('UsersService', () => {
           },
         ]);
 
-        const result = await service.verifyManagerPin('org-1', '123456', 'mgr-1');
+        const result = await service.verifyManagerPin(
+          'org-1',
+          '123456',
+          'mgr-1',
+        );
 
         expect(result).toBeNull();
         // Short-circuits before bcrypt — a locked PIN cannot be tested at all.
@@ -312,7 +320,11 @@ describe('UsersService', () => {
         ]);
         (bcrypt.compare as jest.Mock).mockResolvedValueOnce(true);
 
-        const result = await service.verifyManagerPin('org-1', '123456', 'mgr-1');
+        const result = await service.verifyManagerPin(
+          'org-1',
+          '123456',
+          'mgr-1',
+        );
 
         expect(result).toMatchObject({ id: 'mgr-1' });
       });
