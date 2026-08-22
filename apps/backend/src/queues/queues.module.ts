@@ -16,7 +16,8 @@ const queueRedisLogger = new Logger('QueueRedis');
  *
  * `stalledInterval` is the sweep that reclaims jobs from workers that died mid-job. The
  * tradeoff is bounded: a crashed worker's job now waits up to 5 minutes to be retried
- * instead of 30 seconds.
+ * instead of 30 seconds. `print-queue` overrides it back to 30s — a kitchen ticket cannot
+ * wait five minutes — and pays ~2.9k commands a day for it.
  */
 export const SHARED_WORKER_OPTIONS = {
   drainDelay: 60,

@@ -17,7 +17,16 @@ interface PrintJobData {
   printJobId?: string;
 }
 
-@Processor('print-queue', SHARED_WORKER_OPTIONS)
+/**
+ * Keeps the 30-second stalled sweep the other queues gave up. A kitchen ticket that dies
+ * with its worker has to be reclaimed fast — five minutes is an order the kitchen never
+ * sees. The extra sweep costs ~2.9k Redis commands a day, which is the trade being made
+ * deliberately here and nowhere else.
+ */
+@Processor('print-queue', {
+  ...SHARED_WORKER_OPTIONS,
+  stalledInterval: 30_000,
+})
 export class PrintQueueProcessor extends WorkerHost {
   private readonly logger = new Logger(PrintQueueProcessor.name);
 
