@@ -1,6 +1,9 @@
-import { Module, Global } from '@nestjs/common';
+import { Module, Global, Logger } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { buildRedisConnection } from '../common/redis-connection';
+
+const queueRedisLogger = new Logger('QueueRedis');
 
 @Global()
 @Module({
@@ -8,14 +11,19 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
     BullModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => {
-        const redisUrl =
-          configService.get<string>('REDIS_URL') || 'redis://localhost:6379';
+        // Shared with the cache client: TLS for managed hosts (Upstash refuses plaintext
+        // and a redis:// URL there loops on ECONNRESET), plus the retry ceilings BullMQ
+        // requires. See buildRedisConnection.
+        const { url, options } = buildRedisConnection(
+          configService.get<string>('REDIS_URL'),
+          'queue',
+          queueRedisLogger,
+        );
         return {
           connection: {
-            url: redisUrl,
-            // BullMQ requires maxRetriesPerRequest to be null
-            maxRetriesPerRequest: null,
-            // Enable offline queue so operations don't immediately crash if redis is down
+            url,
+            ...options,
+            // Keep queueing while Redis is briefly unreachable rather than throwing.
             enableOfflineQueue: true,
           },
           defaultJobOptions: {
