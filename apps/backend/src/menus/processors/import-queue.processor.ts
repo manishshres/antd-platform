@@ -12,6 +12,7 @@ import { eq, inArray } from 'drizzle-orm';
 // `pdf-parse` is CommonJS with no bundled types; declare the one call we make rather than
 // pulling it in via `require`, which defeats type-checking entirely (N9).
 import pdfParseImport from 'pdf-parse';
+import { SHARED_WORKER_OPTIONS } from '../../queues/queues.module';
 
 const pdfParse = pdfParseImport as unknown as (
   data: Buffer,
@@ -24,7 +25,7 @@ interface ImportJobData {
   importMode?: 'add_new' | 'sync' | 'replace';
 }
 
-@Processor('import-queue')
+@Processor('import-queue', SHARED_WORKER_OPTIONS)
 export class ImportQueueProcessor extends WorkerHost {
   private readonly logger = new Logger(ImportQueueProcessor.name);
 

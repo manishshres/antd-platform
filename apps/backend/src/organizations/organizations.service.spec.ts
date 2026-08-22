@@ -4,6 +4,7 @@ import { OrganizationsService } from './organizations.service';
 import { DRIZZLE } from '../database/database.module';
 import { AuditService } from '../common/services/audit.service';
 import { NotFoundException } from '@nestjs/common';
+import * as schema from '../database/schema';
 
 describe('OrganizationsService', () => {
   let service: OrganizationsService;
@@ -33,6 +34,7 @@ describe('OrganizationsService', () => {
       select: jest.fn(() => mockQueryBuilder([])),
       insert: jest.fn(() => mockQueryBuilder([])),
       update: jest.fn(() => mockQueryBuilder([])),
+      transaction: jest.fn(),
     };
 
     auditServiceMock = {
@@ -210,7 +212,9 @@ describe('OrganizationsService', () => {
   });
 
   describe('Deletions', () => {
-    it('deleteOrganizationGlobal should soft delete organization', async () => {
+    it('deleteOrganizationGlobal soft deletes the org and its locations', async () => {
+      // Deleting only the org left its locations live — they kept their claim on the
+      // phone-number unique index, so the number could never be reused.
       const org = { id: 'org-1', name: 'To Delete' };
       dbMock.select.mockReturnValueOnce({
         from: jest.fn().mockReturnThis(),
@@ -219,15 +223,23 @@ describe('OrganizationsService', () => {
         then: (resolve: any) => resolve([org]),
       });
 
-      dbMock.update.mockReturnValueOnce({
-        set: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        then: (resolve: any) => resolve([]),
-      });
+      const updatedTables: unknown[] = [];
+      const tx = {
+        update: jest.fn().mockImplementation((table: unknown) => {
+          updatedTables.push(table);
+          return {
+            set: jest.fn().mockReturnThis(),
+            where: jest.fn().mockResolvedValue([]),
+          };
+        }),
+      };
+      dbMock.transaction.mockImplementation(
+        async (cb: (t: typeof tx) => Promise<unknown>) => cb(tx),
+      );
 
       await service.deleteOrganizationGlobal('org-1');
 
-      expect(dbMock.update).toHaveBeenCalled();
+      expect(updatedTables).toEqual([schema.organizations, schema.locations]);
       expect(auditServiceMock.fireAndForget).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'organization.delete' }),
       );
