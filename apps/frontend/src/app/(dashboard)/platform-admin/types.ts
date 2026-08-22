@@ -47,4 +47,13 @@ export interface CreateOrgProvisionDto {
   baseAgentId?: string;
   dynamicVariables?: Record<string, string>;
   menuUrl?: string;
+  /** Reuse the base agent's number instead of buying one. Default false. */
+  useAgentPhoneNumber?: boolean;
+}
+
+export interface AgentPhoneNumber {
+  phoneNumber: string;
+  telnyxPhoneNumberId: string;
+  claimedByLocationId: string | null;
+  claimedByLocationName: string | null;
 }

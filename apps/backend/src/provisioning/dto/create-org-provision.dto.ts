@@ -4,6 +4,7 @@ import {
   IsEmail,
   IsOptional,
   IsObject,
+  IsBoolean,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -59,4 +60,19 @@ export class CreateOrgProvisionDto {
   @IsString()
   @IsOptional()
   menuUrl?: string;
+
+  /**
+   * Reuse the number already attached to `baseAgentId` instead of buying a new one.
+   * Skips the search/purchase steps entirely — every purchase is billable, so this is
+   * how repeated provisioning runs (testing, demos) avoid a per-run carrier charge.
+   * A number can only back one location at a time; provisioning is rejected if the
+   * agent's number is already claimed.
+   */
+  @ApiPropertyOptional({
+    description: "Reuse the selected agent's existing phone number",
+    default: false,
+  })
+  @IsBoolean()
+  @IsOptional()
+  useAgentPhoneNumber?: boolean;
 }

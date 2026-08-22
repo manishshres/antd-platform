@@ -12,6 +12,7 @@ import {
   TelnyxConversationMessagesResponse,
   TelnyxEmbeddingResponse,
   TelnyxConversationsResponse,
+  TelnyxOwnedNumbersResponse,
   TelnyxRecordingsResponse,
 } from './telnyx.types';
 
@@ -235,6 +236,22 @@ export class TelnyxService {
   async getPhoneNumbersByNumber(phoneNumber: string): Promise<unknown> {
     const params = new URLSearchParams({ 'filter[phone_number]': phoneNumber });
     return this.fetchJson(`/phone_numbers?${params.toString()}`);
+  }
+
+  /**
+   * Numbers already owned by the account and routed through `connectionId` (a TeXML app id).
+   * This is how an assistant's phone number is resolved: an assistant owns a TeXML app, and
+   * a number "belongs" to that assistant when its connection points at the app.
+   */
+  async getPhoneNumbersByConnection(
+    connectionId: string,
+  ): Promise<TelnyxOwnedNumbersResponse> {
+    const params = new URLSearchParams({
+      'filter[connection_id]': connectionId,
+    });
+    return (await this.fetchJson(
+      `/phone_numbers?${params.toString()}`,
+    )) as TelnyxOwnedNumbersResponse;
   }
 
   async createNumberOrder(phoneNumber: string): Promise<unknown> {

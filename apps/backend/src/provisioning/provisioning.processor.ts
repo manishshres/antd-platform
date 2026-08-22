@@ -306,8 +306,22 @@ export class ProvisioningProcessor extends WorkerHost {
     metadata: Record<string, any>,
     previousMetadata: Record<string, any>,
   ) {
-    const telnyxPhoneNumberId =
+    // Normally the id comes from the purchase step. When the number was reused from the
+    // base agent there is no purchase step at all, and the id was written onto the
+    // location up front — fall back to that.
+    let telnyxPhoneNumberId =
       previousMetadata.purchase_phone_number?.telnyxPhoneNumberId;
+
+    if (!telnyxPhoneNumberId) {
+      const [location] = await this.db
+        .select({
+          telnyxPhoneNumberId: schema.locations.telnyxPhoneNumberId,
+        })
+        .from(schema.locations)
+        .where(eq(schema.locations.id, locationId))
+        .limit(1);
+      telnyxPhoneNumberId = location?.telnyxPhoneNumberId;
+    }
 
     // Use the newly created AI Agent's TeXML App ID, or fallback to the config
     const texmlAppId = previousMetadata.clone_agent?.texmlAppId;

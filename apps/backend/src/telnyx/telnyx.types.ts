@@ -61,6 +61,10 @@ export interface TelnyxAssistant {
   instructions?: string;
   dynamic_variables?: Record<string, string>;
   tools?: TelnyxAssistantTool[];
+  /** The TeXML app a call to one of this assistant's numbers is routed through. */
+  telephony_settings?: {
+    default_texml_app_id?: string;
+  };
 }
 
 export interface TelnyxAssistantTool {
@@ -98,9 +102,19 @@ export interface TelnyxAvailableNumber {
   national_format?: string;
 }
 
+/** `GET /phone_numbers` — numbers the account already owns. */
+export interface TelnyxOwnedNumber {
+  id?: string;
+  phone_number?: string;
+  connection_id?: string;
+  status?: string;
+}
+
 export type TelnyxAssistantsResponse = TelnyxPaginatedResponse<TelnyxAssistant>;
 export type TelnyxAvailableNumbersResponse =
   TelnyxPaginatedResponse<TelnyxAvailableNumber>;
+export type TelnyxOwnedNumbersResponse =
+  TelnyxPaginatedResponse<TelnyxOwnedNumber>;
 
 export type TelnyxConversationsResponse =
   TelnyxPaginatedResponse<TelnyxConversation>;
