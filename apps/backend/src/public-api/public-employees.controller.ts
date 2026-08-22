@@ -42,7 +42,7 @@ export class PublicEmployeesController {
   @PinThrottle()
   @ApiOperation({
     summary:
-      'Sign an employee onto the POS by email + 4-digit PIN. Returns the employee profile; rejects if PIN missing/wrong.',
+      'Sign an employee onto the POS by email + 6-digit PIN. Returns the employee profile; rejects if PIN missing/wrong.',
   })
   @ApiResponse({ status: 200, description: 'Employee signed in.' })
   @ApiResponse({ status: 401, description: 'Invalid PIN.' })

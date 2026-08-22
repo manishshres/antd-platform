@@ -38,7 +38,7 @@ const POS_PIN_ROLES = [
   'platform_admin',
 ] as const;
 
-/** Failed PIN entries before the PIN locks (N3). A 4-digit PIN is only 10k guesses. */
+/** Failed PIN entries before the PIN locks (N3). Bounds guessing well under the 1M space. */
 const POS_PIN_MAX_ATTEMPTS = 5;
 const POS_PIN_LOCKOUT_MINUTES = 15;
 

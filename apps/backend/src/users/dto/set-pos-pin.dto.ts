@@ -3,11 +3,11 @@ import { ApiProperty } from '@nestjs/swagger';
 
 export class SetPosPinDto {
   @ApiProperty({
-    description: 'The new 4-digit POS PIN',
-    example: '1234',
+    description: 'The new 6-digit POS PIN',
+    example: '123456',
   })
   @IsString()
   @Length(4, 4)
-  @Matches(/^[0-9]{4}$/, { message: 'PIN must be exactly 4 digits' })
+  @Matches(/^[0-9]{6}$/, { message: 'PIN must be exactly 6 digits' })
   pin!: string;
 }

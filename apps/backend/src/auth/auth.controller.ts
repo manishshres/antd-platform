@@ -37,11 +37,15 @@ import { ResetPasswordDto } from './dto/reset-password.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { Public } from '../common/decorators/public.decorator';
+import { EnforceThrottle } from '../common/decorators/enforce-throttle.decorator';
 import {
   CurrentUser,
   CurrentUserPayload,
 } from '../common/decorators/current-user.decorator';
 @ApiTags('Authentication')
+// Stays rate-limited even while THROTTLE_ENABLED is off — password login is a
+// credential-guessing surface and must always be bounded.
+@EnforceThrottle()
 @UseGuards(ThrottlerGuard)
 @Controller('auth')
 export class AuthController {

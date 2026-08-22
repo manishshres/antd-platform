@@ -331,16 +331,16 @@ export default function ProfilePage() {
                 <Form.Item
                   label="Manager POS PIN"
                   name="pin"
-                  extra="A 4-digit PIN used to authorize voids and refunds on the POS."
+                  extra="A 6-digit PIN used to authorize voids and refunds on the POS."
                   rules={[
-                    { required: true, message: "Please enter a 4-digit PIN." },
-                    { pattern: /^[0-9]{4}$/, message: "PIN must be exactly 4 digits." },
+                    { required: true, message: "Please enter a 6-digit PIN." },
+                    { pattern: /^[0-9]{6}$/, message: "PIN must be exactly 6 digits." },
                   ]}
                 >
                   <Input.Password
                     prefix={<LockOutlined style={{ color: token.colorTextPlaceholder }} />}
-                    placeholder="Enter 4-digit PIN"
-                    maxLength={4}
+                    placeholder="Enter 6-digit PIN"
+                    maxLength={6}
                   />
                 </Form.Item>
               </Col>

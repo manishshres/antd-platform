@@ -57,7 +57,7 @@ describe('PublicEmployeesController', () => {
 
     const res = await controller.authByPin(reqWithOrg(), {
       email: baseUser.email,
-      pin: '1234',
+      pin: '123456',
     });
 
     expect(res.id).toBe(baseUser.id);
@@ -65,7 +65,7 @@ describe('PublicEmployeesController', () => {
     expect(res.isManager).toBe(true);
     expect(usersService.verifyManagerPin).toHaveBeenCalledWith(
       orgId,
-      '1234',
+      '123456',
       baseUser.id,
     );
   });
@@ -76,7 +76,7 @@ describe('PublicEmployeesController', () => {
     await expect(
       controller.authByPin(reqWithOrg(), {
         email: 'nobody@coneeko.test',
-        pin: '1234',
+        pin: '123456',
       }),
     ).rejects.toBeInstanceOf(UnauthorizedException);
   });
@@ -90,7 +90,7 @@ describe('PublicEmployeesController', () => {
     await expect(
       controller.authByPin(reqWithOrg(), {
         email: baseUser.email,
-        pin: '1234',
+        pin: '123456',
       }),
     ).rejects.toBeInstanceOf(UnauthorizedException);
   });
@@ -102,7 +102,7 @@ describe('PublicEmployeesController', () => {
     await expect(
       controller.authByPin(reqWithOrg(), {
         email: baseUser.email,
-        pin: '9999',
+        pin: '999999',
       }),
     ).rejects.toBeInstanceOf(UnauthorizedException);
   });
@@ -117,7 +117,7 @@ describe('PublicEmployeesController', () => {
     await expect(
       controller.authByPin(reqWithOrg(), {
         email: baseUser.email,
-        pin: '1234',
+        pin: '123456',
       }),
     ).rejects.toBeInstanceOf(UnauthorizedException);
   });
@@ -133,7 +133,7 @@ describe('PublicEmployeesController', () => {
     });
     const res = await controller.authByPin(reqWithOrg(), {
       email: baseUser.email,
-      pin: '1234',
+      pin: '123456',
     });
     expect(res.isManager).toBe(false);
   });
@@ -141,13 +141,13 @@ describe('PublicEmployeesController', () => {
   it('verifyManagerPin passes candidateEmployeeId through', async () => {
     usersService.verifyManagerPin.mockResolvedValue(baseUser);
     const res = await controller.verifyManagerPin(reqWithOrg(), {
-      pin: '4321',
+      pin: '654321',
       candidateEmployeeId: baseUser.id,
     });
     expect(res.id).toBe(baseUser.id);
     expect(usersService.verifyManagerPin).toHaveBeenCalledWith(
       orgId,
-      '4321',
+      '654321',
       baseUser.id,
     );
   });
@@ -155,7 +155,7 @@ describe('PublicEmployeesController', () => {
   it('verifyManagerPin throws when PIN is wrong', async () => {
     usersService.verifyManagerPin.mockResolvedValue(null);
     await expect(
-      controller.verifyManagerPin(reqWithOrg(), { pin: '0000' }),
+      controller.verifyManagerPin(reqWithOrg(), { pin: '000000' }),
     ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 });
