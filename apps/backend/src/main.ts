@@ -3,7 +3,7 @@ import './instrument';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { ValidationPipe, VersioningType } from '@nestjs/common';
+import { RequestMethod, ValidationPipe, VersioningType } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import helmet from 'helmet';
 import { GlobalExceptionFilter } from './common/filters/http-exception.filter';
@@ -49,8 +49,11 @@ async function bootstrap() {
   // Global logging interceptor
   app.useGlobalInterceptors(new LoggingInterceptor());
 
-  // Set global route prefix
-  app.setGlobalPrefix('api');
+  // Set global route prefix. `GET /` is excluded so RootController can answer the bare
+  // domain with the API's identity + contact details instead of a 404.
+  app.setGlobalPrefix('api', {
+    exclude: [{ path: '/', method: RequestMethod.GET }],
+  });
 
   // Enable API versioning (/api/v1, /api/v2)
   app.enableVersioning({

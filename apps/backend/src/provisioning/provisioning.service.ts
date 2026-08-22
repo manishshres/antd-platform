@@ -3,10 +3,11 @@ import {
   Inject,
   NotFoundException,
   BadRequestException,
+  ConflictException,
   Logger,
 } from '@nestjs/common';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, inArray } from 'drizzle-orm';
 import { DRIZZLE } from '../database/database.module';
 import * as schema from '../database/schema';
 import { CreateOrgProvisionDto } from './dto/create-org-provision.dto';
@@ -35,6 +36,25 @@ export class ProvisioningService {
     const uniqueSlug = generateUniqueSlug(dto.orgName);
     const uniqueLocationSlug = generateUniqueSlug(dto.locationName);
 
+    // When reusing the agent's number we resolve and claim it up front, before any row is
+    // written — a conflict here should fail the request outright rather than leave a
+    // half-provisioned org behind.
+    let reusedNumber: {
+      phoneNumber: string;
+      telnyxPhoneNumberId: string;
+    } | null = null;
+
+    if (dto.useAgentPhoneNumber) {
+      if (!dto.baseAgentId) {
+        throw new BadRequestException(
+          'baseAgentId is required when reusing the agent phone number.',
+        );
+      }
+      reusedNumber = await this.resolveAgentPhoneNumberForClaim(
+        dto.baseAgentId,
+      );
+    }
+
     const result = await this.db.transaction(async (tx) => {
       // 1. Create Organization
       const [newOrg] = await tx
@@ -56,20 +76,24 @@ export class ProvisioningService {
           country: dto.country,
           state: dto.state,
           city: dto.city,
-          phoneNumber: dto.phoneNumber || null,
+          phoneNumber: reusedNumber?.phoneNumber ?? dto.phoneNumber ?? null,
+          telnyxPhoneNumberId: reusedNumber?.telnyxPhoneNumberId ?? null,
           aiSettings: {
             baseAgentId: dto.baseAgentId,
             dynamicVariables: dto.dynamicVariables,
             menuUrl: dto.menuUrl,
+            useAgentPhoneNumber: dto.useAgentPhoneNumber ?? false,
           },
           status: 'provisioning',
         })
         .returning();
 
-      // 3. Create Provisioning Steps
+      // 3. Create Provisioning Steps — the search/purchase pair is omitted entirely when
+      // reusing the agent's number, so no billable number order is ever placed.
       const steps = [
-        'search_phone_number',
-        'purchase_phone_number',
+        ...(reusedNumber
+          ? []
+          : ['search_phone_number', 'purchase_phone_number']),
         'clone_agent',
         'assign_phone_to_agent',
         'configure_agent',
@@ -133,6 +157,75 @@ export class ProvisioningService {
       name: a.name ?? 'Unnamed Agent',
       dynamicVariables: a.dynamic_variables ?? {},
     }));
+  }
+
+  /**
+   * The numbers currently routed to `agentId`, each flagged with whether a location has
+   * already claimed it. A number backs at most one location, so the wizard can grey out
+   * the ones that are taken instead of failing at submit time.
+   */
+  async getAgentPhoneNumbers(agentId: string) {
+    const assistant = await this.telnyxService.getAssistant(agentId);
+    const texmlAppId =
+      assistant.telephony_settings?.default_texml_app_id ??
+      assistant.data?.telephony_settings?.default_texml_app_id;
+
+    if (!texmlAppId) return [];
+
+    const res =
+      await this.telnyxService.getPhoneNumbersByConnection(texmlAppId);
+    const numbers = (res.data ?? []).filter((n) => n.phone_number && n.id);
+    if (numbers.length === 0) return [];
+
+    const claimed = await this.db
+      .select({
+        locationId: schema.locations.id,
+        locationName: schema.locations.name,
+        phoneNumber: schema.locations.phoneNumber,
+      })
+      .from(schema.locations)
+      .where(
+        and(
+          inArray(
+            schema.locations.phoneNumber,
+            numbers.map((n) => n.phone_number!),
+          ),
+          notDeleted(schema.locations),
+        ),
+      );
+
+    return numbers.map((n) => {
+      const owner = claimed.find((c) => c.phoneNumber === n.phone_number);
+      return {
+        phoneNumber: n.phone_number!,
+        telnyxPhoneNumberId: n.id!,
+        claimedByLocationId: owner?.locationId ?? null,
+        claimedByLocationName: owner?.locationName ?? null,
+      };
+    });
+  }
+
+  /** Picks the agent's first unclaimed number, or explains why none is usable. */
+  private async resolveAgentPhoneNumberForClaim(agentId: string) {
+    const numbers = await this.getAgentPhoneNumbers(agentId);
+
+    if (numbers.length === 0) {
+      throw new BadRequestException(
+        'The selected agent has no phone number attached. Provision a new number instead.',
+      );
+    }
+
+    const free = numbers.find((n) => !n.claimedByLocationId);
+    if (!free) {
+      throw new ConflictException(
+        `The agent's number (${numbers[0].phoneNumber}) is already assigned to "${numbers[0].claimedByLocationName ?? 'another location'}". One number can back only one location.`,
+      );
+    }
+
+    return {
+      phoneNumber: free.phoneNumber,
+      telnyxPhoneNumberId: free.telnyxPhoneNumberId,
+    };
   }
 
   async searchAvailableNumbers(country: string, state?: string, city?: string) {
@@ -321,7 +414,8 @@ export class ProvisioningService {
       );
 
     const locations = await locationsQuery;
-    if (locations.length === 0) throw new NotFoundException('Location not found.');
+    if (locations.length === 0)
+      throw new NotFoundException('Location not found.');
 
     const locationsWithSteps = await Promise.all(
       locations.map(async (loc) => {
@@ -363,7 +457,10 @@ export class ProvisioningService {
   }
 
   async retryProvisioning(organizationId: string, targetLocationId?: string) {
-    const status = await this.getProvisioningStatus(organizationId, targetLocationId);
+    const status = await this.getProvisioningStatus(
+      organizationId,
+      targetLocationId,
+    );
     const locId = targetLocationId || status.locationId;
 
     const [loc] = await this.db
@@ -489,7 +586,12 @@ export class ProvisioningService {
       .where(eq(schema.locations.organizationId, organizationId));
 
     for (const location of locations) {
-      if (location.telnyxPhoneNumberId) {
+      const aiSettings = location.aiSettings as Record<string, unknown> | null;
+      const reusedNumber = aiSettings?.useAgentPhoneNumber === true;
+
+      // A reused number belongs to the base agent, not to this location — releasing it
+      // would delete a number we never bought and break the agent it came from.
+      if (location.telnyxPhoneNumberId && !reusedNumber) {
         try {
           await this.telnyxService.deletePhoneNumber(
             location.telnyxPhoneNumberId,
@@ -499,6 +601,10 @@ export class ProvisioningService {
             `Failed to delete phone number ${location.telnyxPhoneNumberId} from Telnyx: ${(error as Error).message}`,
           );
         }
+      } else if (location.telnyxPhoneNumberId && reusedNumber) {
+        this.logger.log(
+          `Keeping phone number ${location.telnyxPhoneNumberId} — it was reused from the base agent, not purchased.`,
+        );
       }
 
       if (location.telnyxAssistantId) {

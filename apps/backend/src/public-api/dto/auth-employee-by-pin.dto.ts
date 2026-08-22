@@ -10,21 +10,21 @@ export class AuthEmployeeByPinDto {
   email!: string;
 
   @ApiProperty({
-    description: '4-digit numeric PIN',
-    example: '1234',
+    description: '6-digit numeric PIN',
+    example: '123456',
   })
   @IsString()
-  @Matches(/^[0-9]{4}$/, { message: 'PIN must be exactly 4 digits' })
+  @Matches(/^[0-9]{6}$/, { message: 'PIN must be exactly 6 digits' })
   pin!: string;
 }
 
 export class VerifyManagerPinDto {
   @ApiProperty({
-    description: '4-digit numeric PIN of the acting manager',
-    example: '1234',
+    description: '6-digit numeric PIN of the acting manager',
+    example: '123456',
   })
   @IsString()
-  @Matches(/^[0-9]{4}$/, { message: 'PIN must be exactly 4 digits' })
+  @Matches(/^[0-9]{6}$/, { message: 'PIN must be exactly 6 digits' })
   pin!: string;
 
   @ApiProperty({

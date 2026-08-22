@@ -10,6 +10,7 @@ import {
   primaryKey,
   index,
   unique,
+  uniqueIndex,
   check,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
@@ -106,6 +107,11 @@ export const locations = pgTable(
   },
   (t) => [
     index('idx_locations_organization_id').on(t.organizationId),
+    // A phone number backs exactly one live location. Partial so that soft-deleted
+    // locations release their number and locations without one aren't constrained.
+    uniqueIndex('idx_locations_phone_number_unique')
+      .on(t.phoneNumber)
+      .where(sql`${t.phoneNumber} IS NOT NULL AND ${t.deletedAt} IS NULL`),
     check(
       'locations_status_check',
       sql`${t.status} IN ('draft', 'active', 'suspended', 'archived', 'deprovisioned', 'provisioning')`,

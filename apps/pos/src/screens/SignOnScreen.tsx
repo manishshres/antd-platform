@@ -51,7 +51,7 @@ export function SignOnScreen({ onOpenSettings }: Props) {
           {settings.locationName || 'Coneeko POS'}
        </Text>
         <Text variant="bodyMedium" style={styles.subtitle}>
-          Sign on with your work email and 4-digit PIN.
+          Sign on with your work email and 6-digit PIN.
        </Text>
 
         <TextInput

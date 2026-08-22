@@ -1,6 +1,7 @@
 import { applyDecorators, UseGuards } from '@nestjs/common';
 import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { ApiKeyThrottlerGuard } from '../../webhooks/api-key-throttler.guard';
+import { EnforceThrottle } from '../../common/decorators/enforce-throttle.decorator';
 
 /** Failed-PIN ceiling per register per minute. */
 export const PIN_THROTTLE_LIMIT = 10;
@@ -11,16 +12,20 @@ export const PIN_THROTTLE_TTL_MS = 60_000;
  *
  * `PublicEmployeesController` is `@SkipThrottle()` as a whole — the register polls its
  * other endpoints constantly and must not be throttled — which left the PIN routes with
- * no limit at all. A 4-digit PIN is 10,000 guesses, so an authenticated-but-junior
- * session could walk the whole space in seconds. This re-enables throttling for the PIN
+ * no limit at all. A 6-digit PIN is 1,000,000 guesses, but unthrottled that is still
+ * walkable by an authenticated-but-junior session. This re-enables throttling for the PIN
  * routes only, keyed on the API key (one register) rather than IP, since a whole
  * restaurant commonly shares one egress IP.
+ *
+ * `@EnforceThrottle()` keeps these limits live even while the global `THROTTLE_ENABLED`
+ * switch is off.
  *
  * This is the only bound on the org-wide branch of `verifyManagerPin`, which has no single
  * user to count failures against; the per-user lockout in `UsersService` covers the rest.
  */
 export const PinThrottle = () =>
   applyDecorators(
+    EnforceThrottle(),
     SkipThrottle({ default: false }),
     Throttle({
       default: { limit: PIN_THROTTLE_LIMIT, ttl: PIN_THROTTLE_TTL_MS },

@@ -10,12 +10,12 @@ import {
 
 export class PartialRefundDto {
   @ApiProperty({
-    description: 'The 4-digit manager PIN to authorize the refund.',
-    example: '1234',
+    description: 'The 6-digit manager PIN to authorize the refund.',
+    example: '123456',
   })
   @IsString()
   @Length(4, 4)
-  @Matches(/^[0-9]{4}$/, { message: 'PIN must be exactly 4 digits' })
+  @Matches(/^[0-9]{6}$/, { message: 'PIN must be exactly 6 digits' })
   managerPin!: string;
 
   @ApiProperty({

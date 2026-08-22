@@ -20,7 +20,7 @@ export function PinPadModal({
   visible,
   title = 'Enter PIN',
   subtitle,
-  pinLength = 4,
+  pinLength = 6,
   busy = false,
   errorMessage = null,
   onSubmit,

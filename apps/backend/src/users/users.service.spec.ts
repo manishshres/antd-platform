@@ -232,7 +232,7 @@ describe('UsersService', () => {
       stubSelect([managerRow]);
       (bcrypt.compare as jest.Mock).mockResolvedValueOnce(true);
 
-      const result = await service.verifyManagerPin('org-1', '1234', 'mgr-1');
+      const result = await service.verifyManagerPin('org-1', '123456', 'mgr-1');
 
       expect(result).toMatchObject({ id: 'mgr-1' });
       // Fast path issues a single scoped lookup rather than scanning every manager.
@@ -244,7 +244,7 @@ describe('UsersService', () => {
       stubSelect([managerRow]);
       (bcrypt.compare as jest.Mock).mockResolvedValueOnce(false);
 
-      const result = await service.verifyManagerPin('org-1', '9999', 'mgr-1');
+      const result = await service.verifyManagerPin('org-1', '999999', 'mgr-1');
 
       expect(result).toBeNull();
     });
@@ -252,14 +252,14 @@ describe('UsersService', () => {
     it('returns null (no bcrypt compare) when the acting user is not an eligible manager', async () => {
       stubSelect([]); // no row matched the id + org + manager-role + pin-hash filter
 
-      const result = await service.verifyManagerPin('org-1', '1234', 'ghost');
+      const result = await service.verifyManagerPin('org-1', '123456', 'ghost');
 
       expect(result).toBeNull();
       expect(bcrypt.compare).not.toHaveBeenCalled();
     });
 
     /**
-     * N3. A 4-digit PIN is 10,000 guesses and the PIN routes used to skip throttling
+     * N3. A 6-digit PIN is still walkable unthrottled, and the PIN routes used to skip throttling
      * entirely, so an authenticated junior session could walk the whole space.
      */
     describe('brute-force protection', () => {
@@ -267,7 +267,7 @@ describe('UsersService', () => {
         stubSelect([{ ...managerRow, posPinFailedAttempts: 0 }]);
         (bcrypt.compare as jest.Mock).mockResolvedValueOnce(false);
 
-        const result = await service.verifyManagerPin('org-1', '9999', 'mgr-1');
+        const result = await service.verifyManagerPin('org-1', '999999', 'mgr-1');
 
         expect(result).toBeNull();
         // The failure is persisted (atomic increment) …
@@ -292,7 +292,7 @@ describe('UsersService', () => {
           },
         ]);
 
-        const result = await service.verifyManagerPin('org-1', '1234', 'mgr-1');
+        const result = await service.verifyManagerPin('org-1', '123456', 'mgr-1');
 
         expect(result).toBeNull();
         // Short-circuits before bcrypt — a locked PIN cannot be tested at all.
@@ -312,7 +312,7 @@ describe('UsersService', () => {
         ]);
         (bcrypt.compare as jest.Mock).mockResolvedValueOnce(true);
 
-        const result = await service.verifyManagerPin('org-1', '1234', 'mgr-1');
+        const result = await service.verifyManagerPin('org-1', '123456', 'mgr-1');
 
         expect(result).toMatchObject({ id: 'mgr-1' });
       });
@@ -326,7 +326,7 @@ describe('UsersService', () => {
           },
         ]);
 
-        const result = await service.verifyManagerPin('org-1', '1234');
+        const result = await service.verifyManagerPin('org-1', '123456');
 
         expect(result).toBeNull();
         expect(bcrypt.compare).not.toHaveBeenCalled();
@@ -355,7 +355,7 @@ describe('UsersService', () => {
 
       // Duplicate PINs make the org-wide branch attribute an override to the wrong
       // manager, which corrupts the audit trail.
-      await expect(service.setPosPin('mgr-1', '1234')).rejects.toThrow(
+      await expect(service.setPosPin('mgr-1', '123456')).rejects.toThrow(
         ConflictException,
       );
       expect(dbMock.update).not.toHaveBeenCalled();
@@ -368,9 +368,9 @@ describe('UsersService', () => {
       );
       (bcrypt.compare as jest.Mock).mockResolvedValueOnce(false); // no collision
 
-      await service.setPosPin('mgr-1', '4321');
+      await service.setPosPin('mgr-1', '654321');
 
-      expect(bcrypt.hash).toHaveBeenCalledWith('4321', 12);
+      expect(bcrypt.hash).toHaveBeenCalledWith('654321', 12);
       expect(dbMock.update).toHaveBeenCalled();
     });
 
@@ -380,7 +380,7 @@ describe('UsersService', () => {
         [{ id: 'mgr-1', posPinHash: 'my_own_current_hash' }], // only self
       );
 
-      await service.setPosPin('mgr-1', '1234');
+      await service.setPosPin('mgr-1', '123456');
 
       // Self is skipped before bcrypt — re-setting your own PIN must not self-collide.
       expect(bcrypt.compare).not.toHaveBeenCalled();

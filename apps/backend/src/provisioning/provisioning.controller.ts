@@ -70,6 +70,15 @@ export class ProvisioningController {
     return this.provisioningService.listTelnyxAssistants();
   }
 
+  @Get('ai-agents/:agentId/phone-numbers')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'List the phone numbers already attached to an agent',
+  })
+  async listAgentPhoneNumbers(@Param('agentId') agentId: string) {
+    return this.provisioningService.getAgentPhoneNumbers(agentId);
+  }
+
   @Get('available-numbers')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Search available phone numbers from Telnyx' })

@@ -1,22 +1,23 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Card, Steps, Form, Input, Button, Space, Typography, Select, message, Result, Divider, Alert, Upload, Radio } from "antd";
+import { Card, Steps, Form, Input, Button, Space, Typography, Select, message, Result, Divider, Alert, Upload, Radio, Switch, Skeleton, Tag } from "antd";
 import { AppstoreAddOutlined, RocketOutlined, UploadOutlined } from "@ant-design/icons";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import PageHeader from "@/components/PageHeader";
-import { CreateOrgProvisionDto } from "../../platform-admin/types";
+import { AgentPhoneNumber, CreateOrgProvisionDto } from "../../platform-admin/types";
 
 const { Title, Text } = Typography;
 const { Option } = Select;
-const { TextArea } = Input;
 
+// The agent is picked before the phone number: reusing the agent's existing number
+// is only meaningful once we know which agent it belongs to.
 const steps = [
   { title: "Business Info" },
   { title: "Location" },
-  { title: "Phone Number" },
   { title: "AI Agent" },
+  { title: "Phone Number" },
   { title: "Agent Config" },
   { title: "Menu Import" },
   { title: "Users" },
@@ -33,8 +34,8 @@ export default function ProvisioningWizardPage() {
   const stepFields = [
     ["orgName", "website"], // Step 0
     ["locationName", "address", "city", "state", "zip", "country"], // Step 1
-    ["phoneNumber"], // Step 2
-    ["baseAgentId"], // Step 3
+    ["baseAgentId"], // Step 2
+    ["phoneNumber"], // Step 3
     [], // Step 4 (Dynamic variables, no validation needed)
     ["menuUrl"], // Step 5
     ["adminEmail"], // Step 6
@@ -45,6 +46,12 @@ export default function ProvisioningWizardPage() {
 
   const [aiAgents, setAiAgents] = useState<{id: string, name: string, dynamicVariables?: Record<string, string>}[]>([]);
   const [loadingAgents, setLoadingAgents] = useState(false);
+
+  // Reusing the agent's number skips the (billable) purchase entirely. Off by default —
+  // a real tenant should get its own number.
+  const [useAgentNumber, setUseAgentNumber] = useState(false);
+  const [agentNumbers, setAgentNumbers] = useState<AgentPhoneNumber[]>([]);
+  const [loadingAgentNumbers, setLoadingAgentNumbers] = useState(false);
 
   useEffect(() => {
     const fetchAgents = async () => {
@@ -84,6 +91,42 @@ export default function ProvisioningWizardPage() {
     }
   };
 
+  const fetchAgentNumbers = async (agentId: string) => {
+    if (!agentId) return;
+    setLoadingAgentNumbers(true);
+    try {
+      const res = await api.get<AgentPhoneNumber[]>(
+        `/admin/organizations/ai-agents/${agentId}/phone-numbers`
+      );
+      setAgentNumbers(res.data);
+
+      const free = res.data.find((n) => !n.claimedByLocationId);
+      form.setFieldValue("phoneNumber", free?.phoneNumber);
+
+      if (res.data.length === 0) {
+        message.warning("This agent has no phone number attached. Provision a new one instead.");
+      } else if (!free) {
+        message.warning("This agent's number is already assigned to another location.");
+      }
+    } catch {
+      message.error("Failed to load the agent's phone numbers.");
+      setAgentNumbers([]);
+    } finally {
+      setLoadingAgentNumbers(false);
+    }
+  };
+
+  const onToggleAgentNumber = (checked: boolean) => {
+    setUseAgentNumber(checked);
+    form.setFieldValue("phoneNumber", undefined);
+
+    if (checked) {
+      fetchAgentNumbers(form.getFieldValue("baseAgentId"));
+    } else if (availableNumbers.length === 0) {
+      searchPhoneNumbers();
+    }
+  };
+
   const next = async () => {
     try {
       const fieldsToValidate = stepFields[current];
@@ -92,14 +135,15 @@ export default function ProvisioningWizardPage() {
       } else {
         await form.validateFields();
       }
-      
+
       const nextStep = current + 1;
       setCurrent(nextStep);
-      
-      if (nextStep === 2 && availableNumbers.length === 0) {
+
+      // Only search (and later buy) numbers when we aren't reusing the agent's.
+      if (nextStep === 3 && !useAgentNumber && availableNumbers.length === 0) {
         searchPhoneNumbers();
       }
-    } catch (error) {
+    } catch {
       // Form validation failed, do not advance
     }
   };
@@ -118,16 +162,20 @@ export default function ProvisioningWizardPage() {
         country: values.country || "US",
         state: values.state,
         city: values.city,
-        phoneNumber: values.phoneNumber,
+        // In reuse mode the backend resolves the number from the agent itself.
+        phoneNumber: useAgentNumber ? undefined : values.phoneNumber,
         baseAgentId: values.baseAgentId,
         dynamicVariables: values.dynamicVariables,
         menuUrl: values.menuUrl,
+        useAgentPhoneNumber: useAgentNumber,
       };
 
       await api.post("/admin/organizations", payload);
       setSuccess(true);
     } catch (err) {
-      message.error("Failed to provision organization.");
+      const detail =
+        (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      message.error(detail || "Failed to provision organization.");
     } finally {
       setSubmitting(false);
     }
@@ -213,38 +261,25 @@ export default function ProvisioningWizardPage() {
             </Space>
           </div>
 
-          {/* Step 2: Phone Number */}
+          {/* Step 2: AI Agent */}
           <div style={{ display: current === 2 ? "block" : "none" }}>
-            <Title level={4}>Phone Number</Title>
-            <Divider />
-            <Text type="secondary" style={{ display: "block", marginBottom: 16 }}>
-              Select a local phone number for your AI agent based on the provided location.
-            </Text>
-            <Form.Item name="phoneNumber" label="Available Numbers" rules={[{ required: true, message: "Please select a phone number" }]}>
-              <Radio.Group disabled={loadingNumbers || availableNumbers.length === 0}>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {availableNumbers.map((n) => (
-                    <Radio key={n.phoneNumber} value={n.phoneNumber}>
-                      {n.formatted}
-                    </Radio>
-                  ))}
-                </div>
-              </Radio.Group>
-            </Form.Item>
-            <Button onClick={searchPhoneNumbers} loading={loadingNumbers}>
-              Search Again
-            </Button>
-          </div>
-
-          {/* Step 3: AI Agent */}
-          <div style={{ display: current === 3 ? "block" : "none" }}>
             <Title level={4}>AI Agent Selection</Title>
             <Divider />
             <Text type="secondary" style={{ display: "block", marginBottom: 16 }}>
               Select a Base AI Agent from Telnyx to clone for this location.
             </Text>
             <Form.Item name="baseAgentId" label="Telnyx Base Agent" rules={[{ required: true, message: "Please select an agent" }]}>
-              <Select size="large" placeholder="Select an AI Agent" loading={loadingAgents} disabled={loadingAgents || aiAgents.length === 0}>
+              <Select
+                size="large"
+                placeholder="Select an AI Agent"
+                loading={loadingAgents}
+                disabled={loadingAgents || aiAgents.length === 0}
+                onChange={() => {
+                  // The reusable number belongs to the agent — re-resolve it on change.
+                  setAgentNumbers([]);
+                  form.setFieldValue("phoneNumber", undefined);
+                }}
+              >
                 {aiAgents.map((agent) => (
                   <Option key={agent.id} value={agent.id}>
                     {agent.name} ({agent.id})
@@ -252,6 +287,95 @@ export default function ProvisioningWizardPage() {
                 ))}
               </Select>
             </Form.Item>
+          </div>
+
+          {/* Step 3: Phone Number */}
+          <div style={{ display: current === 3 ? "block" : "none" }}>
+            <Title level={4}>Phone Number</Title>
+            <Divider />
+
+            <Space align="start" style={{ marginBottom: 16 }}>
+              <Switch
+                checked={useAgentNumber}
+                onChange={onToggleAgentNumber}
+                aria-label="Use the selected agent's existing phone number"
+              />
+              <div>
+                <Text strong>Use the selected agent&apos;s existing phone number</Text>
+                <br />
+                <Text type="secondary">
+                  Skips buying a new number. One number can be assigned to only one location.
+                </Text>
+              </div>
+            </Space>
+
+            {useAgentNumber ? (
+              <>
+                <Alert
+                  style={{ marginBottom: 16 }}
+                  type="warning"
+                  showIcon
+                  title="No number will be purchased. Calls to this number will be routed to the new cloned agent, so the base agent stops answering on it."
+                />
+                {loadingAgentNumbers ? (
+                  <Skeleton active paragraph={{ rows: 2 }} />
+                ) : agentNumbers.length === 0 ? (
+                  <Alert
+                    type="error"
+                    showIcon
+                    title="This agent has no phone number attached. Turn this off to provision a new number."
+                  />
+                ) : (
+                  <Form.Item
+                    name="phoneNumber"
+                    label="Agent Number"
+                    rules={[{ required: true, message: "No assignable number on this agent" }]}
+                  >
+                    <Radio.Group>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        {agentNumbers.map((n) => (
+                          <Radio
+                            key={n.phoneNumber}
+                            value={n.phoneNumber}
+                            disabled={!!n.claimedByLocationId}
+                          >
+                            {n.phoneNumber}{" "}
+                            {n.claimedByLocationId ? (
+                              <Tag color="red">
+                                Assigned to {n.claimedByLocationName ?? "another location"}
+                              </Tag>
+                            ) : (
+                              <Tag color="green">Available</Tag>
+                            )}
+                          </Radio>
+                        ))}
+                      </div>
+                    </Radio.Group>
+                  </Form.Item>
+                )}
+              </>
+            ) : (
+              <>
+                <Text type="secondary" style={{ display: "block", marginBottom: 16 }}>
+                  Select a local phone number for your AI agent based on the provided location.
+                  This number will be purchased on provisioning.
+                </Text>
+                <Form.Item name="phoneNumber" label="Available Numbers" rules={[{ required: true, message: "Please select a phone number" }]}>
+                  <Radio.Group disabled={loadingNumbers || availableNumbers.length === 0}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {availableNumbers.map((n) => (
+                        <Radio key={n.phoneNumber} value={n.phoneNumber}>
+                          {n.formatted}
+                        </Radio>
+                      ))}
+                    </div>
+                  </Radio.Group>
+                </Form.Item>
+                <Button onClick={searchPhoneNumbers} loading={loadingNumbers}>
+                  Search Again
+                </Button>
+              </>
+            )}
           </div>
 
           {/* Step 4: Agent Config */}
@@ -320,7 +444,12 @@ export default function ProvisioningWizardPage() {
                     <li><strong>Admin Email:</strong> {form.getFieldValue("adminEmail") || "—"}</li>
                     <li><strong>Primary Location:</strong> {form.getFieldValue("locationName") || "—"}</li>
                     <li><strong>Address:</strong> {form.getFieldValue("address")}, {form.getFieldValue("city")}, {form.getFieldValue("state")} {form.getFieldValue("zip")} {form.getFieldValue("country")}</li>
-                    <li><strong>Phone Number:</strong> {form.getFieldValue("phoneNumber") || "—"}</li>
+                    <li>
+                      <strong>Phone Number:</strong> {form.getFieldValue("phoneNumber") || "—"}{" "}
+                      <Tag color={useAgentNumber ? "blue" : "orange"}>
+                        {useAgentNumber ? "Reused from agent — no purchase" : "Will be purchased"}
+                      </Tag>
+                    </li>
                     <li><strong>Base Agent ID:</strong> {form.getFieldValue("baseAgentId") || "—"}</li>
                   </ul>
                 )}

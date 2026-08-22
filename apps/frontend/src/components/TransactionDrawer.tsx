@@ -164,8 +164,8 @@ export default function TransactionDrawer({
 
   const submitRefund = async () => {
     if (!order || !refundMode) return;
-    if (!/^[0-9]{4}$/.test(refundPin)) {
-      message.warning("Enter the 4-digit manager PIN.");
+    if (!/^[0-9]{6}$/.test(refundPin)) {
+      message.warning("Enter the 6-digit manager PIN.");
       return;
     }
     const amountCents =
@@ -507,7 +507,7 @@ export default function TransactionDrawer({
           Manager PIN
         </Text>
         <Input.OTP
-          length={4}
+          length={6}
           mask="●"
           value={refundPin}
           onChange={(v) => setRefundPin(v)}

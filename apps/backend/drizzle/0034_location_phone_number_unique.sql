@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "idx_locations_phone_number_unique" ON "locations" USING btree ("phone_number") WHERE "locations"."phone_number" IS NOT NULL AND "locations"."deleted_at" IS NULL;

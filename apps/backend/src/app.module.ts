@@ -49,7 +49,9 @@ import { AggregatorModule } from './aggregator/aggregator.module';
 import * as redisStore from 'cache-manager-ioredis';
 import Redis from 'ioredis';
 import { validateEnv } from './config/env.validation';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, Reflector } from '@nestjs/core';
+import { createThrottleSkipIf } from './common/throttle-skip';
+import { RootController } from './root.controller';
 import { GlobalJwtAuthGuard } from './auth/guards/global-jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 
@@ -101,24 +103,32 @@ const prettyTransport = ((): { target: string } | undefined => {
     ThrottlerModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (configService: ConfigService) => ({
-        errorMessage: configService.get<string>(
-          'THROTTLE_ERROR_MESSAGE',
-          'Too many requests. Please try again later.',
-        ),
-        throttlers: [
-          {
-            name: 'default',
-            ttl: configService.get<number>('THROTTLE_DEFAULT_TTL', 60000),
-            limit: configService.get<number>('THROTTLE_DEFAULT_LIMIT', 5),
-          },
-          {
-            name: 'account',
-            ttl: configService.get<number>('THROTTLE_ACCOUNT_TTL', 60000),
-            limit: configService.get<number>('THROTTLE_ACCOUNT_LIMIT', 3),
-          },
-        ],
-      }),
+      useFactory: (configService: ConfigService) => {
+        // Plain Reflector — `skipIf` runs outside DI, and metadata lookup needs no state.
+        const throttleReflector = new Reflector();
+        return {
+          errorMessage: configService.get<string>(
+            'THROTTLE_ERROR_MESSAGE',
+            'Too many requests. Please try again later.',
+          ),
+          // Master switch — see createThrottleSkipIf. Rate limiting is off by default
+          // while the Voice AI flow is built out; routes carrying @EnforceThrottle()
+          // (password login, POS PIN entry) stay limited regardless.
+          skipIf: createThrottleSkipIf(configService, throttleReflector),
+          throttlers: [
+            {
+              name: 'default',
+              ttl: configService.get<number>('THROTTLE_DEFAULT_TTL', 60000),
+              limit: configService.get<number>('THROTTLE_DEFAULT_LIMIT', 5),
+            },
+            {
+              name: 'account',
+              ttl: configService.get<number>('THROTTLE_ACCOUNT_TTL', 60000),
+              limit: configService.get<number>('THROTTLE_ACCOUNT_LIMIT', 3),
+            },
+          ],
+        };
+      },
     }),
     SentryModule.forRoot(),
     EventEmitterModule.forRoot(),
@@ -176,7 +186,7 @@ const prettyTransport = ((): { target: string } | undefined => {
     // ── Order aggregation (marketplace integrations: KitchenHub, DoorDash, ...)
     AggregatorModule,
   ],
-  controllers: [AppController],
+  controllers: [AppController, RootController],
   providers: [
     AppService,
     { provide: APP_GUARD, useClass: GlobalJwtAuthGuard },
