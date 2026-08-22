@@ -46,7 +46,7 @@ import { DiscountsModule } from './discounts/discounts.module';
 import { CacheModule } from '@nestjs/cache-manager';
 import { AuditLogsModule } from './audit-logs/audit-logs.module';
 import { AggregatorModule } from './aggregator/aggregator.module';
-import * as redisStore from 'cache-manager-ioredis';
+import Keyv from 'keyv';
 import Redis from 'ioredis';
 import { validateEnv } from './config/env.validation';
 import { APP_GUARD, Reflector } from '@nestjs/core';
@@ -55,6 +55,7 @@ import {
   attachThrottledErrorLogger,
   buildRedisConnection,
 } from './common/redis-connection';
+import { IoRedisKeyvStore } from './common/cache/ioredis-keyv.store';
 import { RootController } from './root.controller';
 import { GlobalJwtAuthGuard } from './auth/guards/global-jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
@@ -86,10 +87,6 @@ const cacheRedisLogger = new Logger('CacheRedis');
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => {
-        // cache-manager-ioredis hands this options object straight to
-        // `new Redis(opts)`, and ioredis ignores an unrecognised `url` key — a
-        // `url:` here silently connected to localhost:6379 no matter what
-        // REDIS_URL said. Build the client from the URL ourselves.
         const { url, options } = buildRedisConnection(
           configService.get<string>('REDIS_URL'),
           'cache',
@@ -99,7 +96,21 @@ const cacheRedisLogger = new Logger('CacheRedis');
         // Without a listener ioredis re-emits every failure as an unhandled error event.
         attachThrottledErrorLogger(redisInstance, cacheRedisLogger);
 
-        return { store: redisStore, redisInstance, ttl: 3600 };
+        // @nestjs/cache-manager v3 builds the cache from `stores` only. The previous
+        // `{ store, redisInstance }` shape is v2 API: it was ignored outright, leaving a
+        // per-process in-memory cache — so webhook idempotency keys, which exist to stop
+        // the same AI order being processed twice, never crossed instances or restarts.
+        const keyv = new Keyv({
+          store: new IoRedisKeyvStore(redisInstance),
+          namespace: 'antd-cache',
+        });
+
+        return {
+          stores: [keyv],
+          // cache-manager v7 counts TTLs in milliseconds. The old `3600` was written for
+          // the v4 seconds API and meant 3.6 seconds here, expiring everything instantly.
+          ttl: 3_600_000,
+        };
       },
     }),
     ScheduleModule.forRoot(),
