@@ -5,7 +5,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { eq, and, sql } from 'drizzle-orm';
+import { eq, and, sql, getTableColumns } from 'drizzle-orm';
 import { DRIZZLE } from '../database/database.module';
 import * as schema from '../database/schema';
 import { TelnyxService } from '../telnyx/telnyx.service';
@@ -29,16 +29,28 @@ export class LocationsService {
   ) {}
 
   async listLocations(organizationId: string) {
-    return this.db
-      .select()
-      .from(schema.locations)
-      .where(
-        notDeleted(
-          schema.locations,
-          eq(schema.locations.organizationId, organizationId),
-        ),
-      )
-      .orderBy(schema.locations.createdAt);
+    return (
+      this.db
+        // Every location column plus the owning organization's name. The POS prints the
+        // business name at the top of a receipt, and a location name alone ("Manayunk") is
+        // not what a customer needs to see on it.
+        .select({
+          ...getTableColumns(schema.locations),
+          organizationName: schema.organizations.name,
+        })
+        .from(schema.locations)
+        .innerJoin(
+          schema.organizations,
+          eq(schema.locations.organizationId, schema.organizations.id),
+        )
+        .where(
+          notDeleted(
+            schema.locations,
+            eq(schema.locations.organizationId, organizationId),
+          ),
+        )
+        .orderBy(schema.locations.createdAt)
+    );
   }
 
   async createLocation(organizationId: string, dto: CreateLocationDto) {

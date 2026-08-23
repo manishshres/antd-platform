@@ -90,6 +90,10 @@ export const locations = pgTable(
     // first sync. Lets the UI show freshness and lets auto-sync target already-published locations.
     menuLastSyncedAt: timestamp('menu_last_synced_at', { withTimezone: true }),
     masterAgentId: varchar('master_agent_id', { length: 255 }),
+    // When set, an AI phone order goes straight to 'preparing' on arrival instead of
+    // waiting in 'pending' for someone to accept it. Per location, because one branch may
+    // trust the agent to fire tickets unattended while another wants a human to look first.
+    autoStartAiOrders: boolean('auto_start_ai_orders').default(false).notNull(),
     // Provisioning state
     status: varchar('status', { length: 50 }).default('draft').notNull(),
     provisioningError: varchar('provisioning_error', { length: 2048 }),

@@ -28,6 +28,12 @@ const PKG_PATHS = [
   'apps/pos/package.json',
 ].map((p) => join(root, p));
 
+// The Expo manifest, not package.json, is what the installed Android app reports. Keeping
+// it out of the release meant every tablet build claimed the same version — and Android
+// refuses to treat an APK with an unchanged versionCode as an update, so a rebuilt POS
+// could silently fail to install over the old one.
+const POS_APP_JSON = join(root, 'apps/pos/app.json');
+
 const args = process.argv.slice(2).filter((a) => a !== '--');
 const dryRun = args.includes('--dry-run');
 const bumpArg = args.find((a) => a !== '--dry-run') ?? 'patch';
@@ -73,6 +79,7 @@ console.log(`Releasing ${current} -> ${next}${dryRun ? ' (dry run)' : ''}`);
 if (dryRun) {
   console.log('Would update:');
   for (const p of PKG_PATHS) console.log(`  ${p}`);
+  console.log(`  ${POS_APP_JSON} (version + android.versionCode)`);
   console.log(`Would commit "release: ${tag}" and tag ${tag}`);
   process.exit(0);
 }
@@ -82,6 +89,20 @@ for (const path of PKG_PATHS) {
   pkg.version = next;
   writeFileSync(path, `${JSON.stringify(pkg, null, 2)}\n`);
   console.log(`  ${path} -> ${next}`);
+}
+
+// Expo manifest: the version string tracks the release, and versionCode is a monotonic
+// integer Android uses to decide what counts as an upgrade. It only ever increments —
+// reusing one means the APK will not install over the copy already on the tablet.
+{
+  const app = readPkg(POS_APP_JSON);
+  app.expo.version = next;
+  app.expo.android = app.expo.android ?? {};
+  app.expo.android.versionCode = (app.expo.android.versionCode ?? 0) + 1;
+  writeFileSync(POS_APP_JSON, `${JSON.stringify(app, null, 2)}\n`);
+  console.log(
+    `  ${POS_APP_JSON} -> ${next} (versionCode ${app.expo.android.versionCode})`,
+  );
 }
 
 // Sync the workspace lockfile's own version fields without touching deps.
@@ -97,6 +118,7 @@ const files = [
   'apps/backend/package.json',
   'apps/frontend/package.json',
   'apps/pos/package.json',
+  'apps/pos/app.json',
 ];
 execSync(`git add ${files.join(' ')}`, { cwd: root });
 execSync(`git commit -m "release: ${tag}" -- ${files.join(' ')}`, {

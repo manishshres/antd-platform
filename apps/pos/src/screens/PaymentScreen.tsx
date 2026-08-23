@@ -13,6 +13,7 @@ import { syncEngine } from '../sync/syncEngine';
 import { formatMoney, parseMoney } from '../utils/money';
 import { lineUnitPrice } from '../state/cartOps';
 import { printReceipt } from '../printing/printerService';
+import { currentBusinessInfo } from '../printing/businessInfo';
 import type { PaymentMethod } from '../types';
 import type { ScreenName } from '../navigation';
 
@@ -137,7 +138,7 @@ export function PaymentScreen({ onNavigate, onCompleted }: Props) {
     }
     syncEngine.refreshCounts();
     if (settings.printerEnabled && settings.printerAutoReceipt) {
-      void printReceipt(order, settings, settings.locationName).then((result) => {
+      void printReceipt(order, settings, currentBusinessInfo(settings)).then((result) => {
         if (!result.ok) Alert.alert('Print failed', result.error);
       });
     }
@@ -228,7 +229,7 @@ export function PaymentScreen({ onNavigate, onCompleted }: Props) {
               const result = await printReceipt(
                 cart.buildOrder(settings.taxRateBps),
                 settings,
-                settings.locationName,
+                currentBusinessInfo(settings),
               );
               if (!result.ok) Alert.alert('Print failed', result.error);
             }}

@@ -15,8 +15,16 @@ describe('WebhookQueueProcessor', () => {
 
   const updateWhere = jest.fn().mockResolvedValue(undefined);
   const updateSet = jest.fn(() => ({ where: updateWhere }));
+  // The processor resolves the org's sole location when the webhook omits one; these
+  // tests exercise orders that already carry a locationId, so an empty result is right.
+  const selectLimit = jest.fn().mockResolvedValue([]);
   const mockDb = {
     update: jest.fn(() => ({ set: updateSet })),
+    select: jest.fn(() => ({
+      from: jest.fn(() => ({
+        where: jest.fn(() => ({ limit: selectLimit })),
+      })),
+    })),
   };
 
   const mockEventEmitter = {
@@ -50,6 +58,66 @@ describe('WebhookQueueProcessor', () => {
 
     processor = module.get<WebhookQueueProcessor>(WebhookQueueProcessor);
     jest.clearAllMocks();
+  });
+
+  describe('location on AI orders', () => {
+    it('passes the location through to the created order', async () => {
+      // It used to scope the menu lookup and then get dropped, so every AI order was
+      // stored with locationId null — and the dashboard filters orders by location, which
+      // made them invisible the moment a location was selected.
+      await processor.process(
+        makeJob({
+          orgId: 'org-1',
+          locationId: 'loc-1',
+          customerName: 'John',
+          customerPhone: '1234567890',
+          items: [{ menuItemId: 'menu-1', quantity: 1 }],
+        }),
+      );
+
+      expect(mockEventEmitter.emitAsync).toHaveBeenCalledWith(
+        'order.incoming',
+        expect.objectContaining({ locationId: 'loc-1' }),
+      );
+    });
+
+    it("falls back to the org's only location when the webhook omits one", async () => {
+      // A single-site restaurant should not have to send an id it has no way to know.
+      selectLimit.mockResolvedValueOnce([{ id: 'loc-only' }]);
+
+      await processor.process(
+        makeJob({
+          orgId: 'org-1',
+          customerName: 'John',
+          customerPhone: '1234567890',
+          items: [{ menuItemId: 'menu-1', quantity: 1 }],
+        }),
+      );
+
+      expect(mockEventEmitter.emitAsync).toHaveBeenCalledWith(
+        'order.incoming',
+        expect.objectContaining({ locationId: 'loc-only' }),
+      );
+    });
+
+    it('leaves the location unset when the org has several', async () => {
+      // Guessing a branch would route a ticket to the wrong kitchen.
+      selectLimit.mockResolvedValueOnce([{ id: 'loc-1' }, { id: 'loc-2' }]);
+
+      await processor.process(
+        makeJob({
+          orgId: 'org-1',
+          customerName: 'John',
+          customerPhone: '1234567890',
+          items: [{ menuItemId: 'menu-1', quantity: 1 }],
+        }),
+      );
+
+      expect(mockEventEmitter.emitAsync).toHaveBeenCalledWith(
+        'order.incoming',
+        expect.objectContaining({ locationId: null }),
+      );
+    });
   });
 
   describe('idempotency-key completion (#12)', () => {

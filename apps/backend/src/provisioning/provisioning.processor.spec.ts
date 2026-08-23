@@ -32,6 +32,7 @@ const buildProcessor = async (db: ReturnType<typeof buildDb>) => {
     getNumberOrder: jest.fn(),
     getPhoneNumbersByNumber: jest.fn(),
     setAssistantDynamicVariablesOrThrow: jest.fn().mockResolvedValue(undefined),
+    updateAssistant: jest.fn().mockResolvedValue({}),
   };
 
   const module: TestingModule = await Test.createTestingModule({
@@ -121,6 +122,39 @@ describe('ProvisioningProcessor — retries must not duplicate paid resources', 
     await expect(
       callStep(processor, 'registerWebhook', 'org-1', 'loc-1'),
     ).rejects.toThrow(/no Voice AI assistant/);
+  });
+
+  it('never sends order_key back to the assistant', async () => {
+    // The wizard collects dynamic variables verbatim, order_key included, but the backend
+    // stores only that key's hash — so the wizard copy is stale or invented. Re-running
+    // configure_agent used to overwrite the working key with it, and every AI order 401'd.
+    const db = buildDb([
+      {
+        telnyxAssistantId: 'asst-1',
+        organizationId: 'org-1',
+        name: 'Manayunk',
+        aiSettings: {
+          dynamicVariables: {
+            order_key: 'coai_stale_from_the_wizard',
+            main_phone_number: '2513158850',
+            company_name: 'Ekta Indian Cuisine',
+          },
+        },
+      },
+    ]);
+    const { processor, telnyx } = await buildProcessor(db);
+
+    // configureAgent reads the assistant id from the clone_agent step's metadata.
+    await callStep(processor, 'configureAgent', 'loc-1', {
+      clone_agent: { assistantId: 'asst-1' },
+    });
+
+    const [, vars] = telnyx.setAssistantDynamicVariablesOrThrow.mock
+      .calls[0] as [string, Record<string, string>];
+    expect(vars.order_key).toBeUndefined();
+    // ...and the phone number is normalised on the way through.
+    expect(vars.main_phone_number).toBe('+12513158850');
+    expect(vars.company_name).toBe('Ekta Indian Cuisine');
   });
 
   it('skips the number order when the location already holds a number', async () => {
