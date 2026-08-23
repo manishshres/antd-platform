@@ -404,15 +404,28 @@ export class ProvisioningProcessor extends WorkerHost {
       name: `${location.name} Assistant`,
     };
 
+    await this.telnyxService.updateAssistant(assistantId, payload);
+
     if (aiSettings?.dynamicVariables) {
       // Operators type these by hand, and Telnyx's dial command rejects anything that is
       // not +E164 with a 422 — at call time, long after provisioning reported success.
-      payload.dynamic_variables = normalizePhoneVariables(
+      const variables = normalizePhoneVariables(
         aiSettings.dynamicVariables as Record<string, string>,
       );
-    }
 
-    await this.telnyxService.updateAssistant(assistantId, payload);
+      // order_key belongs to register_webhook, which stores only its hash — so whatever
+      // sits in the wizard's variables is stale or invented. Sending it back overwrote the
+      // working key with one the backend has never seen and every AI order 401'd; re-running
+      // this step was enough to break a healthy assistant.
+      delete variables.order_key;
+
+      // Merge rather than PATCH the whole map: a plain update replaces dynamic_variables
+      // wholesale, so omitting order_key here would delete the key instead of leaving it.
+      await this.telnyxService.setAssistantDynamicVariablesOrThrow(
+        assistantId,
+        variables,
+      );
+    }
   }
 
   private async importMenu(locationId: string) {
