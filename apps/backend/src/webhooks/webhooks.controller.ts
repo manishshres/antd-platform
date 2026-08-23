@@ -27,6 +27,7 @@ import { Queue } from 'bullmq';
 import { createHash } from 'crypto';
 import { verifyTelnyxSignature } from './telnyx-signature';
 import { Public } from '../common/decorators/public.decorator';
+import { notDeleted } from '../database/db.utils';
 
 interface RequestWithRawBody extends Request {
   rawBody?: Buffer;
@@ -71,11 +72,20 @@ export class WebhooksController {
 
     const hashedApiKey = createHash('sha256').update(apiKey).digest('hex');
 
-    // Find organization matching the API key (could be Webhook Secret or Developer API Key)
+    // Find organization matching the API key (could be Webhook Secret or Developer API Key).
+    // Deleted orgs are excluded: their Voice AI assistant and phone number can outlive the
+    // record — deleting an org does not release Telnyx resources, only deprovisioning does —
+    // so a call to a decommissioned restaurant's number was still ingesting live orders
+    // against an organization nobody can see in the dashboard.
     const orgs = await this.db
       .select({ id: schema.organizations.id })
       .from(schema.organizations)
-      .where(eq(schema.organizations.webhookApiKey, hashedApiKey))
+      .where(
+        notDeleted(
+          schema.organizations,
+          eq(schema.organizations.webhookApiKey, hashedApiKey),
+        ),
+      )
       .limit(1);
 
     let orgId = orgs[0]?.id;
@@ -89,12 +99,20 @@ export class WebhooksController {
           organizationId: schema.apiKeys.organizationId,
         })
         .from(schema.apiKeys)
+        // Joined so a developer key can't outlive its organization either.
+        .innerJoin(
+          schema.organizations,
+          eq(schema.apiKeys.organizationId, schema.organizations.id),
+        )
         .where(
-          and(
-            eq(schema.apiKeys.keyHash, hashedApiKey),
-            or(
-              isNull(schema.apiKeys.expiresAt),
-              gt(schema.apiKeys.expiresAt, new Date()),
+          notDeleted(
+            schema.organizations,
+            and(
+              eq(schema.apiKeys.keyHash, hashedApiKey),
+              or(
+                isNull(schema.apiKeys.expiresAt),
+                gt(schema.apiKeys.expiresAt, new Date()),
+              ),
             ),
           ),
         )
