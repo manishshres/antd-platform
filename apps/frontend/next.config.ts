@@ -19,10 +19,14 @@ const nextConfig: NextConfig = {
     // Keep NEXT_PUBLIC_API_URL empty so the client always calls /api/v1 (same-origin),
     // which keeps the refresh_token cookie first-party to the frontend host and visible
     // to the edge proxy auth guard (src/proxy.ts).
-    const apiUrl =
+    // Trailing slashes are stripped: the destination below appends '/api/:path*', so a
+    // value like 'https://api.coneeko.com/' produced '//api/v1/auth/login' and the backend
+    // 404'd on the doubled path — a login-breaking typo with no obvious cause.
+    const apiUrl = (
       process.env.BACKEND_INTERNAL_URL ||
       process.env.NEXT_PUBLIC_API_URL ||
-      'http://localhost:4000';
+      'http://localhost:4000'
+    ).replace(/\/+$/, '');
     // Proxy every /api/* path, not just /api/v1 — the backend also serves
     // /api/v2 (POS public API) and the Telnyx/aggregator webhook routes, and
     // those must be reachable on the same public origin as the UI. The frontend
