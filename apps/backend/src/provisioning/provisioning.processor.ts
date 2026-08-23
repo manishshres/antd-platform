@@ -449,6 +449,29 @@ export class ProvisioningProcessor extends WorkerHost {
         webhookApiKey: keyHash,
       })
       .where(eq(schema.organizations.id, organizationId));
+
+    // Hand the plaintext key to the assistant. Only the hash is stored, and the key is
+    // never shown anywhere else, so without this the agent authenticates with whatever
+    // order_key was typed into the wizard — which hashes to nothing on record — and every
+    // order webhook 401s. Provisioning left no way to recover: the billing endpoint sees a
+    // key already set and answers "rotate to view a new key". Mirrors
+    // BillingService.syncApiKeyToAssistants, which is how rotation keeps them in step.
+    const [location] = await this.db
+      .select({ telnyxAssistantId: schema.locations.telnyxAssistantId })
+      .from(schema.locations)
+      .where(eq(schema.locations.id, locationId))
+      .limit(1);
+
+    if (!location?.telnyxAssistantId) {
+      throw new Error(
+        'Cannot register the webhook key: the location has no Voice AI assistant yet.',
+      );
+    }
+
+    await this.telnyxService.updateAssistantDynamicVariable(
+      location.telnyxAssistantId,
+      { order_key: newKey },
+    );
   }
 
   private async sendAdminInvitation(

@@ -31,6 +31,7 @@ const buildProcessor = async (db: ReturnType<typeof buildDb>) => {
     createNumberOrder: jest.fn().mockResolvedValue({ data: { id: 'order-1' } }),
     getNumberOrder: jest.fn(),
     getPhoneNumbersByNumber: jest.fn(),
+    updateAssistantDynamicVariable: jest.fn().mockResolvedValue({}),
   };
 
   const module: TestingModule = await Test.createTestingModule({
@@ -95,6 +96,31 @@ describe('ProvisioningProcessor — retries must not duplicate paid resources', 
 
     expect(telnyx.cloneAssistant).toHaveBeenCalledWith('asst-master');
     expect(metadata.assistantId).toBe('asst-new');
+  });
+
+  it('hands the generated webhook key to the assistant as order_key', async () => {
+    // Only the hash is stored and the key is shown nowhere, so an assistant that never
+    // receives it authenticates with a key that hashes to nothing on record — every AI
+    // order webhook 401s, with no way to recover the value afterwards.
+    const db = buildDb([{ telnyxAssistantId: 'asst-1' }]);
+    const { processor, telnyx } = await buildProcessor(db);
+
+    await callStep(processor, 'registerWebhook', 'org-1', 'loc-1');
+
+    expect(telnyx.updateAssistantDynamicVariable).toHaveBeenCalledTimes(1);
+    const [assistantId, vars] = telnyx.updateAssistantDynamicVariable.mock
+      .calls[0] as [string, { order_key: string }];
+    expect(assistantId).toBe('asst-1');
+    expect(vars.order_key).toMatch(/^sk_live_[0-9a-f]{48}$/);
+  });
+
+  it('fails the step when there is no assistant to give the key to', async () => {
+    const db = buildDb([{ telnyxAssistantId: null }]);
+    const { processor } = await buildProcessor(db);
+
+    await expect(
+      callStep(processor, 'registerWebhook', 'org-1', 'loc-1'),
+    ).rejects.toThrow(/no Voice AI assistant/);
   });
 
   it('skips the number order when the location already holds a number', async () => {
