@@ -10,7 +10,6 @@ import {
   Dropdown,
   Input,
   Select,
-  Skeleton,
   Space,
   Table,
   Tag,
@@ -489,15 +488,14 @@ export default function CallsPage() {
         </div>
 
         {/* ── Table ── */}
-        {loading ? (
-          <div
-            style={{ display: "flex", justifyContent: "center", padding: 60 }}
-          >
-            <Skeleton active paragraph={{ rows: 10 }} />
-          </div>
-        ) : (
-          <Table {...tableProps} />
-        )}
+        {/*
+          The table renders its own loading overlay rather than being swapped for a
+          Skeleton. The old branch put the Skeleton inside a centred flex container, so the
+          shimmer collapsed to content width and floated in the middle of the card — nothing
+          like the table it stood in for — and the swap made the whole page jump when data
+          arrived. Table's `loading` keeps the header, toolbar and column widths in place.
+        */}
+        <Table {...tableProps} loading={loading} />
       </Card>
     </>
   );

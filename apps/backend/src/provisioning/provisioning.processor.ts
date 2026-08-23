@@ -15,6 +15,7 @@ import { randomBytes, createHash } from 'crypto';
 import { Queue } from 'bullmq';
 import { InjectQueue } from '@nestjs/bullmq';
 import { SHARED_WORKER_OPTIONS } from '../queues/queues.module';
+import { normalizePhoneVariables } from '../common/utils/phone.util';
 
 @Processor('provisioning-queue', SHARED_WORKER_OPTIONS)
 export class ProvisioningProcessor extends WorkerHost {
@@ -404,7 +405,11 @@ export class ProvisioningProcessor extends WorkerHost {
     };
 
     if (aiSettings?.dynamicVariables) {
-      payload.dynamic_variables = aiSettings.dynamicVariables;
+      // Operators type these by hand, and Telnyx's dial command rejects anything that is
+      // not +E164 with a 422 — at call time, long after provisioning reported success.
+      payload.dynamic_variables = normalizePhoneVariables(
+        aiSettings.dynamicVariables as Record<string, string>,
+      );
     }
 
     await this.telnyxService.updateAssistant(assistantId, payload);

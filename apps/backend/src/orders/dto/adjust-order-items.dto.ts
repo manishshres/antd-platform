@@ -16,7 +16,7 @@ export class AdjustOrderItemsDto {
     example: '123456',
   })
   @IsString()
-  @Length(4, 4)
+  @Length(6, 6)
   @Matches(/^[0-9]{6}$/, { message: 'PIN must be exactly 6 digits' })
   managerPin!: string;
 
