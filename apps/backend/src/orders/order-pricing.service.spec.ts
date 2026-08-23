@@ -12,6 +12,72 @@ import { OrderPricingService } from './order-pricing.service';
  * DB-touching tests (`nextTicketNumber`, `requireOrgCustomer`, full
  * `priceCartItems` flow) come when a Postgres test fixture lands.
  */
+describe('OrderPricingService — ticket numbers', () => {
+  let service: OrderPricingService;
+
+  /** Minimal tx: the advisory lock, then the max(ticketNumber) select. */
+  const buildTx = (max: number) => ({
+    execute: jest.fn().mockResolvedValue(undefined),
+    select: jest.fn().mockReturnValue({
+      from: jest.fn().mockReturnValue({
+        where: jest.fn().mockResolvedValue([{ max }]),
+      }),
+    }),
+  });
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [OrderPricingService, { provide: DRIZZLE, useValue: {} }],
+    }).compile();
+    service = module.get(OrderPricingService);
+  });
+
+  it('continues from the highest number the location has ever used', async () => {
+    const tx = buildTx(41);
+
+    await expect(
+      service.nextTicketNumber(
+        tx as unknown as Parameters<OrderPricingService['nextTicketNumber']>[0],
+        'loc-1',
+      ),
+    ).resolves.toBe(42);
+  });
+
+  it('starts at 1 for a location with no orders', async () => {
+    const tx = buildTx(0);
+
+    await expect(
+      service.nextTicketNumber(
+        tx as unknown as Parameters<OrderPricingService['nextTicketNumber']>[0],
+        'loc-1',
+      ),
+    ).resolves.toBe(1);
+  });
+
+  it('does not scope the count to a business day', async () => {
+    // The counter used to reset at the location's local midnight, so yesterday's #14 and
+    // today's #14 were both live: calling a number got two different orders. Resolving the
+    // timezone was the only reason this needed the location's clock — if it is never asked
+    // for, the day boundary is genuinely gone rather than merely widened.
+    const timezoneSpy = jest.spyOn(service, 'getLocationTimezone');
+    const tx = buildTx(7);
+
+    await service.nextTicketNumber(tx, 'loc-1');
+
+    expect(timezoneSpy).not.toHaveBeenCalled();
+  });
+
+  it('serialises allocation per location', async () => {
+    // Postgres cannot take FOR UPDATE on an aggregate, so without the advisory lock two
+    // concurrent orders read the same max and collide on the same number.
+    const tx = buildTx(3);
+
+    await service.nextTicketNumber(tx, 'loc-1');
+
+    expect(tx.execute).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('OrderPricingService — discount math', () => {
   let service: OrderPricingService;
   const db: Record<string, unknown[]> = {};
