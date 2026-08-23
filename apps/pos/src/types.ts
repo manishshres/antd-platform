@@ -185,7 +185,11 @@ export type LocalOrderStatus =
   | 'open_tab' // seated at a table, fired to the kitchen, still taking items
   | 'pending_sync' // placed (paid or fired) but not yet accepted by the server
   | 'synced' // accepted by the server
-  | 'failed'; // server rejected it (needs attention)
+  | 'failed' // server rejected it (needs attention)
+  // Live on the server, never on this device: a phone order the Voice AI took, or one
+  // rung up on another register. Display-only — these are fetched for the Active list
+  // and are never written to the local orders table.
+  | 'incoming';
 
 /**
  * A unit of work owed to the server. `orders.status` is what the cashier sees;

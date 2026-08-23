@@ -28,6 +28,10 @@ function statusMeta(status: LocalOrderStatus): { label: string; color: string } 
       return { label: 'Sync failed', color: antd.error };
     case 'synced':
       return { label: 'Synced', color: antd.success };
+    case 'incoming':
+      // A phone order the AI took, or one rung up elsewhere — it needs attention on this
+      // register, so it reads as new rather than as something already handled here.
+      return { label: 'New', color: antd.warning };
   }
 }
 

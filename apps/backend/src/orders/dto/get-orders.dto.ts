@@ -8,12 +8,17 @@ import {
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 
+// Must mirror the orders_status_check constraint in schema.ts. 'confirmed' and 'refunded'
+// were missing, so a filter on either 400'd — and paying a pending order moves it to
+// 'confirmed', which made every paid-but-unfinished order impossible to list by status.
 const ORDER_STATUSES = [
   'pending',
+  'confirmed',
   'preparing',
   'ready',
   'completed',
   'cancelled',
+  'refunded',
 ] as const;
 
 export class GetOrdersDto extends PaginationDto {

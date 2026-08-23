@@ -14,8 +14,63 @@ import { HistoryTabPanel } from './history/HistoryTabPanel';
 import { OrdersListPanel } from './history/OrdersListPanel';
 import { DetailPanel } from './history/DetailPanel';
 import type { ActiveTab, DetailState, HistoryRow } from './history/types';
-import type { Course, LocalOrder } from '../types';
+import type {
+  Course,
+  LocalOrder,
+  OrderType,
+  PaymentMethod,
+  ServerOrder,
+} from '../types';
 import type { ScreenName } from '../navigation';
+
+/**
+ * Server statuses that still need someone on the floor. 'ready' and 'completed' are done
+ * with the register; anything past that belongs in History, not Active.
+ */
+const SERVER_ACTIVE_STATUSES = ['pending', 'confirmed', 'preparing'] as const;
+
+/** How often the Active tab re-asks the server while it is open. */
+const INCOMING_POLL_MS = 20_000;
+
+/**
+ * Summary view of a server order for the Active list. Items are deliberately empty: the
+ * list endpoint does not return them, and the detail is fetched on selection.
+ */
+function toIncomingOrder(order: ServerOrder): LocalOrder {
+  return {
+    id: order.id,
+    serverId: order.id,
+    ticketNumber: order.ticketNumber,
+    status: 'incoming',
+    items: [],
+    customerId: null,
+    customerName: order.customerName,
+    customerPhone: order.customerPhone,
+    tableId: null,
+    tableName: null,
+    guests: null,
+    orderType: (order.orderType as OrderType) ?? 'pickup',
+    subtotal: order.subtotal ?? 0,
+    discountId: null,
+    discountName: null,
+    discountAmount: 0,
+    taxAmount: order.taxAmount ?? 0,
+    totalAmount: order.totalAmount,
+    paymentMethod: (order.paymentMethod as PaymentMethod) ?? null,
+    tenderedAmount: null,
+    changeAmount: null,
+    tipAmount: 0,
+    serviceChargeAmount: 0,
+    loyaltyPointsRedeemed: 0,
+    specialInstructions: null,
+    errorMessage: null,
+    createdAt: order.createdAt,
+    syncedAt: null,
+    tabOpenedAt: null,
+    fireMode: 'all',
+    businessDayId: null,
+  };
+}
 
 interface Props {
   onNavigate: (screen: ScreenName) => void;
@@ -42,6 +97,7 @@ export function HistoryScreen({ onNavigate }: Props) {
   const [heldOrders, setHeldOrders] = useState<LocalOrder[]>([]);
   const [offlineOrders, setOfflineOrders] = useState<LocalOrder[]>([]);
   const [openTabs, setOpenTabs] = useState<LocalOrder[]>([]);
+  const [incomingOrders, setIncomingOrders] = useState<LocalOrder[]>([]);
   const [localRefresh, setLocalRefresh] = useState(0);
   const [historyRefresh, setHistoryRefresh] = useState(0);
 
@@ -121,6 +177,84 @@ export function HistoryScreen({ onNavigate }: Props) {
     setOpenTabs(ordersRepo.listOpenTabs());
   }, [dataVersion, localRefresh]);
 
+  /**
+   * Orders that are live on the server but were never rung up here: Voice AI phone
+   * orders, and anything placed on another register. The Active list read only the local
+   * open_tab table, so an AI order could sit in 'pending' indefinitely with nobody on the
+   * floor aware it existed — the register showed an empty Active tab while the kitchen
+   * waited. Polled while the tab is open so a call that lands mid-shift appears without
+   * anyone pulling to refresh.
+   */
+  useEffect(() => {
+    // Deliberately not gated on the active tab: the count badge is the thing that tells
+    // someone a phone order arrived, and it would be useless if it only updated once they
+    // had already opened the tab it appears on.
+    const client = new ApiClient(settings.apiUrl, settings.apiKey);
+    if (!online || !client.isConfigured) {
+      setIncomingOrders([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    const load = () => {
+      Promise.all(
+        SERVER_ACTIVE_STATUSES.map((status) =>
+          client.getOrders({
+            status,
+            limit: 50,
+            // Without this an org with several branches shows every site's orders on
+            // every register.
+            locationId: settings.locationId || undefined,
+          }),
+        ),
+      )
+        .then((pages) => {
+          if (cancelled) return;
+          // Orders this device already knows about are shown from the local table, with
+          // its own status; listing them twice would double-count the floor's workload.
+          const knownServerIds = new Set(
+            ordersRepo
+              .listOrders(['synced', 'pending_sync', 'failed', 'open_tab'])
+              .map((o) => o.serverId)
+              .filter((id): id is string => !!id),
+          );
+
+          const merged = new Map<string, LocalOrder>();
+          for (const page of pages) {
+            for (const order of page.data) {
+              if (knownServerIds.has(order.id)) continue;
+              merged.set(order.id, toIncomingOrder(order));
+            }
+          }
+
+          setIncomingOrders(
+            [...merged.values()].sort((a, b) =>
+              a.createdAt.localeCompare(b.createdAt),
+            ),
+          );
+        })
+        .catch(() => {
+          // Offline or a flaky link: keep whatever is on screen rather than blanking the
+          // list, which would read as "no orders" when it means "could not ask".
+        });
+    };
+
+    load();
+    const timer = setInterval(load, INCOMING_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [
+    online,
+    settings.apiUrl,
+    settings.apiKey,
+    settings.locationId,
+    dataVersion,
+    localRefresh,
+  ]);
+
   // Clear selection on tab change
   useEffect(() => {
     setSelectedId(null);
@@ -150,6 +284,31 @@ export function HistoryScreen({ onNavigate }: Props) {
     setSelectedId(order.id);
     setDetail({ kind: 'local', order });
   }, []);
+
+  /**
+   * The Active list mixes local tabs with server-only orders. A local order carries its
+   * own items; an incoming one is a summary, so its detail (and line items) has to be
+   * fetched before anything useful can be shown.
+   */
+  const selectActiveOrder = useCallback(
+    (order: LocalOrder) => {
+      if (order.status !== 'incoming') {
+        selectLocalOrder(order);
+        return;
+      }
+
+      setSelectedId(order.id);
+      setDetail({ kind: 'loading' });
+      const client = new ApiClient(settings.apiUrl, settings.apiKey);
+      client
+        .getOrderById(order.id)
+        .then((full) => setDetail({ kind: 'server', order: full }))
+        .catch((err: Error) =>
+          setDetail({ kind: 'error', message: err.message ?? 'Failed to load.' }),
+        );
+    },
+    [selectLocalOrder, settings.apiUrl, settings.apiKey],
+  );
 
   // Hold actions
   const resumeOrder = (order: LocalOrder) => {
@@ -233,6 +392,11 @@ export function HistoryScreen({ onNavigate }: Props) {
               {tab.key === 'offline' && pendingCount > 0 && (
                 <Badge size={14} style={styles.tabBadge}>{pendingCount}</Badge>
               )}
+              {/* Without a count here, a phone order that arrives while the register sits
+                  on another tab goes unnoticed until someone thinks to look. */}
+              {tab.key === 'tabs' && incomingOrders.length > 0 && (
+                <Badge size={14} style={styles.tabBadge}>{incomingOrders.length}</Badge>
+              )}
             </TouchableOpacity>
           ))}
         </View>
@@ -256,9 +420,9 @@ export function HistoryScreen({ onNavigate }: Props) {
         )}
         {activeTab === 'tabs' && (
           <OrdersListPanel
-            orders={openTabs}
+            orders={[...incomingOrders, ...openTabs]}
             selectedId={selectedId}
-            onSelect={selectLocalOrder}
+            onSelect={selectActiveOrder}
             emptyLabel="No active orders"
             emptyIcon="silverware-fork-knife"
           />

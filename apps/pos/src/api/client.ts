@@ -354,6 +354,8 @@ export class ApiClient {
     offset?: number;
     dateFrom?: string;
     dateTo?: string;
+    /** Scope to one branch — an org with several would otherwise list every site's orders. */
+    locationId?: string;
   }): Promise<{ data: ServerOrder[]; total: number }> {
     const qs = new URLSearchParams({
       limit: String(params?.limit ?? 50),
@@ -361,6 +363,7 @@ export class ApiClient {
     });
     if (params?.q?.trim()) qs.set('q', params.q.trim());
     if (params?.status) qs.set('status', params.status);
+    if (params?.locationId) qs.set('locationId', params.locationId);
     if (params?.dateFrom) qs.set('dateFrom', params.dateFrom);
     if (params?.dateTo) qs.set('dateTo', params.dateTo);
     return this.request('GET', `/orders?${qs.toString()}`);
