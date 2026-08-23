@@ -1,0 +1,1 @@
+ALTER TABLE "locations" ADD COLUMN "auto_start_ai_orders" boolean DEFAULT false NOT NULL;

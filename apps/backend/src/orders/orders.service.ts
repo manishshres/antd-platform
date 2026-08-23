@@ -521,22 +521,49 @@ export class OrdersService {
   @OnEvent('order.incoming')
   async handleOrderIncomingEvent(payload: {
     orgId: string;
+    locationId?: string | null;
     customerName: string;
     customerPhone: string;
     items: { menuItemId: string; quantity: number; modifiers?: string[] }[];
     orderType?: string;
     specialInstructions?: string;
   }) {
-    return this.createOrderForOrg(
+    const order = await this.createOrderForOrg(
       payload.orgId,
       payload.customerName,
       payload.customerPhone,
       payload.items,
       undefined,
-      undefined,
+      payload.locationId ?? undefined,
       payload.orderType,
       payload.specialInstructions,
     );
+
+    // Auto-start: the location can opt into sending AI orders straight to the kitchen
+    // instead of parking them in 'pending' for someone to accept. Applied after creation
+    // so the order's own listeners (printing, realtime) still see it come into being.
+    if (payload.locationId && order?.id) {
+      const [location] = await this.db
+        .select({ autoStart: schema.locations.autoStartAiOrders })
+        .from(schema.locations)
+        .where(eq(schema.locations.id, payload.locationId))
+        .limit(1);
+
+      if (location?.autoStart) {
+        const [started] = await this.db
+          .update(schema.orders)
+          .set({ status: 'preparing', updatedAt: new Date() })
+          .where(eq(schema.orders.id, order.id))
+          .returning();
+
+        this.logger.log(
+          `Auto-started AI order ${order.id} for location ${payload.locationId}.`,
+        );
+        return started ?? order;
+      }
+    }
+
+    return order;
   }
 
   /**

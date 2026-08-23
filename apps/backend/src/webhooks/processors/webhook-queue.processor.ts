@@ -6,6 +6,7 @@ import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../../database/schema';
 import { eq, and, ilike } from 'drizzle-orm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { notDeleted } from '../../database/db.utils';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
 import { SHARED_WORKER_OPTIONS } from '../../queues/queues.module';
@@ -45,6 +46,25 @@ export class WebhookQueueProcessor extends WorkerHost {
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
   ) {
     super();
+  }
+
+  /**
+   * The org's location when it has exactly one live site. Ambiguous orgs return null
+   * rather than guessing which branch an order belongs to.
+   */
+  private async resolveSoleLocationId(orgId: string): Promise<string | null> {
+    const locations = await this.db
+      .select({ id: schema.locations.id })
+      .from(schema.locations)
+      .where(
+        notDeleted(
+          schema.locations,
+          eq(schema.locations.organizationId, orgId),
+        ),
+      )
+      .limit(2);
+
+    return locations.length === 1 ? locations[0].id : null;
   }
 
   async process(
@@ -158,8 +178,17 @@ export class WebhookQueueProcessor extends WorkerHost {
     // Emit the order to be created (this also triggers printer queue enqueuing
     // in OrdersService's listener). `emitAsync` returns a Promise<unknown[]> —
     // the listener returns the new order, which we read out here.
+    // The location travels with the order. It was used to scope the menu lookup above and
+    // then dropped, so every AI order was stored with locationId null — and the dashboard
+    // filters orders by location, so those orders were invisible whenever a location was
+    // selected. When the caller omits it, fall back to the org's only location: a
+    // single-site restaurant should not have to send an id it doesn't know.
+    const resolvedLocationId =
+      locationId ?? (await this.resolveSoleLocationId(orgId));
+
     const emitted = await this.eventEmitter.emitAsync('order.incoming', {
       orgId,
+      locationId: resolvedLocationId,
       customerName,
       customerPhone,
       items: resolvedItems,
