@@ -9,11 +9,8 @@ import { CurrentUserPayload } from '../common/decorators/current-user.decorator'
 import { DRIZZLE } from '../database/database.module';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../database/schema';
-import { eq, and, inArray, isNull, sql, gte } from 'drizzle-orm';
-import {
-  startOfBusinessDay,
-  DEFAULT_TIMEZONE,
-} from '../common/time/business-day';
+import { eq, and, inArray, isNull, sql } from 'drizzle-orm';
+import { DEFAULT_TIMEZONE } from '../common/time/business-day';
 
 export interface ResolvedCartItem {
   menuItemId: string;
@@ -397,10 +394,11 @@ export class OrderPricingService {
       sql`select pg_advisory_xact_lock(hashtext(${locationId}))`,
     );
 
-    // Reset the counter at the location's local midnight, not the server's — a
-    // late-night order must keep counting up for the same business day (P2-009).
-    const timezone = await this.getLocationTimezone(locationId, tx);
-    const startOfDay = startOfBusinessDay(new Date(), timezone);
+    // Counts up forever per location, never resetting. It used to restart at 1 each
+    // business day, which meant yesterday's #14 and today's #14 were both live: staff
+    // calling a number got two different orders, and searching a ticket number returned
+    // several. A number is only useful if it identifies one order, so the sequence
+    // continues across days.
     const [row] = await tx
       .select({
         max: sql<number>`coalesce(max(${schema.orders.ticketNumber}), 0)`.mapWith(
@@ -408,12 +406,7 @@ export class OrderPricingService {
         ),
       })
       .from(schema.orders)
-      .where(
-        and(
-          eq(schema.orders.locationId, locationId),
-          gte(schema.orders.createdAt, startOfDay),
-        ),
-      );
+      .where(eq(schema.orders.locationId, locationId));
     return (row?.max ?? 0) + 1;
   }
 
