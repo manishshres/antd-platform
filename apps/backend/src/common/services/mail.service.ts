@@ -7,17 +7,43 @@ import type { Transporter } from 'nodemailer';
 export class MailService {
   private readonly logger = new Logger(MailService.name);
   private transporter: Transporter | null = null;
-  private readonly resendApiKey: string | undefined;
+  private resendApiKey: string | undefined;
 
   constructor(private readonly configService: ConfigService) {
-    // Prefer Resend's HTTPS API over SMTP. Railway blocks outbound SMTP ports (25/465/587)
-    // to deter abuse, so nodemailer never completes a connection there — it surfaces as
-    // "Connection timeout" after the socket deadline, with correct credentials. Port 443
-    // is not blocked, so the HTTP API works where SMTP cannot.
-    this.resendApiKey = this.configService.get<string>('RESEND_API_KEY');
-    if (this.resendApiKey) {
+    // MAIL_TRANSPORT picks how mail leaves the process:
+    //   http  — Resend's REST API over 443
+    //   smtp  — nodemailer against SMTP_HOST
+    //   auto  — http when RESEND_API_KEY is set, otherwise smtp (default)
+    //
+    // The choice matters because Railway blocks outbound SMTP ports (25/465/587) to deter
+    // abuse: nodemailer never completes a TCP connection there and fails with "Connection
+    // timeout" no matter how the credentials are set. Port 443 is not blocked. Being able
+    // to state the transport outright — rather than inferring it from which keys happen to
+    // be present — is what makes that diagnosable instead of mysterious.
+    const transport = (
+      this.configService.get<string>('MAIL_TRANSPORT', 'auto') || 'auto'
+    )
+      .trim()
+      .toLowerCase();
+
+    const resendApiKey = this.configService.get<string>('RESEND_API_KEY');
+
+    if (transport === 'http' || (transport === 'auto' && resendApiKey)) {
+      if (!resendApiKey) {
+        this.logger.warn(
+          'MAIL_TRANSPORT=http but RESEND_API_KEY is not set — emails will be logged to console only.',
+        );
+        return;
+      }
+      this.resendApiKey = resendApiKey;
       this.logger.log('Mail transport configured via Resend HTTP API.');
       return;
+    }
+
+    if (transport !== 'smtp' && transport !== 'auto') {
+      this.logger.warn(
+        `Unknown MAIL_TRANSPORT="${transport}" — falling back to smtp. Valid values: http, smtp, auto.`,
+      );
     }
 
     const smtpHost = this.configService.get<string>('SMTP_HOST');
@@ -44,6 +70,11 @@ export class MailService {
         socketTimeout: 15_000,
       });
       this.logger.log(`Mail transport configured via SMTP (${smtpHost}).`);
+      if (resendApiKey) {
+        this.logger.warn(
+          'RESEND_API_KEY is set but MAIL_TRANSPORT=smtp — the API key is unused. Hosts that block SMTP ports need MAIL_TRANSPORT=http.',
+        );
+      }
     } else {
       this.logger.warn(
         'SMTP_HOST not set — emails will be logged to console only (development mode).',

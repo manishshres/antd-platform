@@ -80,6 +80,60 @@ describe('MailService — Resend HTTP transport', () => {
     expect(errorSpy.mock.calls[0][0]).toContain('domain is not verified');
   });
 
+  it('forces SMTP when MAIL_TRANSPORT=smtp, even with a Resend key present', () => {
+    // The escape hatch: a host that allows SMTP can keep using it without unsetting keys.
+    const fetchMock = jest.fn();
+    global.fetch = fetchMock as jest.Mock & typeof fetch;
+
+    const service = new MailService(
+      configWith({
+        MAIL_TRANSPORT: 'smtp',
+        RESEND_API_KEY: 're_test_key',
+        SMTP_HOST: 'smtp.example.com',
+      }),
+    );
+
+    expect(
+      (service as unknown as { resendApiKey?: string }).resendApiKey,
+    ).toBeUndefined();
+    expect(
+      (service as unknown as { transporter: unknown }).transporter,
+    ).not.toBeNull();
+  });
+
+  it('uses the HTTP API when MAIL_TRANSPORT=http', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: () => Promise.resolve(''),
+    });
+    global.fetch = fetchMock as jest.Mock & typeof fetch;
+
+    const service = new MailService(
+      configWith({
+        MAIL_TRANSPORT: 'http',
+        RESEND_API_KEY: 're_test_key',
+        SMTP_HOST: 'smtp.example.com',
+      }),
+    );
+    await send(service);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to console logging when http is requested without a key', async () => {
+    const fetchMock = jest.fn();
+    global.fetch = fetchMock as jest.Mock & typeof fetch;
+
+    const service = new MailService(configWith({ MAIL_TRANSPORT: 'http' }));
+    await send(service);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(
+      (service as unknown as { transporter: unknown }).transporter,
+    ).toBeNull();
+  });
+
   it('falls back to SMTP when no Resend key is configured', () => {
     const fetchMock = jest.fn();
     global.fetch = fetchMock as jest.Mock & typeof fetch;
