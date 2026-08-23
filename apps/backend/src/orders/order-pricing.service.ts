@@ -411,6 +411,69 @@ export class OrderPricingService {
   }
 
   /** Throws unless the customer profile exists in this org. */
+  /**
+   * Find or create the customer behind a phone number.
+   *
+   * Orders carried a customer's name and phone as loose text and linked no profile
+   * unless the cashier picked one, so a regular who ordered by phone every week left no
+   * record: nothing to search on the register, no history, no loyalty. The number is the
+   * identity here — it is what the caller ID gives us and what staff search by.
+   *
+   * Returns null when there is nothing to key on (an anonymous counter sale), rather than
+   * creating an unidentifiable profile for every walk-in.
+   */
+  async resolveCustomerIdByPhone(
+    orgId: string,
+    phone: string | null | undefined,
+    name?: string | null,
+  ): Promise<string | null> {
+    const trimmedPhone = phone?.trim();
+    if (!trimmedPhone) return null;
+
+    const [existing] = await this.db
+      .select({ id: schema.customers.id, name: schema.customers.name })
+      .from(schema.customers)
+      .where(
+        and(
+          eq(schema.customers.organizationId, orgId),
+          eq(schema.customers.phone, trimmedPhone),
+        ),
+      )
+      .limit(1);
+
+    // "Walk-in" is the placeholder for an anonymous sale, not a name — it must never
+    // overwrite a real one, nor be stored as one.
+    const realName =
+      name && name.trim() && name.trim().toLowerCase() !== 'walk-in'
+        ? name.trim()
+        : null;
+
+    if (existing) {
+      // Fill in a name we did not have before; never replace one already recorded, since
+      // the profile may have been corrected by hand.
+      if (realName && existing.name.toLowerCase() === 'walk-in') {
+        await this.db
+          .update(schema.customers)
+          .set({ name: realName, updatedAt: new Date() })
+          .where(eq(schema.customers.id, existing.id));
+      }
+      return existing.id;
+    }
+
+    const [created] = await this.db
+      .insert(schema.customers)
+      .values({
+        organizationId: orgId,
+        // The number stands in until someone gives a name, so the profile is still
+        // findable rather than appearing blank in search results.
+        name: realName ?? trimmedPhone,
+        phone: trimmedPhone,
+      })
+      .returning({ id: schema.customers.id });
+
+    return created?.id ?? null;
+  }
+
   async requireOrgCustomer(orgId: string, customerId: string) {
     const [customer] = await this.db
       .select({ id: schema.customers.id })

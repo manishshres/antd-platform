@@ -316,16 +316,33 @@ export function CartPanel({ onProceed, onSelectCustomer }: Props) {
             have to compete for the cashier's eye. */}
         <View style={styles.actions}>
           {cart.tabOrderId ? (
-            <Button
-              mode="outlined"
-              icon="content-save-outline"
-              onPress={saveToTab}
-              disabled={cart.tabDelta().length === 0}
-              style={styles.tabBtn}
-              textColor={antd.primary}
-            >
-              Save to Tab
-            </Button>
+            /* An open tab is often opened just to read: a server checking what a table
+               already ordered, or a cashier confirming a phone order before charging it.
+               A disabled "Save to Tab" left that person with no live control but Pay, so
+               reviewing an order meant either charging it or force-quitting the flow.
+               With nothing added, the honest action is to close the tab view and leave
+               the order exactly as it was. */
+            cart.tabDelta().length === 0 ? (
+              <Button
+                mode="outlined"
+                icon="check"
+                onPress={() => cart.clear()}
+                style={styles.tabBtn}
+                textColor={antd.textSecondary}
+              >
+                Done — Keep Tab Open
+              </Button>
+            ) : (
+              <Button
+                mode="outlined"
+                icon="content-save-outline"
+                onPress={saveToTab}
+                style={styles.tabBtn}
+                textColor={antd.primary}
+              >
+                Save to Tab
+              </Button>
+            )
           ) : (
             <>
               <Button

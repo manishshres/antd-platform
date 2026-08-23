@@ -617,6 +617,16 @@ export class OrdersService {
       return replayed;
     }
 
+    // Every order with a phone number gets a customer profile, created on first contact.
+    // Without this an AI phone order left no trace of who called: nothing searchable on
+    // the register, no order history, no loyalty accrual for a weekly regular.
+    const resolvedCustomerId =
+      await this.pricingService.resolveCustomerIdByPhone(
+        orgId,
+        params.customerPhone,
+        params.customerName,
+      );
+
     let orderId: string;
     try {
       orderId = await this.db.transaction(async (tx) => {
@@ -629,6 +639,7 @@ export class OrdersService {
           .values({
             organizationId: orgId,
             locationId: params.locationId,
+            customerId: resolvedCustomerId,
             customerName: params.customerName,
             customerPhone: params.customerPhone,
             status: 'pending',
@@ -1038,6 +1049,17 @@ export class OrdersService {
     // subtracted after tax and floored at 0 rather than folded into the taxable base.
     const redemptionAmount = Math.min(redeemPoints, preRedemptionTotal);
     const totalAmount = preRedemptionTotal - redemptionAmount;
+
+    // A walk-in who leaves a phone number becomes a customer too, not just free text on
+    // one order — that is what makes them searchable on the register next visit. An
+    // explicitly chosen customer always wins; a sale with no number stays anonymous.
+    const posCustomerId =
+      dto.customerId ||
+      (await this.pricingService.resolveCustomerIdByPhone(
+        orgId,
+        dto.customerPhone,
+        dto.customerName,
+      ));
     // Earn only accrues on orders paid at creation — pay-later orders don't accrue until
     // that gap is closed (see the class-level note on this method).
     const loyaltyPointsEarned = dto.paymentMethod
@@ -1057,7 +1079,7 @@ export class OrdersService {
           .values({
             organizationId: orgId,
             locationId: dto.locationId,
-            customerId: dto.customerId || null,
+            customerId: posCustomerId,
             tableId: dto.tableId || null,
             customerName: dto.customerName?.trim() || 'Walk-in',
             customerPhone: dto.customerPhone?.trim() || '',

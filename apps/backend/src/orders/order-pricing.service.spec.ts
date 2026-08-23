@@ -12,6 +12,103 @@ import { OrderPricingService } from './order-pricing.service';
  * DB-touching tests (`nextTicketNumber`, `requireOrgCustomer`, full
  * `priceCartItems` flow) come when a Postgres test fixture lands.
  */
+describe('OrderPricingService — customer identity', () => {
+  let service: OrderPricingService;
+  const rows: {
+    select: unknown[];
+    inserted: Record<string, unknown>[];
+    updated: Record<string, unknown>[];
+  } = {
+    select: [],
+    inserted: [],
+    updated: [],
+  };
+
+  beforeEach(async () => {
+    rows.select = [];
+    rows.inserted = [];
+    rows.updated = [];
+
+    const db = {
+      select: () => ({
+        from: () => ({
+          where: () => ({ limit: () => Promise.resolve(rows.select) }),
+        }),
+      }),
+      insert: () => ({
+        values: (v: Record<string, unknown>) => {
+          rows.inserted.push(v);
+          return { returning: () => Promise.resolve([{ id: 'cust-new' }]) };
+        },
+      }),
+      update: () => ({
+        set: (v: Record<string, unknown>) => {
+          rows.updated.push(v);
+          return { where: () => Promise.resolve([]) };
+        },
+      }),
+    };
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [OrderPricingService, { provide: DRIZZLE, useValue: db }],
+    }).compile();
+    service = module.get(OrderPricingService);
+  });
+
+  it('creates a profile the first time a number orders', async () => {
+    // Phone orders used to leave only loose text on the order: nothing searchable on the
+    // register, no history, no loyalty for a weekly regular.
+    await expect(
+      service.resolveCustomerIdByPhone('org-1', '+12155550123', 'Matt'),
+    ).resolves.toBe('cust-new');
+    expect(rows.inserted[0]).toMatchObject({
+      organizationId: 'org-1',
+      name: 'Matt',
+      phone: '+12155550123',
+    });
+  });
+
+  it('reuses the profile on the next order from that number', async () => {
+    rows.select = [{ id: 'cust-1', name: 'Matt' }];
+
+    await expect(
+      service.resolveCustomerIdByPhone('org-1', '+12155550123', 'Matt'),
+    ).resolves.toBe('cust-1');
+    expect(rows.inserted).toHaveLength(0);
+  });
+
+  it('stays anonymous when there is no number to key on', async () => {
+    // Creating a nameless, numberless profile for every counter sale would fill the
+    // customer list with rows nobody can identify or search for.
+    await expect(
+      service.resolveCustomerIdByPhone('org-1', ''),
+    ).resolves.toBeNull();
+    await expect(
+      service.resolveCustomerIdByPhone('org-1', null),
+    ).resolves.toBeNull();
+    expect(rows.inserted).toHaveLength(0);
+  });
+
+  it('falls back to the number as the name so the profile is still findable', async () => {
+    await service.resolveCustomerIdByPhone('org-1', '+12155550123', 'Walk-in');
+
+    // "Walk-in" is the anonymous-sale placeholder, not a name.
+    expect(rows.inserted[0]).toMatchObject({ name: '+12155550123' });
+  });
+
+  it('fills in a missing name but never overwrites a real one', async () => {
+    rows.select = [{ id: 'cust-1', name: 'Walk-in' }];
+    await service.resolveCustomerIdByPhone('org-1', '+12155550123', 'Matt');
+    expect(rows.updated[0]).toMatchObject({ name: 'Matt' });
+
+    rows.updated = [];
+    rows.select = [{ id: 'cust-1', name: 'Matthew Smith' }];
+    await service.resolveCustomerIdByPhone('org-1', '+12155550123', 'Matt');
+    // The profile may have been corrected by hand; an order's loose text must not undo that.
+    expect(rows.updated).toHaveLength(0);
+  });
+});
+
 describe('OrderPricingService — ticket numbers', () => {
   let service: OrderPricingService;
 

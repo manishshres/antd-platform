@@ -287,8 +287,9 @@ function LocalOrderDetail({
                   {`Fire ${COURSE_LABELS[course]}`}
                 </Button>
               ))}
-            {/* Closing the tab is the more common end state, so it leads. Adding items
-                stays available beside it — a tab offering only "add" had no way to end. */}
+            {/* Both open the same check in the register; the labels say what the worker
+                came to do. Neither charges anything on its own — payment is entered
+                deliberately from the check, so reviewing an order can never settle it. */}
             <Button
               mode="contained"
               onPress={() => onPayTab(order)}
@@ -296,7 +297,7 @@ function LocalOrderDetail({
               contentStyle={styles.actionBtnContent}
               icon="cash-register"
             >
-              {`Pay · ${formatMoney(order.totalAmount)}`}
+              {`Open & Pay · ${formatMoney(order.totalAmount)}`}
             </Button>
             <Button
               mode="outlined"

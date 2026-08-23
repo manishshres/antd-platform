@@ -320,13 +320,15 @@ export function HistoryScreen({ onNavigate }: Props) {
   };
 
   /**
-   * Close out an open tab: load it into the register and go straight to tender rather
-   * than dropping the server on the menu to find the pay button. The register owns the
-   * tender flow (tip, split, change), so this reuses it instead of a second payment path.
+   * Close out an open tab. Loads it into the register first rather than jumping straight
+   * to tender: a worker pressing Pay still needs to see what they are charging for, and
+   * landing on a keypad with no itemisation gave them no way to review, no way to add a
+   * forgotten item, and nothing to go back to. This is the check-first flow every
+   * standard POS uses — the register shows the check, and Pay from there opens tender.
    */
   const payTab = (order: LocalOrder) => {
     cart.loadTab(order);
-    onNavigate('payment');
+    onNavigate('home');
   };
 
   const discardOrder = (order: LocalOrder) => {
