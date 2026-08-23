@@ -604,14 +604,21 @@ export class ProvisioningService {
         .where(eq(schema.organizations.id, organizationId));
     }
 
-    // Reset failed steps to pending
+    // Reset failed *and* stranded steps to pending. Only 'failed' was reset before, so a
+    // step whose worker died mid-run — Redis restart, deploy, crash — stayed 'in_progress'
+    // forever and the admin panel showed provisioning parked on that step with no way to
+    // clear it. Nothing is in flight at this point: this is the retry path, and any job
+    // that owned these rows is gone.
     await this.db
       .update(schema.orgProvisioningSteps)
       .set({ status: 'pending', lastError: null })
       .where(
         and(
           eq(schema.orgProvisioningSteps.locationId, locId),
-          eq(schema.orgProvisioningSteps.status, 'failed'),
+          inArray(schema.orgProvisioningSteps.status, [
+            'failed',
+            'in_progress',
+          ]),
         ),
       );
 

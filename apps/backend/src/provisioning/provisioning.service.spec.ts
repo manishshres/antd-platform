@@ -291,6 +291,40 @@ describe('ProvisioningService', () => {
     });
   });
 
+  describe('retryProvisioning', () => {
+    it('resets stranded in_progress steps, not just failed ones', async () => {
+      // The panel showed provisioning parked forever on clone_agent: the worker died
+      // mid-step (Redis restart, deploy), leaving the row 'in_progress', and retry only
+      // ever reset 'failed'. Nothing is in flight on this path — the owning job is gone.
+      const statusSpy = jest
+        .spyOn(service, 'getProvisioningStatus')
+        .mockResolvedValue({
+          organizationId: 'org-1',
+          locationId: 'loc-1',
+        } as unknown as Awaited<
+          ReturnType<ProvisioningService['getProvisioningStatus']>
+        >);
+
+      // In call order: the location lookup, the location status update, the org lookup.
+      mockDb.where.mockReturnValueOnce({
+        limit: jest
+          .fn()
+          .mockResolvedValue([{ id: 'loc-1', status: 'provisioning' }]),
+      });
+      mockDb.where.mockResolvedValueOnce([]);
+      mockDb.where.mockReturnValueOnce({
+        limit: jest.fn().mockResolvedValue([{ status: 'provisioning' }]),
+      });
+
+      await service.retryProvisioning('org-1');
+
+      const setCalls = mockDb.set.mock.calls as Array<[{ status?: string }]>;
+      expect(setCalls.some(([arg]) => arg?.status === 'pending')).toBe(true);
+      expect(mockProvisioningQueue.add).toHaveBeenCalled();
+      statusSpy.mockRestore();
+    });
+  });
+
   describe('deprovision', () => {
     it('should delete Telnyx resources and archive org/location', async () => {
       mockDb.where.mockResolvedValueOnce([
