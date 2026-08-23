@@ -319,6 +319,16 @@ export function HistoryScreen({ onNavigate }: Props) {
     onNavigate('home');
   };
 
+  /**
+   * Close out an open tab: load it into the register and go straight to tender rather
+   * than dropping the server on the menu to find the pay button. The register owns the
+   * tender flow (tip, split, change), so this reuses it instead of a second payment path.
+   */
+  const payTab = (order: LocalOrder) => {
+    cart.loadTab(order);
+    onNavigate('payment');
+  };
+
   const discardOrder = (order: LocalOrder) => {
     ordersRepo.deleteOrder(order.id);
     // Drop any queued work for it too, or the sync engine would keep trying to
@@ -453,6 +463,7 @@ export function HistoryScreen({ onNavigate }: Props) {
           detail={detail}
           tab={activeTab}
           onResume={resumeOrder}
+          onPayTab={payTab}
           onDiscard={discardOrder}
           onRetry={retrySync}
           onFireCourse={fireCourse}

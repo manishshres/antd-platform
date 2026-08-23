@@ -1,6 +1,13 @@
 import React, { useState } from 'react';
 import { Alert, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
-import { ActivityIndicator, Button, Divider, Text } from 'react-native-paper';
+import {
+  ActivityIndicator,
+  Button,
+  Dialog,
+  Divider,
+  Portal,
+  Text,
+} from 'react-native-paper';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { antd, RADIUS } from '../../theme';
 import { formatMoney } from '../../utils/money';
@@ -93,6 +100,8 @@ interface DetailPanelProps {
   detail: DetailState;
   tab: ActiveTab;
   onResume: (o: LocalOrder) => void;
+  /** Close out an open tab: loads it into the register and goes straight to tender. */
+  onPayTab: (o: LocalOrder) => void;
   onDiscard: (o: LocalOrder) => void;
   onRetry: (o: LocalOrder) => void;
   onFireCourse?: (o: LocalOrder, course: Course) => void;
@@ -105,7 +114,7 @@ interface DetailPanelProps {
 }
 
 /** Right-hand order detail: empty/loading/error, local receipt, or server receipt. */
-export function DetailPanel({ detail, tab, onResume, onDiscard, onRetry, onFireCourse, client, onVoided, settings }: DetailPanelProps) {
+export function DetailPanel({ detail, tab, onResume, onPayTab, onDiscard, onRetry, onFireCourse, client, onVoided, settings }: DetailPanelProps) {
   if (detail.kind === 'empty') {
     return (
       <View style={styles.detailEmpty}>
@@ -137,6 +146,7 @@ export function DetailPanel({ detail, tab, onResume, onDiscard, onRetry, onFireC
           order={detail.order}
           tab={tab}
           onResume={onResume}
+          onPayTab={onPayTab}
           onDiscard={onDiscard}
           onRetry={onRetry}
           onFireCourse={onFireCourse}
@@ -155,11 +165,12 @@ export function DetailPanel({ detail, tab, onResume, onDiscard, onRetry, onFireC
 // ── Local order detail ────────────────────────────────────────────────────────
 
 function LocalOrderDetail({
-  order, tab, onResume, onDiscard, onRetry, onFireCourse,
+  order, tab, onResume, onPayTab, onDiscard, onRetry, onFireCourse,
 }: {
   order: LocalOrder;
   tab: ActiveTab;
   onResume: (o: LocalOrder) => void;
+  onPayTab: (o: LocalOrder) => void;
   onDiscard: (o: LocalOrder) => void;
   onRetry: (o: LocalOrder) => void;
   onFireCourse?: (o: LocalOrder, course: Course) => void;
@@ -276,10 +287,21 @@ function LocalOrderDetail({
                   {`Fire ${COURSE_LABELS[course]}`}
                 </Button>
               ))}
+            {/* Closing the tab is the more common end state, so it leads. Adding items
+                stays available beside it — a tab offering only "add" had no way to end. */}
             <Button
               mode="contained"
-              onPress={() => onResume(order)}
+              onPress={() => onPayTab(order)}
               style={[styles.actionBtn, { flex: 1 }]}
+              contentStyle={styles.actionBtnContent}
+              icon="cash-register"
+            >
+              {`Pay · ${formatMoney(order.totalAmount)}`}
+            </Button>
+            <Button
+              mode="outlined"
+              onPress={() => onResume(order)}
+              style={styles.actionBtn}
               contentStyle={styles.actionBtnContent}
               icon="plus"
             >
@@ -326,11 +348,66 @@ function ServerOrderDetailView({
   const [voidBusy, setVoidBusy] = useState(false);
   const [voidError, setVoidError] = useState<string | null>(null);
 
+  const [actionBusy, setActionBusy] = useState<string | null>(null);
+  const [payPromptOpen, setPayPromptOpen] = useState(false);
+
   const canVoid =
     Boolean(client) &&
     order.paidAt != null &&
     order.status !== 'refunded' &&
     order.status !== 'cancelled';
+
+  // Actions follow the order's state, not the list it was opened from. An AI phone order
+  // arrives 'pending' and needs accepting; one already cooking needs marking ready; an
+  // unpaid one needs charging. Previously a server order offered only reprint and void,
+  // so a phone order could be seen on the register but not acted on at all.
+  const settled =
+    order.status === 'cancelled' || order.status === 'refunded';
+  const canAccept =
+    Boolean(client) && !settled && ['pending', 'confirmed'].includes(order.status);
+  const canMarkReady =
+    Boolean(client) && !settled && order.status === 'preparing';
+  const canComplete = Boolean(client) && !settled && order.status === 'ready';
+  const canPay = Boolean(client) && !settled && order.paidAt == null;
+
+  /** Advance the order's status, then let the list refresh so the row reflects it. */
+  const advanceTo = async (status: string, label: string) => {
+    if (!client) return;
+    setActionBusy(status);
+    try {
+      await client.updateOrderStatus(order.id, status);
+      onVoided?.();
+    } catch (err) {
+      Alert.alert(
+        label,
+        err instanceof Error ? err.message : 'Could not update this order.',
+      );
+    } finally {
+      setActionBusy(null);
+    }
+  };
+
+  /**
+   * Charge an order that already exists on the server. Deliberately not routed through
+   * the register's cart: the order is already placed, and rebuilding it as a new cart
+   * would create a second order rather than settling this one.
+   */
+  const payWith = async (method: PaymentMethod) => {
+    if (!client) return;
+    setActionBusy('pay');
+    try {
+      await client.payOrder(order.id, { paymentMethod: method });
+      setPayPromptOpen(false);
+      onVoided?.();
+    } catch (err) {
+      Alert.alert(
+        'Payment',
+        err instanceof Error ? err.message : 'Could not record that payment.',
+      );
+    } finally {
+      setActionBusy(null);
+    }
+  };
 
   const submitVoid = async (pin: string) => {
     if (!client) return;
@@ -451,8 +528,67 @@ function ServerOrderDetailView({
         </>
       )}
 
+      {/* Workflow actions first: what the order needs next matters more than reprinting
+          it. Each appears only in the state where it applies, so the panel never offers
+          "accept" on an order already cooking. */}
+      {canAccept && (
+        <TouchableOpacity
+          style={[styles.printBtn, actionBusy === 'preparing' && { opacity: 0.6 }]}
+          activeOpacity={0.8}
+          disabled={actionBusy !== null}
+          onPress={() => void advanceTo('preparing', 'Accept order')}
+        >
+          <MaterialCommunityIcons name="check-circle-outline" size={18} color="#fff" />
+          <Text style={styles.printBtnText}>
+            {actionBusy === 'preparing' ? 'Accepting…' : 'Accept & Start'}
+          </Text>
+        </TouchableOpacity>
+      )}
+
+      {canMarkReady && (
+        <TouchableOpacity
+          style={[styles.printBtn, actionBusy === 'ready' && { opacity: 0.6 }]}
+          activeOpacity={0.8}
+          disabled={actionBusy !== null}
+          onPress={() => void advanceTo('ready', 'Mark ready')}
+        >
+          <MaterialCommunityIcons name="bell-outline" size={18} color="#fff" />
+          <Text style={styles.printBtnText}>
+            {actionBusy === 'ready' ? 'Updating…' : 'Mark Ready'}
+          </Text>
+        </TouchableOpacity>
+      )}
+
+      {canComplete && (
+        <TouchableOpacity
+          style={[styles.printBtn, actionBusy === 'completed' && { opacity: 0.6 }]}
+          activeOpacity={0.8}
+          disabled={actionBusy !== null}
+          onPress={() => void advanceTo('completed', 'Complete order')}
+        >
+          <MaterialCommunityIcons name="flag-checkered" size={18} color="#fff" />
+          <Text style={styles.printBtnText}>
+            {actionBusy === 'completed' ? 'Closing…' : 'Complete Order'}
+          </Text>
+        </TouchableOpacity>
+      )}
+
+      {canPay && (
+        <TouchableOpacity
+          style={[styles.printBtn, actionBusy === 'pay' && { opacity: 0.6 }]}
+          activeOpacity={0.8}
+          disabled={actionBusy !== null}
+          onPress={() => setPayPromptOpen(true)}
+        >
+          <MaterialCommunityIcons name="cash-register" size={18} color="#fff" />
+          <Text style={styles.printBtnText}>
+            {actionBusy === 'pay' ? 'Charging…' : `Take Payment · ${formatMoney(order.totalAmount)}`}
+          </Text>
+        </TouchableOpacity>
+      )}
+
       <TouchableOpacity
-        style={[styles.printBtn, printing && { opacity: 0.6 }]}
+        style={[styles.printBtn, styles.printBtnSecondary, printing && { opacity: 0.6 }]}
         activeOpacity={0.8}
         disabled={printing || (!settings.printerEnabled && !client)}
         onPress={reprint}
@@ -496,6 +632,40 @@ function ServerOrderDetailView({
           Void & Refund
         </Button>
       )}
+
+      {/* Tender choice for an order that already exists server-side. Cash and card only:
+          the register's full tender flow (tips, split, change) belongs to the cart, and
+          routing this through it would create a second order rather than settle this one. */}
+      <Portal>
+        <Dialog visible={payPromptOpen} onDismiss={() => setPayPromptOpen(false)}>
+          <Dialog.Title>Take payment</Dialog.Title>
+          <Dialog.Content>
+            <Text style={{ color: antd.textSecondary }}>
+              {`Order ${order.ticketNumber ? `#${order.ticketNumber}` : ''} · ${formatMoney(order.totalAmount)}`}
+            </Text>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setPayPromptOpen(false)} disabled={actionBusy !== null}>
+              Cancel
+            </Button>
+            <Button
+              onPress={() => void payWith('cash')}
+              loading={actionBusy === 'pay'}
+              disabled={actionBusy !== null}
+            >
+              Cash
+            </Button>
+            <Button
+              mode="contained"
+              onPress={() => void payWith('card')}
+              loading={actionBusy === 'pay'}
+              disabled={actionBusy !== null}
+            >
+              Card
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
 
       <ManagerPinPrompt
         visible={voidPromptOpen}

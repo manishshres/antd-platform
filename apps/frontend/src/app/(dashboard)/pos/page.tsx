@@ -24,6 +24,7 @@ import CartPanel from "./components/CartPanel";
 import TenderModal, { type PersistedOrder } from "./components/TenderModal";
 import ModifierPickerModal from "./components/ModifierPickerModal";
 import DiscountModal from "./components/DiscountModal";
+import ManagerPinModal from "./components/ManagerPinModal";
 import { buildLine, cartReducer } from "./cart";
 import { fmtMoney, orderLabel } from "./types";
 import type {
@@ -99,6 +100,13 @@ function PosRegister() {
 
   // Loaded existing order (AI voice handoff / edit mode)
   const [editingOrder, setEditingOrder] = useState<ExistingOrder | null>(null);
+  // Editing a placed order needs a manager PIN (see ManagerPinModal). The pending action
+  // is held here so the same gate serves both "save" and "charge".
+  const [pinPrompt, setPinPrompt] = useState<
+    { action: "save" } | { action: "charge"; method: "cash" | "card" } | null
+  >(null);
+  const [pinBusy, setPinBusy] = useState(false);
+  const [pinError, setPinError] = useState<string | null>(null);
 
   // Modifier picker state; editingLineKey means "replace that cart line" on confirm.
   const [pickerItem, setPickerItem] = useState<MenuItem | null>(null);
@@ -582,12 +590,21 @@ function PosRegister() {
    * waits), edited orders get their changes persisted. Either way the register
    * clears and the order waits in Open Orders until it's charged.
    */
-  const saveOrder = async () => {
+  const saveOrder = async (managerPin?: string) => {
     if (!selectedLocationId || cart.length === 0) return;
+    // An order already sent to the kitchen cannot be rewritten without authorisation.
+    if (editingOrder && !managerPin) {
+      setPinError(null);
+      setPinPrompt({ action: "save" });
+      return;
+    }
     setSaving(true);
     try {
       if (editingOrder) {
-        await api.put(`/orders/${editingOrder.id}/items`, orderMetaPayload());
+        await api.put(`/orders/${editingOrder.id}/items`, {
+          ...orderMetaPayload(),
+          managerPin,
+        });
         message.success(
           `Order ${orderLabel(editingOrder)} updated — corrected ticket sent to kitchen.`,
           5,
@@ -610,21 +627,37 @@ function PosRegister() {
       resetRegister();
       loadOpenOrders();
       if (editingOrder) router.replace("/pos");
-    } catch {
-      message.error("Failed to save the order.");
+    } catch (err) {
+      // The server explains why — wrong PIN, order already paid — and that detail is the
+      // difference between "try again" and "stop trying".
+      const detail = (err as { response?: { data?: { message?: string | string[] } } })
+        ?.response?.data?.message;
+      message.error(
+        Array.isArray(detail) ? detail.join(", ") : detail || "Failed to save the order.",
+      );
+      throw err;
     } finally {
       setSaving(false);
     }
   };
 
-  const charge = async (method: "cash" | "card") => {
+  const charge = async (method: "cash" | "card", managerPin?: string) => {
     if (!selectedLocationId || cart.length === 0) return;
+    // Charging an edited order persists the edit first, which needs the same authorisation.
+    if (editingOrder && !managerPin) {
+      setPinError(null);
+      setPinPrompt({ action: "charge", method });
+      return;
+    }
     setCharging(method);
     try {
       let paid: { ticketNumber?: number | null; id: string; totalAmount: number };
       if (editingOrder) {
         // Persist any edits, then record the payment on the existing order.
-        await api.put(`/orders/${editingOrder.id}/items`, orderMetaPayload());
+        await api.put(`/orders/${editingOrder.id}/items`, {
+          ...orderMetaPayload(),
+          managerPin,
+        });
         const res = await api.post<typeof paid>(
           `/orders/${editingOrder.id}/pay`,
           { paymentMethod: method, tipAmount },
@@ -648,8 +681,17 @@ function PosRegister() {
       resetRegister();
       loadOpenOrders();
       if (editingOrder) router.replace("/pos");
-    } catch {
-      message.error("Failed to place the order. Nothing was charged.");
+    } catch (err) {
+      const detail = (err as { response?: { data?: { message?: string | string[] } } })
+        ?.response?.data?.message;
+      message.error(
+        Array.isArray(detail)
+          ? detail.join(", ")
+          : detail || "Failed to place the order. Nothing was charged.",
+      );
+      // Rethrown so the PIN prompt can stay open on a rejected PIN instead of closing
+      // over a charge that never happened.
+      throw err;
     } finally {
       setCharging(null);
     }
@@ -829,6 +871,45 @@ function PosRegister() {
       />
 
       {/* Tender step — total, tip, discount, then payment (Square/Toast flow) */}
+      <ManagerPinModal
+        open={pinPrompt !== null}
+        title={
+          editingOrder
+            ? `Authorize changes to ${orderLabel(editingOrder)}`
+            : "Manager authorization"
+        }
+        busy={pinBusy}
+        error={pinError}
+        onCancel={() => {
+          setPinPrompt(null);
+          setPinError(null);
+        }}
+        onSubmit={(pin) => {
+          if (!pinPrompt) return;
+          setPinBusy(true);
+          setPinError(null);
+          const run =
+            pinPrompt.action === "save"
+              ? saveOrder(pin)
+              : charge(pinPrompt.method, pin);
+          void run
+            .then(() => setPinPrompt(null))
+            .catch((err: unknown) => {
+              // Keep the prompt open on a bad PIN so it can be retyped; the message
+              // already surfaced as a toast, this puts it where the eye is.
+              const detail = (
+                err as { response?: { data?: { message?: string | string[] } } }
+              )?.response?.data?.message;
+              setPinError(
+                Array.isArray(detail)
+                  ? detail.join(", ")
+                  : detail || "Could not authorize that change.",
+              );
+            })
+            .finally(() => setPinBusy(false));
+        }}
+      />
+
       <TenderModal
         open={tenderOpen}
         onClose={() => setTenderOpen(false)}
