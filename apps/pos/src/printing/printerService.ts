@@ -1,5 +1,10 @@
 import type { LocalOrder, PosSettings } from '../types';
-import { buildKitchenTicketLines, buildReceiptLines, type ReceiptLine } from './receiptFormatter';
+import {
+  buildKitchenTicketLines,
+  buildReceiptLines,
+  type BusinessInfo,
+  type ReceiptLine,
+} from './receiptFormatter';
 import { groupItemsByStation } from './stationRouting';
 
 export interface PrintResult {
@@ -86,8 +91,16 @@ export async function printLines(lines: ReceiptLine[], settings: PosSettings, ta
   }
 }
 
-export function printReceipt(order: LocalOrder, settings: PosSettings, locationName: string): Promise<PrintResult> {
-  return printLines(buildReceiptLines(order, locationName, settings.printerCharsPerLine), settings, settings.printerTarget);
+export function printReceipt(
+  order: LocalOrder,
+  settings: PosSettings,
+  business: BusinessInfo | string,
+): Promise<PrintResult> {
+  return printLines(
+    buildReceiptLines(order, business, settings.printerCharsPerLine),
+    settings,
+    settings.printerTarget,
+  );
 }
 
 export function printKitchenTicket(order: LocalOrder, settings: PosSettings): Promise<PrintResult> {

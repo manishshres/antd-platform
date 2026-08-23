@@ -46,12 +46,22 @@ describe('LocationsService', () => {
   });
 
   describe('listLocations', () => {
-    it('returns array of locations', async () => {
-      const mockLocations = [{ id: 'loc-1', name: 'Main Store' }];
+    it('returns locations joined to their organization name', async () => {
+      // The POS prints the business name on receipts, so the org name rides along with
+      // each location rather than costing the register a second request.
+      const mockLocations = [
+        {
+          id: 'loc-1',
+          name: 'Main Store',
+          organizationName: 'Ekta Indian Cuisine',
+        },
+      ];
       db.select.mockReturnValueOnce({
         from: jest.fn().mockReturnValueOnce({
-          where: jest.fn().mockReturnValueOnce({
-            orderBy: jest.fn().mockResolvedValueOnce(mockLocations),
+          innerJoin: jest.fn().mockReturnValueOnce({
+            where: jest.fn().mockReturnValueOnce({
+              orderBy: jest.fn().mockResolvedValueOnce(mockLocations),
+            }),
           }),
         }),
       });
@@ -63,14 +73,20 @@ describe('LocationsService', () => {
 
   describe('createLocation', () => {
     it('creates a location and logs audit event', async () => {
-      const createdLoc = { id: 'loc-1', name: 'Downtown Branch', slug: 'downtown-branch' };
+      const createdLoc = {
+        id: 'loc-1',
+        name: 'Downtown Branch',
+        slug: 'downtown-branch',
+      };
       db.insert.mockReturnValueOnce({
         values: jest.fn().mockReturnValueOnce({
           returning: jest.fn().mockResolvedValueOnce([createdLoc]),
         }),
       });
 
-      const res = await service.createLocation('org-1', { name: 'Downtown Branch' });
+      const res = await service.createLocation('org-1', {
+        name: 'Downtown Branch',
+      });
       expect(res).toEqual(createdLoc);
       expect(auditService.fireAndForget).toHaveBeenCalled();
     });
@@ -93,7 +109,12 @@ describe('LocationsService', () => {
 
     it('updates location and maps phone number if provided', async () => {
       const loc = { id: 'loc-1', name: 'Old Name', status: 'draft' };
-      const updatedLoc = { id: 'loc-1', name: 'New Name', status: 'active', phoneNumber: '+12025550123' };
+      const updatedLoc = {
+        id: 'loc-1',
+        name: 'New Name',
+        status: 'active',
+        phoneNumber: '+12025550123',
+      };
 
       db.select.mockReturnValueOnce({
         from: jest.fn().mockReturnValueOnce({
@@ -157,7 +178,10 @@ describe('LocationsService', () => {
       });
 
       const res = await service.updateAiConfig('org-1', 'loc-1', {
-        aiSettings: { instructions: 'Custom system prompt', dynamicVariables: { key1: 'val1' } },
+        aiSettings: {
+          instructions: 'Custom system prompt',
+          dynamicVariables: { key1: 'val1' },
+        },
       });
 
       expect(res.message).toContain('AI Config updated');

@@ -116,6 +116,8 @@ export interface Discount {
 export interface Location {
   id: string;
   name: string;
+  /** Owning business, printed as the receipt header above the branch name. */
+  organizationName: string | null;
   taxRateBps: number;
   /** 0/unset = the register doesn't offer a service-charge toggle at checkout. */
   serviceChargeBps: number;

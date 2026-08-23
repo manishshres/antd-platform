@@ -141,11 +141,12 @@ export function replaceLocations(locations: Location[]): void {
     db.runSync('DELETE FROM locations');
     for (const loc of locations) {
       db.runSync(
-        `INSERT INTO locations(id, name, tax_rate_bps, service_charge_bps, address, city, state, postal_code, phone_number)
-         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO locations(id, name, organization_name, tax_rate_bps, service_charge_bps, address, city, state, postal_code, phone_number)
+         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           loc.id,
           loc.name,
+          loc.organizationName ?? null,
           loc.taxRateBps ?? 0,
           loc.serviceChargeBps ?? 0,
           loc.address ?? null,
@@ -164,6 +165,7 @@ export function getLocations(): Location[] {
     .getAllSync<{
       id: string;
       name: string;
+      organization_name: string | null;
       tax_rate_bps: number;
       service_charge_bps: number;
       address: string | null;
@@ -172,12 +174,13 @@ export function getLocations(): Location[] {
       postal_code: string | null;
       phone_number: string | null;
     }>(
-      `SELECT id, name, tax_rate_bps, service_charge_bps, address, city, state, postal_code, phone_number
+      `SELECT id, name, organization_name, tax_rate_bps, service_charge_bps, address, city, state, postal_code, phone_number
        FROM locations ORDER BY name`,
     )
     .map((r) => ({
       id: r.id,
       name: r.name,
+      organizationName: r.organization_name,
       taxRateBps: r.tax_rate_bps,
       serviceChargeBps: r.service_charge_bps,
       address: r.address,

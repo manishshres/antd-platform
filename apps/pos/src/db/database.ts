@@ -70,7 +70,8 @@ export function migrate(): void {
       id TEXT PRIMARY KEY NOT NULL,
       name TEXT NOT NULL,
       tax_rate_bps INTEGER NOT NULL DEFAULT 0,
-      service_charge_bps INTEGER NOT NULL DEFAULT 0
+      service_charge_bps INTEGER NOT NULL DEFAULT 0,
+      organization_name TEXT
     );
 
     CREATE TABLE IF NOT EXISTS orders (
@@ -426,6 +427,18 @@ export function migrate(): void {
       CREATE INDEX IF NOT EXISTS idx_print_jobs_order ON print_jobs(order_id);
     `);
     db.execSync('PRAGMA user_version = 18');
+  }
+
+  if (version < 19) {
+    // The receipt header shows the business name, not just the branch: "Manayunk" alone
+    // tells a customer nothing about who they bought from.
+    const locationCols = db
+      .getAllSync<{ name: string }>('PRAGMA table_info(locations)')
+      .map((c) => c.name);
+    if (!locationCols.includes('organization_name')) {
+      db.execSync('ALTER TABLE locations ADD COLUMN organization_name TEXT');
+    }
+    db.execSync('PRAGMA user_version = 19');
   }
 
   // Ensure indexes exist regardless of creation path.

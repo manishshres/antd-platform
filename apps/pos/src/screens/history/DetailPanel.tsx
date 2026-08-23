@@ -10,6 +10,7 @@ import { ManagerPinPrompt } from '../../components/ManagerPinPrompt';
 import { unfiredCourses } from '../../db/tabsRepo';
 import { ApiRequestError, type ApiClient } from '../../api/client';
 import { printReceipt, printKitchenTicketsByStation, type StationPrintResult } from '../../printing/printerService';
+import { currentBusinessInfo } from '../../printing/businessInfo';
 import { useEmployee } from '../../state/EmployeeContext';
 import {
   COURSE_LABELS,
@@ -376,7 +377,7 @@ function ServerOrderDetailView({
         // A Bluetooth printer set up on this register prints directly —
         // there's no reason to round-trip through the server's own (separate,
         // MQTT-based) printer dispatch for a receipt this register can print itself.
-        const result = await printReceipt(toLocalOrderForPrint(order), settings, settings.locationName);
+        const result = await printReceipt(toLocalOrderForPrint(order), settings, currentBusinessInfo(settings));
         if (!result.ok) throw new Error(result.error);
         Alert.alert('Printed', 'The receipt was sent to the printer.');
       } else if (client) {
