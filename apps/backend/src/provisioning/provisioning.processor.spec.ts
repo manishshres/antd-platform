@@ -31,7 +31,7 @@ const buildProcessor = async (db: ReturnType<typeof buildDb>) => {
     createNumberOrder: jest.fn().mockResolvedValue({ data: { id: 'order-1' } }),
     getNumberOrder: jest.fn(),
     getPhoneNumbersByNumber: jest.fn(),
-    updateAssistantDynamicVariable: jest.fn().mockResolvedValue({}),
+    setAssistantDynamicVariablesOrThrow: jest.fn().mockResolvedValue(undefined),
   };
 
   const module: TestingModule = await Test.createTestingModule({
@@ -107,8 +107,8 @@ describe('ProvisioningProcessor — retries must not duplicate paid resources', 
 
     await callStep(processor, 'registerWebhook', 'org-1', 'loc-1');
 
-    expect(telnyx.updateAssistantDynamicVariable).toHaveBeenCalledTimes(1);
-    const [assistantId, vars] = telnyx.updateAssistantDynamicVariable.mock
+    expect(telnyx.setAssistantDynamicVariablesOrThrow).toHaveBeenCalledTimes(1);
+    const [assistantId, vars] = telnyx.setAssistantDynamicVariablesOrThrow.mock
       .calls[0] as [string, { order_key: string }];
     expect(assistantId).toBe('asst-1');
     expect(vars.order_key).toMatch(/^sk_live_[0-9a-f]{48}$/);

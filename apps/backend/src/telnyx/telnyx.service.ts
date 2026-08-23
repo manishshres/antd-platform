@@ -112,32 +112,18 @@ export class TelnyxService {
     });
   }
 
+  /**
+   * Best-effort merge of dynamic variables. Failures are logged, not thrown — callers like
+   * key rotation would rather finish than abort. Provisioning needs the opposite guarantee:
+   * use {@link setAssistantDynamicVariablesOrThrow} when the caller cannot proceed without
+   * the update actually landing.
+   */
   async updateAssistantDynamicVariable(
     id: string,
     variables: Record<string, string>,
   ): Promise<void> {
     try {
-      const res = await this.getAssistant(id);
-      const assistant = res?.data ?? res;
-      if (!assistant?.id) {
-        this.logger.warn(
-          `Assistant ${id} not found when trying to update dynamic variables.`,
-        );
-        return;
-      }
-
-      const existingVariables = assistant.dynamic_variables ?? {};
-      const newVariables = { ...existingVariables, ...variables };
-
-      const updatePayload = {
-        dynamic_variables: newVariables,
-      };
-
-      await this.fetchJson(`/ai/assistants/${encodeURIComponent(id)}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatePayload),
-      });
+      await this.setAssistantDynamicVariablesOrThrow(id, variables);
     } catch (err) {
       this.logger.warn(
         `Failed to update dynamic variables for assistant ${id}: ${
@@ -145,6 +131,33 @@ export class TelnyxService {
         }`,
       );
     }
+  }
+
+  /**
+   * Same merge, but surfaces failure. `register_webhook` stores only the hash of the API
+   * key it generates, so if this silently fails the plaintext is gone for good and the
+   * assistant can never authenticate — better to fail the step and let it be retried.
+   */
+  async setAssistantDynamicVariablesOrThrow(
+    id: string,
+    variables: Record<string, string>,
+  ): Promise<void> {
+    const res = await this.getAssistant(id);
+    const assistant = res?.data ?? res;
+    if (!assistant?.id) {
+      throw new Error(
+        `Assistant ${id} not found when trying to update dynamic variables.`,
+      );
+    }
+
+    const existingVariables = assistant.dynamic_variables ?? {};
+    const newVariables = { ...existingVariables, ...variables };
+
+    await this.fetchJson(`/ai/assistants/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dynamic_variables: newVariables }),
+    });
   }
 
   async getConversations(
