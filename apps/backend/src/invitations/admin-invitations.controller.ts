@@ -16,7 +16,7 @@ import {
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PlatformAdminGuard } from '../auth/guards/platform-admin.guard';
 import { InvitationsService } from './invitations.service';
-import { CreateInvitationDto } from './dto/create-invitation.dto';
+import { AdminCreateInvitationDto } from './dto/admin-create-invitation.dto';
 import {
   CurrentUser,
   CurrentUserPayload,
@@ -37,7 +37,7 @@ export class AdminInvitationsController {
   @ApiResponse({ status: 201, description: 'Invitation sent.' })
   async createInvitation(
     @CurrentUser() user: CurrentUserPayload,
-    @Body() dto: CreateInvitationDto & { organizationId: string },
+    @Body() dto: AdminCreateInvitationDto,
   ) {
     return this.invitationsService.createInvitation(
       dto.organizationId,
