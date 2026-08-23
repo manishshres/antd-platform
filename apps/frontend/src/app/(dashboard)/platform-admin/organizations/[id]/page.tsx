@@ -191,11 +191,11 @@ export default function OrganizationDetailPage() {
 
     try {
       setInviteLoading(true);
-      await api.post(`/admin/invitations`, {
-        organizationId: orgId,
+      // The org id is a path param, and the API rejects unknown body fields
+      // (forbidNonWhitelisted), so only email/role may be sent.
+      await api.post(`/admin/organizations/${orgId}/invite`, {
         email: inviteEmail,
         role: "sysadmin",
-        notes: "Platform Admin generated invitation for sysadmin.",
       });
       message.success("Invitation generated! (Check console or email if hooked up)");
       setInviteModalVisible(false);

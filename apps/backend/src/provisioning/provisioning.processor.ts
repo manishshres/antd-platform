@@ -468,7 +468,10 @@ export class ProvisioningProcessor extends WorkerHost {
       );
     }
 
-    await this.telnyxService.updateAssistantDynamicVariable(
+    // Strict variant: the best-effort one logs and moves on, which would mark this step
+    // completed while the assistant never received the key — and since only the hash is
+    // stored, the plaintext would be gone for good.
+    await this.telnyxService.setAssistantDynamicVariablesOrThrow(
       location.telnyxAssistantId,
       { order_key: newKey },
     );

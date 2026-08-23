@@ -13,6 +13,8 @@ describe('WebhooksController', () => {
   const mockDb = {
     select: jest.fn().mockReturnThis(),
     from: jest.fn().mockReturnThis(),
+    // The developer-key lookup joins organizations so a key can't outlive its org.
+    innerJoin: jest.fn().mockReturnThis(),
     where: jest.fn().mockReturnThis(),
     limit: jest.fn().mockResolvedValue([]),
   };
@@ -58,6 +60,24 @@ describe('WebhooksController', () => {
     it('should throw UnauthorizedException if API key is missing', async () => {
       await expect(
         controller.handleAiOrder('', {
+          customerName: 'A',
+          customerPhone: '1',
+          items: [],
+        }),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('rejects a key whose organization has been deleted', async () => {
+      /**
+       * Deleting an organization does not release its Telnyx number or assistant — only
+       * deprovisioning does — so a decommissioned restaurant's number kept answering calls
+       * and its assistant kept posting orders. Both lookups filter deleted orgs now, so the
+       * key resolves to nothing and the order is refused.
+       */
+      mockDb.limit.mockResolvedValue([]);
+
+      await expect(
+        controller.handleAiOrder('key-of-deleted-org', {
           customerName: 'A',
           customerPhone: '1',
           items: [],
