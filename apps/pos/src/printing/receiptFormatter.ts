@@ -112,12 +112,19 @@ export function buildReceiptLines(
   push(rule(width));
 
   for (const item of order.items) {
-    push(`${item.quantity} x ${item.name}`);
+    // Price sits on the item's own line, the way a till receipt reads. twoCol truncates
+    // the label when a long name would collide with the amount, so the column stays put.
+    push(
+      twoCol(
+        `${item.quantity} x ${item.name}`,
+        money(item.unitPrice * item.quantity),
+        width,
+      ),
+    );
     if (item.modifiers?.length) {
       for (const m of item.modifiers) push(`   + ${m.name}`);
     }
     if (item.notes) push(`   * ${item.notes}`);
-    push(twoCol('', money(item.unitPrice * item.quantity), width));
   }
 
   push(rule(width));
