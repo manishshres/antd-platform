@@ -23,6 +23,14 @@ export class MailService {
           user: this.configService.get<string>('SMTP_USER'),
           pass: this.configService.get<string>('SMTP_PASS'),
         },
+        // Callers await the send inside the request cycle (see
+        // InvitationsService.createInvitation), and nodemailer's defaults allow a stalled
+        // socket to sit for ten minutes. That hangs the HTTP request with no response and
+        // no error — the row is written, the client times out, and the operator sees a
+        // failure for work that succeeded. Bound every phase instead.
+        connectionTimeout: 10_000,
+        greetingTimeout: 10_000,
+        socketTimeout: 15_000,
       });
       this.logger.log(`Mail transport configured via SMTP (${smtpHost}).`);
     } else {
