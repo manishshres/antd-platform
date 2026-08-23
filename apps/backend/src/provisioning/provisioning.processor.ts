@@ -14,8 +14,9 @@ import { randomBytes, createHash } from 'crypto';
 
 import { Queue } from 'bullmq';
 import { InjectQueue } from '@nestjs/bullmq';
+import { SHARED_WORKER_OPTIONS } from '../queues/queues.module';
 
-@Processor('provisioning-queue')
+@Processor('provisioning-queue', SHARED_WORKER_OPTIONS)
 export class ProvisioningProcessor extends WorkerHost {
   private readonly logger = new Logger(ProvisioningProcessor.name);
 
@@ -211,6 +212,26 @@ export class ProvisioningProcessor extends WorkerHost {
     metadata: Record<string, any>,
     previousMetadata: Record<string, any>,
   ) {
+    // Already purchased — see the note in cloneAgent. This one costs real money: a retry
+    // here used to place a second number order and bill for a number nothing would use.
+    const [existing] = await this.db
+      .select({
+        phoneNumber: schema.locations.phoneNumber,
+        telnyxPhoneNumberId: schema.locations.telnyxPhoneNumberId,
+      })
+      .from(schema.locations)
+      .where(eq(schema.locations.id, locationId))
+      .limit(1);
+
+    if (existing?.telnyxPhoneNumberId) {
+      this.logger.log(
+        `Location ${locationId} already holds number ${existing.phoneNumber}; skipping purchase.`,
+      );
+      metadata.phoneNumber = existing.phoneNumber;
+      metadata.telnyxPhoneNumberId = existing.telnyxPhoneNumberId;
+      return;
+    }
+
     const phoneNumber =
       previousMetadata.search_phone_number?.selectedPhoneNumber;
     if (!phoneNumber)
@@ -265,6 +286,20 @@ export class ProvisioningProcessor extends WorkerHost {
       .from(schema.locations)
       .where(eq(schema.locations.id, locationId))
       .limit(1);
+
+    // Already cloned. A step is re-run whenever the job is retried — by the operator, by
+    // BullMQ's `attempts: 3`, or by the stalled-job sweep after a worker dies mid-step —
+    // and cloning again would leave an orphan assistant on Telnyx and overwrite the id of
+    // the one already wired to this location.
+    if (location.telnyxAssistantId) {
+      this.logger.log(
+        `Location ${locationId} already has assistant ${location.telnyxAssistantId}; skipping clone.`,
+      );
+      metadata.assistantId = location.telnyxAssistantId;
+      metadata.masterAgentId =
+        location.masterAgentId ?? metadata.masterAgentId ?? null;
+      return;
+    }
 
     const aiSettings = location.aiSettings as Record<string, any> | null;
     let masterAgentId = aiSettings?.baseAgentId;
@@ -414,6 +449,29 @@ export class ProvisioningProcessor extends WorkerHost {
         webhookApiKey: keyHash,
       })
       .where(eq(schema.organizations.id, organizationId));
+
+    // Hand the plaintext key to the assistant. Only the hash is stored, and the key is
+    // never shown anywhere else, so without this the agent authenticates with whatever
+    // order_key was typed into the wizard — which hashes to nothing on record — and every
+    // order webhook 401s. Provisioning left no way to recover: the billing endpoint sees a
+    // key already set and answers "rotate to view a new key". Mirrors
+    // BillingService.syncApiKeyToAssistants, which is how rotation keeps them in step.
+    const [location] = await this.db
+      .select({ telnyxAssistantId: schema.locations.telnyxAssistantId })
+      .from(schema.locations)
+      .where(eq(schema.locations.id, locationId))
+      .limit(1);
+
+    if (!location?.telnyxAssistantId) {
+      throw new Error(
+        'Cannot register the webhook key: the location has no Voice AI assistant yet.',
+      );
+    }
+
+    await this.telnyxService.updateAssistantDynamicVariable(
+      location.telnyxAssistantId,
+      { order_key: newKey },
+    );
   }
 
   private async sendAdminInvitation(

@@ -17,6 +17,7 @@ import {
   AGGREGATOR_WEBHOOK_QUEUE,
   AggregatorWebhookJob,
 } from './aggregator-webhook.types';
+import { SHARED_WORKER_OPTIONS } from '../../queues/queues.module';
 
 /**
  * Consumes normalized marketplace webhook jobs. Order-created events import a native
@@ -25,7 +26,7 @@ import {
  * a validated Coneeko transition. Idempotency is guaranteed upstream (webhook_events)
  * and inside the import (external_orders + clientOrderId), so retries are safe.
  */
-@Processor(AGGREGATOR_WEBHOOK_QUEUE)
+@Processor(AGGREGATOR_WEBHOOK_QUEUE, SHARED_WORKER_OPTIONS)
 export class AggregatorWebhookProcessor extends WorkerHost {
   private readonly logger = new Logger(AggregatorWebhookProcessor.name);
 

@@ -1,0 +1,2 @@
+CREATE UNIQUE INDEX "idx_locations_org_name_unique" ON "locations" USING btree ("organization_id",lower("name")) WHERE "locations"."deleted_at" IS NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX "idx_organizations_name_unique" ON "organizations" USING btree (lower("name")) WHERE "organizations"."deleted_at" IS NULL;

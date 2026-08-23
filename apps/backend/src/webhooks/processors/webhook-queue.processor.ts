@@ -1,8 +1,5 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
-import {
-  Logger,
-  Inject,
-} from '@nestjs/common';
+import { Logger, Inject } from '@nestjs/common';
 import { Job, UnrecoverableError } from 'bullmq';
 import { DRIZZLE } from '../../database/database.module';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
@@ -11,6 +8,7 @@ import { eq, and, ilike } from 'drizzle-orm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
+import { SHARED_WORKER_OPTIONS } from '../../queues/queues.module';
 
 /** What the processor hands back to BullMQ: either the created order, or a skip notice. */
 export interface WebhookJobResult {
@@ -36,7 +34,7 @@ export interface WebhookJobData {
   specialInstructions?: string;
 }
 
-@Processor('webhook-queue')
+@Processor('webhook-queue', SHARED_WORKER_OPTIONS)
 export class WebhookQueueProcessor extends WorkerHost {
   private readonly logger = new Logger(WebhookQueueProcessor.name);
 
@@ -114,12 +112,7 @@ export class WebhookQueueProcessor extends WorkerHost {
             schema.categories,
             eq(schema.menuItems.categoryId, schema.categories.id),
           )
-          .where(
-            and(
-              ...catConditions,
-              ilike(schema.menuItems.name, item.name),
-            ),
-          )
+          .where(and(...catConditions, ilike(schema.menuItems.name, item.name)))
           .limit(1);
 
         // Fallback: prefix match to handle names with trailing tags like "(Spicy)" or "(Vegan)"

@@ -10,6 +10,7 @@ import { DRIZZLE } from '../database/database.module';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { eq } from 'drizzle-orm';
 import * as schema from '../database/schema';
+import { SHARED_WORKER_OPTIONS } from '../queues/queues.module';
 
 export interface ImportRecordingPayload {
   callSessionId: string;
@@ -20,7 +21,7 @@ export interface ImportRecordingPayload {
   locationId?: string;
 }
 
-@Processor('recordings-queue')
+@Processor('recordings-queue', SHARED_WORKER_OPTIONS)
 export class RecordingsProcessor extends WorkerHost {
   private readonly logger = new Logger(RecordingsProcessor.name);
   private readonly ai: GoogleGenerativeAI | null = null;
