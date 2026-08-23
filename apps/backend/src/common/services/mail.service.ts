@@ -7,8 +7,19 @@ import type { Transporter } from 'nodemailer';
 export class MailService {
   private readonly logger = new Logger(MailService.name);
   private transporter: Transporter | null = null;
+  private readonly resendApiKey: string | undefined;
 
   constructor(private readonly configService: ConfigService) {
+    // Prefer Resend's HTTPS API over SMTP. Railway blocks outbound SMTP ports (25/465/587)
+    // to deter abuse, so nodemailer never completes a connection there — it surfaces as
+    // "Connection timeout" after the socket deadline, with correct credentials. Port 443
+    // is not blocked, so the HTTP API works where SMTP cannot.
+    this.resendApiKey = this.configService.get<string>('RESEND_API_KEY');
+    if (this.resendApiKey) {
+      this.logger.log('Mail transport configured via Resend HTTP API.');
+      return;
+    }
+
     const smtpHost = this.configService.get<string>('SMTP_HOST');
     if (smtpHost) {
       const portStr = this.configService.get<string | number>('SMTP_PORT', 587);
@@ -49,6 +60,11 @@ export class MailService {
     const from =
       this.configService.get<string>('SMTP_FROM') || 'noreply@example.com';
 
+    if (this.resendApiKey) {
+      await this.sendViaResend(from, options);
+      return;
+    }
+
     if (!this.transporter) {
       // Dev mode: log the email content to console instead of sending
       this.logger.log('=== [DEV EMAIL] ===');
@@ -72,6 +88,45 @@ export class MailService {
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.error(`Failed to send email to ${options.to}: ${msg}`);
       // Do not throw — email failure should never break primary request flow
+    }
+  }
+
+  /** Posts one message to Resend's REST API. Errors are handled by the caller. */
+  private async sendViaResend(
+    from: string,
+    options: { to: string; subject: string; text: string; html?: string },
+  ): Promise<void> {
+    try {
+      const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.resendApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from,
+          to: [options.to],
+          subject: options.subject,
+          text: options.text,
+          ...(options.html ? { html: options.html } : {}),
+        }),
+        signal: AbortSignal.timeout(15_000),
+      });
+
+      if (!res.ok) {
+        // Resend explains rejections in the body — an unverified sending domain, a bad
+        // key — and that detail is the whole value of the log line.
+        const detail = await res.text();
+        this.logger.error(
+          `Resend rejected the email to ${options.to} (${res.status}): ${detail}`,
+        );
+        return;
+      }
+
+      this.logger.log(`Email sent to ${options.to}: "${options.subject}"`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Failed to send email to ${options.to}: ${msg}`);
     }
   }
 
