@@ -19,6 +19,8 @@ import {
   Popconfirm,
   Divider,
   Modal,
+  Table,
+  Empty,
 } from "antd";
 import {
   PlayCircleOutlined,
@@ -30,12 +32,29 @@ import {
   FlagOutlined,
   BarChartOutlined,
   ArrowLeftOutlined,
+  SendOutlined,
 } from "@ant-design/icons";
 import { api } from "@/lib/api";
 import PageHeader from "@/components/PageHeader";
 import { Organization, ProvisioningStatusResponse } from "../../types";
 
 const { Title, Text } = Typography;
+
+interface Invitation {
+  id: string;
+  email: string;
+  role: string;
+  status: string;
+  expiresAt: string;
+  createdAt: string;
+}
+
+const INVITATION_STATUS_COLORS: Record<string, string> = {
+  pending: "blue",
+  accepted: "green",
+  revoked: "default",
+  expired: "orange",
+};
 
 export default function OrganizationDetailPage() {
   const params = useParams();
@@ -66,6 +85,10 @@ export default function OrganizationDetailPage() {
   const [inviteModalVisible, setInviteModalVisible] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteLoading, setInviteLoading] = useState(false);
+
+  const [invitations, setInvitations] = useState<Invitation[]>([]);
+  const [invitationsLoading, setInvitationsLoading] = useState(false);
+  const [resendingId, setResendingId] = useState<string | null>(null);
 
   const fetchOrg = useCallback(async () => {
     try {
@@ -98,10 +121,52 @@ export default function OrganizationDetailPage() {
     }
   }, [orgId, message]);
 
+  const fetchInvitations = useCallback(async () => {
+    try {
+      setInvitationsLoading(true);
+      const { data } = await api.get<Invitation[]>(`/admin/organizations/${orgId}/invitations`);
+      // Newest first: the most recent invite is the one an operator is looking for.
+      setInvitations(
+        [...data].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
+      );
+    } catch {
+      message.error("Failed to load invitations.");
+    } finally {
+      setInvitationsLoading(false);
+    }
+  }, [orgId, message]);
+
   useEffect(() => {
     fetchOrg();
     fetchStatus();
-  }, [fetchOrg, fetchStatus]);
+    fetchInvitations();
+  }, [fetchOrg, fetchStatus, fetchInvitations]);
+
+  const handleResend = async (invitation: Invitation) => {
+    try {
+      setResendingId(invitation.id);
+      // The org id travels in the body here — this route is keyed on the invitation id.
+      await api.post(`/admin/invitations/${invitation.id}/resend`, { organizationId: orgId });
+      message.success(`Invitation resent to ${invitation.email}.`);
+      fetchInvitations();
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      message.error(detail || "Failed to resend invitation.");
+    } finally {
+      setResendingId(null);
+    }
+  };
+
+  const handleRevoke = async (invitation: Invitation) => {
+    try {
+      await api.post(`/admin/invitations/${invitation.id}/revoke`, { organizationId: orgId });
+      message.success(`Invitation to ${invitation.email} revoked.`);
+      fetchInvitations();
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      message.error(detail || "Failed to revoke invitation.");
+    }
+  };
 
   // Profile Save
   const onSaveProfile = async (values: { name: string; slug: string }) => {
@@ -197,8 +262,10 @@ export default function OrganizationDetailPage() {
         email: inviteEmail,
         role: "sysadmin",
       });
-      message.success("Invitation generated! (Check console or email if hooked up)");
+      message.success(`Invitation created for ${inviteEmail}.`);
       setInviteModalVisible(false);
+      setInviteEmail("");
+      fetchInvitations();
     } catch (err) {
       console.error(err);
       message.error("Failed to generate invitation.");
@@ -307,6 +374,116 @@ export default function OrganizationDetailPage() {
                 </Button>
               </Popconfirm>
             </Space>
+          </Card>
+
+          <Card
+            title="Invitations"
+            extra={
+              <Space>
+                <Button
+                  icon={<MailOutlined />}
+                  onClick={() => setInviteModalVisible(true)}
+                  type="text"
+                >
+                  Invite
+                </Button>
+                <Button
+                  icon={<ReloadOutlined />}
+                  onClick={fetchInvitations}
+                  loading={invitationsLoading}
+                  type="text"
+                >
+                  Refresh
+                </Button>
+              </Space>
+            }
+          >
+            {!invitationsLoading && invitations.length === 0 ? (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description="No invitations sent yet."
+              />
+            ) : (
+              <Table<Invitation>
+                dataSource={invitations}
+                rowKey="id"
+                loading={invitationsLoading}
+                pagination={false}
+                size="small"
+                columns={[
+                  {
+                    title: "Email",
+                    dataIndex: "email",
+                    key: "email",
+                  },
+                  {
+                    title: "Role",
+                    dataIndex: "role",
+                    key: "role",
+                    render: (role: string) => <Tag>{role}</Tag>,
+                  },
+                  {
+                    title: "Status",
+                    dataIndex: "status",
+                    key: "status",
+                    render: (status: string, row) => {
+                      // An invitation past its expiry is still stored as "pending"; say so
+                      // rather than inviting a resend that the recipient cannot use.
+                      const expired =
+                        status === "pending" && new Date(row.expiresAt) < new Date();
+                      return (
+                        <Tag color={expired ? "orange" : INVITATION_STATUS_COLORS[status] ?? "default"}>
+                          {expired ? "expired" : status}
+                        </Tag>
+                      );
+                    },
+                  },
+                  {
+                    title: "Sent",
+                    dataIndex: "createdAt",
+                    key: "createdAt",
+                    render: (value: string) => new Date(value).toLocaleString(),
+                  },
+                  {
+                    title: "Expires",
+                    dataIndex: "expiresAt",
+                    key: "expiresAt",
+                    render: (value: string) => new Date(value).toLocaleDateString(),
+                  },
+                  {
+                    title: "Actions",
+                    key: "actions",
+                    render: (_, row) => (
+                      <Space>
+                        <Button
+                          size="small"
+                          icon={<SendOutlined />}
+                          loading={resendingId === row.id}
+                          // Only pending invitations can be resent — the API rejects the rest.
+                          disabled={row.status !== "pending"}
+                          onClick={() => handleResend(row)}
+                        >
+                          Resend
+                        </Button>
+                        {row.status === "pending" && (
+                          <Popconfirm
+                            title="Revoke this invitation?"
+                            description="The link stops working immediately."
+                            onConfirm={() => handleRevoke(row)}
+                            okText="Revoke"
+                            okButtonProps={{ danger: true }}
+                          >
+                            <Button size="small" danger type="text">
+                              Revoke
+                            </Button>
+                          </Popconfirm>
+                        )}
+                      </Space>
+                    ),
+                  },
+                ]}
+              />
+            )}
           </Card>
 
           <Card
